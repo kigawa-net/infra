@@ -8,16 +8,15 @@ variable "ssh_user" {
   default = "kigawa"
 }
 
-
 variable "k8s_endpoint" {
   type    = string
   default = "k8s.kigawa.net"
 }
 
 variable "k8s_version" {
-  description = "Kubernetes minor version (e.g. 1.32)"
+  description = "Kubernetes minor version (e.g. 1.29)"
   type        = string
-  default     = "1.32"
+  default     = "1.29"
 }
 
 variable "control_plane_host" {
@@ -30,7 +29,7 @@ variable "control_plane_ssh_user" {
   default = "kigawa"
 }
 
-variable "control_plane_ssh_key_bitwarden_id" {
+variable "ssh_key_bitwarden_id" {
   type    = string
   default = "0393671f-6ef0-4650-be98-b364013f8644"
 }
@@ -38,4 +37,9 @@ variable "control_plane_ssh_key_bitwarden_id" {
 variable "sudo_password_bitwarden_id" {
   type    = string
   default = "52b44d60-7cab-429f-929a-b4340139b6d8"
+}
+
+variable "remove_dead_control_plane_ip" {
+  type    = string
+  default = "192.168.1.106"
 }

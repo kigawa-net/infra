@@ -56,6 +56,23 @@ resource "null_resource" "worker_node" {
       set -eo pipefail
       export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+      cleanup() {
+        if [ $? -ne 0 ]; then
+          echo "[cleanup] setup failed, rolling back..."
+          kubeadm reset -f 2>/dev/null || true
+          apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
+          apt-get remove -y --purge kubelet kubeadm kubectl 2>/dev/null || true
+          apt-get remove -y --purge containerd 2>/dev/null || true
+          rm -f /etc/apt/sources.list.d/kubernetes.list
+          rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+          rm -f /etc/modules-load.d/k8s.conf
+          rm -f /etc/sysctl.d/k8s.conf
+          apt-get autoremove -y 2>/dev/null || true
+          echo "[cleanup] rollback complete"
+        fi
+      }
+      trap cleanup EXIT
+
       swapoff -a
       sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
 
@@ -77,7 +94,7 @@ resource "null_resource" "worker_node" {
 
       apt-get install -y apt-transport-https ca-certificates curl gpg
       mkdir -p /etc/apt/keyrings
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
       apt-get update -y
       apt-get install -y kubelet kubeadm kubectl
