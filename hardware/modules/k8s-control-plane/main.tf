@@ -15,20 +15,26 @@ resource "null_resource" "control_plane" {
       #!/bin/bash
       set -eo pipefail
       export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      export DEBIAN_FRONTEND=noninteractive
+      export NEEDRESTART_MODE=a
+
+      _kubeadm_ran=0
 
       cleanup() {
         if [ $? -ne 0 ]; then
           echo "[cleanup] setup failed, rolling back..."
-          kubeadm reset -f 2>/dev/null || true
-          rm -f /home/${var.ssh_user}/.kube/config
+          if [ "$_kubeadm_ran" = "1" ]; then
+            kubeadm reset -f 2>/dev/null || true
+            rm -f /home/${var.ssh_user}/.kube/config
+          fi
           apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
-          apt-get remove -y --purge kubelet kubeadm kubectl 2>/dev/null || true
-          apt-get remove -y --purge containerd 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge kubelet kubeadm kubectl 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge containerd 2>/dev/null || true
           rm -f /etc/apt/sources.list.d/kubernetes.list
           rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
           rm -f /etc/modules-load.d/k8s.conf
           rm -f /etc/sysctl.d/k8s.conf
-          apt-get autoremove -y 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
           echo "[cleanup] rollback complete"
         fi
       }
@@ -62,6 +68,7 @@ resource "null_resource" "control_plane" {
       apt-mark hold kubelet kubeadm kubectl
 
       if [ ! -f /etc/kubernetes/admin.conf ]; then
+        _kubeadm_ran=1
         if [ -n "${var.join_token}" ]; then
           kubeadm join ${var.k8s_endpoint}:6443 \
             --token ${var.join_token} \

@@ -14,9 +14,9 @@ variable "k8s_endpoint" {
 }
 
 variable "k8s_version" {
-  description = "Kubernetes minor version (e.g. 1.32)"
+  description = "Kubernetes minor version (e.g. 1.29)"
   type        = string
-  default     = "1.32"
+  default     = "1.29"
 }
 
 variable "pod_network_cidr" {
@@ -34,7 +34,7 @@ variable "cni_manifest_url" {
 variable "control_plane_host" {
   description = "既存control-planeのSSHホスト。空の場合はkubeadm initを実行し、設定されている場合はclusterが存在すればjoinする"
   type        = string
-  default     = ""
+  default     = "k8s4"
 }
 
 variable "control_plane_ssh_user" {

@@ -16,7 +16,7 @@ variable "k8s_endpoint" {
 variable "k8s_version" {
   description = "Kubernetes minor version (e.g. 1.32)"
   type        = string
-  default     = "1.32"
+  default     = "1.29"
 }
 
 variable "control_plane_host" {
