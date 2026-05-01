@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.20"
+  default = "192.168.1.103"
 }
 
 variable "ssh_user" {
@@ -14,14 +14,27 @@ variable "k8s_endpoint" {
 }
 
 variable "k8s_version" {
-  description = "Kubernetes minor version (e.g. 1.29)"
+  description = "Kubernetes minor version (e.g. 1.32)"
   type        = string
-  default     = "1.29"
+  default     = "1.32"
+}
+
+variable "pod_network_cidr" {
+  description = "Pod network CIDR passed to kubeadm init (Flannel default: 10.244.0.0/16)"
+  type        = string
+  default     = "10.244.0.0/16"
+}
+
+variable "cni_manifest_url" {
+  description = "CNI manifest URL applied after kubeadm init"
+  type        = string
+  default     = "https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml"
 }
 
 variable "control_plane_host" {
-  type    = string
-  default = "k8s4"
+  description = "既存control-planeのSSHホスト。空の場合はkubeadm initを実行し、設定されている場合はclusterが存在すればjoinする"
+  type        = string
+  default     = ""
 }
 
 variable "control_plane_ssh_user" {
@@ -32,7 +45,7 @@ variable "control_plane_ssh_user" {
 variable "remove_dead_control_plane_ips" {
   description = "etcdから削除する死んだcontrol-planeのIPリスト (スペース区切り)"
   type        = string
-  default     = "192.168.1.106"
+  default     = ""
 }
 
 variable "ssh_key_bitwarden_id" {

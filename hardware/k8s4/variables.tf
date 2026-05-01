@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.20"
+  default = "192.168.1.120"
 }
 
 variable "ssh_user" {
@@ -14,14 +14,14 @@ variable "k8s_endpoint" {
 }
 
 variable "k8s_version" {
-  description = "Kubernetes minor version (e.g. 1.29)"
+  description = "Kubernetes minor version (e.g. 1.32)"
   type        = string
-  default     = "1.29"
+  default     = "1.32"
 }
 
 variable "control_plane_host" {
   type    = string
-  default = "k8s4"
+  default = "k8s1"
 }
 
 variable "control_plane_ssh_user" {
@@ -32,7 +32,7 @@ variable "control_plane_ssh_user" {
 variable "remove_dead_control_plane_ips" {
   description = "etcdから削除する死んだcontrol-planeのIPリスト (スペース区切り)"
   type        = string
-  default     = "192.168.1.106"
+  default     = ""
 }
 
 variable "ssh_key_bitwarden_id" {
