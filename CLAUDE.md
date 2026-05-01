@@ -5,16 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Running Terraform
 
-Each node is an independent Terraform root module. Use the `run.sh` wrapper in the node's directory — it fetches R2 credentials from Bitwarden and passes all arguments to `terraform`:
+Each node is an independent Terraform root module. Use the shared `hardware/run.sh` — it fetches R2 credentials from Bitwarden and passes all arguments to `terraform`:
 
 ```bash
+# Usage: ./hardware/run.sh <module> <terraform-args...>
+# module: k8s1, k8s2, k8s4, k8s-worker5, . (hardware/ 自体)
+
 # Initialize (first time or after provider changes)
-./hardware/k8s2/run.sh init
+./hardware/run.sh k8s1 init
 
 # Plan / apply / destroy
-./hardware/k8s2/run.sh plan
-./hardware/k8s2/run.sh apply
-./hardware/k8s2/run.sh destroy
+./hardware/run.sh k8s1 plan
+./hardware/run.sh k8s1 apply
+./hardware/run.sh k8s1 destroy
 ```
 
 `BWS_ACCESS_TOKEN` must be set in the environment before running any of these.
@@ -23,9 +26,13 @@ Each node is an independent Terraform root module. Use the `run.sh` wrapper in t
 
 ```
 hardware/
-  run.sh              # wrapper: injects R2 creds via bws, runs terraform
+  run.sh              # 共通wrapper: R2クレデンシャル取得 + terraform実行
   main.tf             # original combined module (worker at 192.168.1.50)
+  modules/
+    k8s-control-plane/  # control-plane共通モジュール
+  k8s1/               # control-plane node at 192.168.1.103 (クラスタ初期化ノード)
   k8s2/               # control-plane node at 192.168.1.20
+  k8s4/               # control-plane node at 192.168.1.120
   k8s-worker5/        # worker node at 192.168.1.50
 application/          # empty (future use)
 platform/             # empty (future use)
@@ -70,22 +77,24 @@ The `sudo -S bash -c '...'` inner commands use single quotes on the SSH command 
 
 ### `run.sh` pattern
 
-All `run.sh` files follow this structure:
+`hardware/run.sh` が唯一のエントリーポイント。モジュール名を第1引数に取る:
 
 ```bash
 #!/usr/bin/env bash
 set -ue
 script_dir=$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)
+module="${1:?Usage: $0 <module> <terraform-args...>}"
+shift
 export AWS_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY
 AWS_ACCESS_KEY_ID=$(bws secret get <uuid> | jq -r '.value')
 AWS_SECRET_ACCESS_KEY=$(bws secret get <uuid> | jq -r '.value')
-terraform -chdir="$script_dir" "$@"
+terraform -chdir="$script_dir/$module" "$@"
 ```
 
 ### Adding a new node
 
-1. Create `hardware/<node-name>/` with `main.tf`, `variables.tf`, `versions.tf`, `outputs.tf`, `run.sh`
+1. Create `hardware/<node-name>/` with `main.tf`, `variables.tf`, `versions.tf`, `outputs.tf`
 2. Set the backend `key` to `hardware/<last-octet>/terraform.tfstate`
 3. Copy the appropriate `main.tf` template (worker or control-plane) and update `variables.tf` defaults for the new host IP
-4. Run `./hardware/<node-name>/run.sh init` then `apply`
+4. Run `./hardware/run.sh <node-name> init` then `apply`

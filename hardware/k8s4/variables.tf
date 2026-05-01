@@ -44,3 +44,14 @@ variable "sudo_password_bitwarden_id" {
   type    = string
   default = "52b44d60-7cab-429f-929a-b4340139b6d8"
 }
+
+variable "bgp_local_as" {
+  type    = number
+  default = 65000
+}
+
+variable "bgp_peers" {
+  description = "iBGPピアのIPリスト"
+  type        = list(string)
+  default     = ["192.168.1.103", "192.168.1.20"]
+}

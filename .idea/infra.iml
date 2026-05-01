@@ -6,6 +6,7 @@
       <excludeFolder url="file://$MODULE_DIR$/hardware/.terraform" />
       <excludeFolder url="file://$MODULE_DIR$/hardware/k8s2/.terraform" />
       <excludeFolder url="file://$MODULE_DIR$/hardware/k8s1/.terraform" />
+      <excludeFolder url="file://$MODULE_DIR$/hardware/k8s4/.terraform" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

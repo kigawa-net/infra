@@ -62,3 +62,17 @@ module "control_plane" {
   join_ca_cert_hash    = data.external.join_info.result.ca_cert_hash
   join_certificate_key = data.external.join_info.result.certificate_key
 }
+
+module "bgp" {
+  depends_on = [module.control_plane]
+  source     = "../modules/bgp-bird"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  bgp_router_id = var.host
+  bgp_local_as  = var.bgp_local_as
+  bgp_peers     = var.bgp_peers
+}
