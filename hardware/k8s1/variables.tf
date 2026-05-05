@@ -68,3 +68,20 @@ variable "bgp_peers" {
   type        = list(string)
   default     = ["192.168.1.20", "192.168.1.120"]
 }
+
+variable "kube_vip_address" {
+  description = "コントロールプレーンVIPのIPアドレス"
+  type        = string
+  default     = "192.168.1.100"
+}
+
+variable "kube_vip_interface" {
+  type    = string
+  default = "ens18"
+}
+
+variable "dns_vip" {
+  description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
+  type        = string
+  default     = "192.168.1.53"
+}

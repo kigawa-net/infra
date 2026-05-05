@@ -37,3 +37,15 @@ variable "bgp_peers" {
   type        = list(string)
   default     = []
 }
+
+variable "kube_vip_as" {
+  description = "kube-vipのAS番号 (BIRD2と区別するため別ASを使用)"
+  type        = number
+  default     = 65001
+}
+
+variable "advertised_vips" {
+  description = "BGP経由で広告するVIPのIPリスト (各ノードのloopbackに追加してstaticルートで広告)"
+  type        = list(string)
+  default     = []
+}

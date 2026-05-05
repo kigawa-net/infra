@@ -82,7 +82,47 @@ module "bgp" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  bgp_router_id = var.host
-  bgp_local_as  = var.bgp_local_as
-  bgp_peers     = var.bgp_peers
+  bgp_router_id   = var.host
+  bgp_local_as    = var.bgp_local_as
+  bgp_peers       = var.bgp_peers
+  advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
+}
+
+module "kube_vip" {
+  depends_on = [module.control_plane]
+  source     = "../modules/kube-vip"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  vip_address   = var.kube_vip_address
+  interface     = var.kube_vip_interface
+  api_server_ip = "192.168.1.104"
+}
+
+module "knot" {
+  depends_on = [module.control_plane]
+  source     = "../modules/knot"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  zones = {
+    "kigawa.net"  = file("${path.module}/../zones/kigawa.net.zone")
+    "onemc.world" = file("${path.module}/../zones/onemc.world.zone")
+  }
+}
+
+module "knot_resolver" {
+  depends_on = [module.knot]
+  source     = "../modules/knot-resolver"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
 }

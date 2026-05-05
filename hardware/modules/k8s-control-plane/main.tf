@@ -1,4 +1,25 @@
+resource "null_resource" "disable_swap" {
+  triggers = {
+    host = var.host
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = var.ssh_private_key
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${var.sudo_password}' | sudo -S bash -c 'swapoff -a; sed -i \"/swap/d\" /etc/fstab; echo swap disabled'",
+    ]
+  }
+}
+
 resource "null_resource" "control_plane" {
+  depends_on = [null_resource.disable_swap]
+
   triggers = {
     host = var.host
   }
@@ -39,9 +60,6 @@ resource "null_resource" "control_plane" {
         fi
       }
       trap cleanup EXIT
-
-      swapoff -a
-      sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
 
       apt-get update -y
       apt-get install -y kmod
