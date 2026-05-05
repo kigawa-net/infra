@@ -117,9 +117,9 @@ module "knot" {
   }
 }
 
-module "knot_resolver" {
+module "dnsmasq" {
   depends_on = [module.knot]
-  source     = "../modules/knot-resolver"
+  source     = "../modules/dnsmasq"
 
   host            = var.host
   ssh_user        = var.ssh_user
