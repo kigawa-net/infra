@@ -1,7 +1,5 @@
 locals {
   kresd_conf = <<-CONF
-workers: 0
-
 logging:
   level: notice
 
@@ -33,55 +31,12 @@ forward:
       - 1.1.1.1
       - 1.0.0.1
 CONF
-
-  pod_manifest = <<-POD
-apiVersion: v1
-kind: Pod
-metadata:
-  name: knot-resolver
-  namespace: kube-system
-  annotations:
-    config-hash: "${sha256(local.kresd_conf)}"
-spec:
-  hostNetwork: true
-  priorityClassName: system-node-critical
-  containers:
-  - name: kresd
-    image: ${var.kresd_image}
-    args: ["-c", "/etc/knot-resolver/kresd.conf"]
-    securityContext:
-      capabilities:
-        add:
-        - NET_BIND_SERVICE
-    volumeMounts:
-    - name: kresd-config
-      mountPath: /etc/knot-resolver
-      readOnly: true
-    - name: kresd-cache
-      mountPath: /var/cache/knot-resolver
-    - name: kresd-run
-      mountPath: /var/run/knot-resolver
-  volumes:
-  - name: kresd-config
-    hostPath:
-      path: /etc/knot-resolver
-      type: DirectoryOrCreate
-  - name: kresd-cache
-    hostPath:
-      path: /var/cache/knot-resolver
-      type: DirectoryOrCreate
-  - name: kresd-run
-    hostPath:
-      path: /var/run/knot-resolver
-      type: DirectoryOrCreate
-POD
 }
 
 resource "null_resource" "knot_resolver" {
   triggers = {
     host       = var.host
     kresd_conf = local.kresd_conf
-    pod_yaml   = local.pod_manifest
   }
 
   connection {
@@ -93,7 +48,9 @@ resource "null_resource" "knot_resolver" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S mkdir -p /etc/knot-resolver /var/cache/knot-resolver /var/run/knot-resolver",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'apt-get update && apt-get install -y knot-resolver'",
+      "echo '${var.sudo_password}' | sudo -S mkdir -p /var/cache/knot-resolver /var/run/knot-resolver",
+      "echo '${var.sudo_password}' | sudo -S chown -R _knot-resolver: /var/cache/knot-resolver /var/run/knot-resolver",
     ]
   }
 
@@ -102,16 +59,12 @@ resource "null_resource" "knot_resolver" {
     destination = "/tmp/kresd.conf"
   }
 
-  provisioner "file" {
-    content     = local.pod_manifest
-    destination = "/tmp/knot-resolver-pod.yaml"
-  }
-
   provisioner "remote-exec" {
     inline = [
       "echo '${var.sudo_password}' | sudo -S cp /tmp/kresd.conf /etc/knot-resolver/kresd.conf",
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/knot-resolver-pod.yaml /etc/kubernetes/manifests/knot-resolver.yaml",
-      "rm -f /tmp/kresd.conf /tmp/knot-resolver-pod.yaml",
+      "echo '${var.sudo_password}' | sudo -S systemctl enable knot-resolver",
+      "echo '${var.sudo_password}' | sudo -S systemctl restart knot-resolver",
+      "echo '${var.sudo_password}' | sudo -S rm -f /tmp/kresd.conf",
     ]
   }
 }

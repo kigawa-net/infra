@@ -16,57 +16,12 @@ ${local.zone_blocks}
 
 ${var.extra_config}
 CONF
-
-  pod_manifest = <<-POD
-apiVersion: v1
-kind: Pod
-metadata:
-  name: knot
-  namespace: kube-system
-  annotations:
-    config-hash: "${sha256(local.knot_conf)}"
-spec:
-  hostNetwork: true
-  priorityClassName: system-node-critical
-  containers:
-  - name: knot
-    image: ${var.knot_image}
-    command: ["knotd", "-c", "/etc/knot/knot.conf"]
-    securityContext:
-      runAsUser: 0
-      capabilities:
-        add:
-        - NET_BIND_SERVICE
-    volumeMounts:
-    - name: knot-config
-      mountPath: /etc/knot
-      readOnly: true
-    - name: knot-data
-      mountPath: /var/lib/knot
-    - name: knot-run
-      mountPath: /run/knot
-  volumes:
-  - name: knot-config
-    hostPath:
-      path: /etc/knot
-      type: DirectoryOrCreate
-  - name: knot-data
-    hostPath:
-      path: /var/lib/knot
-      type: DirectoryOrCreate
-  - name: knot-run
-    hostPath:
-      path: /run/knot
-      type: DirectoryOrCreate
-POD
 }
 
 resource "null_resource" "knot" {
   triggers = {
     host      = var.host
     knot_conf = local.knot_conf
-    zones     = jsonencode(var.zones)
-    pod_yaml  = local.pod_manifest
   }
 
   connection {
@@ -77,12 +32,10 @@ resource "null_resource" "knot" {
   }
 
   provisioner "remote-exec" {
-    inline = concat(
-      ["echo '${var.sudo_password}' | sudo -S mkdir -p /etc/knot /var/lib/knot /run/knot"],
-      [for zone_name, zone_content in var.zones :
-        "echo '${var.sudo_password}' | sudo -S bash -c 'echo ${base64encode(zone_content)} | base64 -d > /var/lib/knot/${zone_name}.zone'"
-      ]
-    )
+    inline = [
+      "echo '${var.sudo_password}' | sudo -S bash -c 'apt-get update && apt-get install -y knot'",
+      "echo '${var.sudo_password}' | sudo -S mkdir -p /var/lib/knot",
+    ]
   }
 
   provisioner "file" {
@@ -90,16 +43,34 @@ resource "null_resource" "knot" {
     destination = "/tmp/knot.conf"
   }
 
-  provisioner "file" {
-    content     = local.pod_manifest
-    destination = "/tmp/knot-pod.yaml"
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${var.sudo_password}' | sudo -S cp /tmp/knot.conf /etc/knot/knot.conf",
+    ]
+  }
+
+  # Deploy zone files with base64 encoding
+  provisioner "remote-exec" {
+    inline = concat(
+      ["echo 'Deploying zone files...'"],
+      [for zone_name, zone_content in var.zones :
+        "echo '${var.sudo_password}' | sudo -S bash -c 'echo ${base64encode(zone_content)} | base64 -d > /var/lib/knot/${zone_name}.zone'"
+      ]
+    )
   }
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/knot.conf /etc/knot/knot.conf",
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/knot-pod.yaml /etc/kubernetes/manifests/knot.yaml",
-      "rm -f /tmp/knot.conf /tmp/knot-pod.yaml",
+      "echo '${var.sudo_password}' | sudo -S chown -R _knot: /var/lib/knot 2>/dev/null || true",
+      "echo '${var.sudo_password}' | sudo -S systemctl enable knot",
+      "echo '${var.sudo_password}' | sudo -S systemctl restart knot",
+      "echo 'Knot configured and started'",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "rm -f /tmp/knot.conf",
     ]
   }
 }
