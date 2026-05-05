@@ -1,6 +1,6 @@
 locals {
   kresd_conf = <<-CONF
-workers: 1
+workers: 0
 
 logging:
   level: notice
@@ -28,18 +28,10 @@ forward:
 %{~ endfor ~}
   - subtree: "."
     servers:
-      - address: "8.8.8.8"
-        transport: tls
-        hostname: "dns.google"
-      - address: "8.8.4.4"
-        transport: tls
-        hostname: "dns.google"
-      - address: "1.1.1.1"
-        transport: tls
-        hostname: "cloudflare-dns.com"
-      - address: "1.0.0.1"
-        transport: tls
-        hostname: "cloudflare-dns.com"
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+      - 1.0.0.1
 CONF
 
   pod_manifest = <<-POD
