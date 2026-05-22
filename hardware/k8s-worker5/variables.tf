@@ -15,14 +15,14 @@ variable "k8s_endpoint" {
 }
 
 variable "k8s_version" {
-  description = "Kubernetes minor version (e.g. 1.32)"
+  description = "Kubernetes minor version (e.g. 1.29)"
   type        = string
-  default     = "1.32"
+  default     = "1.29"
 }
 
 variable "control_plane_host" {
   type    = string
-  default = "k8s4"
+  default = "192.168.1.120"
 }
 
 variable "control_plane_ssh_user" {

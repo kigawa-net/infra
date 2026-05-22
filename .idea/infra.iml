@@ -7,6 +7,8 @@
       <excludeFolder url="file://$MODULE_DIR$/hardware/k8s2/.terraform" />
       <excludeFolder url="file://$MODULE_DIR$/hardware/k8s1/.terraform" />
       <excludeFolder url="file://$MODULE_DIR$/hardware/k8s4/.terraform" />
+      <excludeFolder url="file://$MODULE_DIR$/hardware/k8s-worker5/.terraform" />
+      <excludeFolder url="file://$MODULE_DIR$/hardware/k8s-worker3/.terraform" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
