@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Conventions
 
 - 日本語で話す。
+- GitHub の操作（issue・PR の作成・閲覧・コメント・レビューなど）はすべて `gh` コマンドで行う。
 
 ## Running Terraform
 
