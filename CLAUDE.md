@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 日本語で話す。
 - GitHub の操作（issue・PR の作成・閲覧・コメント・レビューなど）はすべて `gh` コマンドで行う。
+- 作業フロー: issue 作成 → ブランチ作成 → 実装 → PR 作成（`Closes #N` を body に記載）→ レビュー → マージ。
+  - ブランチ名は `<type>/<short-description>` 形式（例: `feat/add-node`, `fix/dns-config`）。
+  - PR は必ずレビューを経てからマージする。直接 `main` にコミットしない。
+  - issueのクローズはPRマージ時に自動で行う（手動closeしない）。
 
 ## Running Terraform
 
