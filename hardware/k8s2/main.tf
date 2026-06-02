@@ -89,7 +89,7 @@ module "kube_vip" {
 
   vip_address   = var.kube_vip_address
   interface     = var.kube_vip_interface
-  api_server_ip = "192.168.1.104"
+  api_server_ip = "192.168.1.100"
 }
 
 module "knot" {
