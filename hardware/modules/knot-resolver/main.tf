@@ -50,7 +50,7 @@ resource "null_resource" "knot_resolver" {
     inline = [
       # CZ.NIC repo を追加して knot-resolver v6 をインストール
       # Ubuntu 22.04 の標準リポジトリは v5 (YAML設定非対応)、Ubuntu 24.04 では削除済みのため
-      "echo '${var.sudo_password}' | sudo -S bash -c 'apt-get install -y curl gpg && mkdir -p /etc/apt/keyrings && curl -fsSL https://pkg.labs.nic.cz/doc/repository.gpg | gpg --dearmor --yes -o /etc/apt/keyrings/labs-nic-cz-knot-resolver.gpg && . /etc/os-release && echo \"deb [signed-by=/etc/apt/keyrings/labs-nic-cz-knot-resolver.gpg] https://pkg.labs.nic.cz/knot-resolver $${VERSION_CODENAME} main\" > /etc/apt/sources.list.d/labs-nic-cz-knot-resolver.list && apt-get update && apt-get install -y knot-resolver'",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'apt-get install -y curl gpg && mkdir -p /etc/apt/keyrings && curl -fsSL https://keys.openpgp.org/vks/v1/by-fingerprint/CC57AC4EDA32021608543664D959241751179EC7 | gpg --dearmor --yes -o /etc/apt/keyrings/labs-nic-cz-knot-resolver.gpg && . /etc/os-release && echo \"deb [signed-by=/etc/apt/keyrings/labs-nic-cz-knot-resolver.gpg] https://pkg.labs.nic.cz/knot-resolver $${VERSION_CODENAME} main\" > /etc/apt/sources.list.d/labs-nic-cz-knot-resolver.list && apt-get update && apt-get install -y knot-resolver'",
       "echo '${var.sudo_password}' | sudo -S mkdir -p /var/cache/knot-resolver /var/run/knot-resolver",
       "echo '${var.sudo_password}' | sudo -S bash -c 'chown -R knot-resolver: /var/cache/knot-resolver /var/run/knot-resolver 2>/dev/null || chown -R _knot-resolver: /var/cache/knot-resolver /var/run/knot-resolver'",
     ]
