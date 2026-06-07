@@ -51,11 +51,16 @@ BGP peer は WireGuard 内部のみで張る。
 | kube-vip               | static Pod                |
 | alice                  | Kubernetesなし、1ホスト   |
 
-既存の重要方針として、kube-vip の API参照先は HAProxy `192.168.1.104` ではなく、VIP `192.168.1.100` を正とする。
+既存の重要方針として、Kubernetes API の利用者向け endpoint は VIP `192.168.1.100` を正とする。
+
+kube-vip 自身の leader election 用 API 参照先は、VIP 喪失時の自己参照デッドロックを避けるため、既存 HAProxy `192.168.1.104` または正常な control-plane を使う。
 
 ```text
 Kubernetes API endpoint:
   192.168.1.100:6443
+
+kube-vip leader election API endpoint:
+  192.168.1.104:6443
 ```
 
 ---
