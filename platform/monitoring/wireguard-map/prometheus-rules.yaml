@@ -1,0 +1,72 @@
+groups:
+  - name: wireguard-network-map
+    rules:
+      - alert: WireGuardTunnelDown
+        expr: probe_success{job="blackbox-wireguard"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: wireguard
+        annotations:
+          summary: "WireGuard tunnel probe failed: {{ $labels.instance }}"
+          description: "blackbox ICMP probe to {{ $labels.instance }} has failed for 5 minutes."
+
+      - alert: WireGuardHandshakeStale
+        expr: time() - wireguard_latest_handshake_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+          component: wireguard
+        annotations:
+          summary: "WireGuard handshake is stale on {{ $labels.instance }}"
+          description: "Latest WireGuard handshake age is over 300 seconds."
+
+      - alert: AliceHAProxyDown
+        expr: node_systemd_unit_state{instance="alice-01", name="haproxy.service", state="active"} != 1
+        for: 3m
+        labels:
+          severity: critical
+          component: haproxy
+        annotations:
+          summary: "alice HAProxy is not active"
+          description: "haproxy.service on alice-01 is not active. Public HTTP/HTTPS/Minecraft forwarding may be down."
+
+      - alert: AliceFRRDown
+        expr: node_systemd_unit_state{instance="alice-01", name="frr.service", state="active"} != 1
+        for: 3m
+        labels:
+          severity: critical
+          component: bgp
+        annotations:
+          summary: "alice FRR is not active"
+          description: "frr.service on alice-01 is not active. BGP route exchange may be down."
+
+      - alert: WireGuardServiceDown
+        expr: node_systemd_unit_state{name="wg-quick@wg0.service", state="active"} != 1
+        for: 3m
+        labels:
+          severity: critical
+          component: wireguard
+        annotations:
+          summary: "WireGuard service is not active on {{ $labels.instance }}"
+          description: "wg-quick@wg0.service is not active."
+
+      - alert: InuyamaBackendUnreachable
+        expr: probe_success{job="blackbox-alice-backends"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "alice backend probe failed: {{ $labels.instance }}"
+          description: "TCP probe from Prometheus/blackbox to {{ $labels.instance }} has failed for 5 minutes."
+
+      - alert: WireGuardHighRTT
+        expr: probe_duration_seconds{job="blackbox-wireguard"} > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: wireguard
+        annotations:
+          summary: "WireGuard RTT is high: {{ $labels.instance }}"
+          description: "WireGuard probe duration is over 200ms for 10 minutes."

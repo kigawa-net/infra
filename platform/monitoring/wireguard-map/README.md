@@ -1,0 +1,46 @@
+# WireGuard Network Map Monitoring Assets
+
+`inuyama` / `alice` 間の WireGuard gateway を Grafana でネットワークマップ表示するための雛形です。
+
+関連設計書:
+
+- `docs/alice-gateway-design.md`
+- `docs/wireguard-network-map-design.md`
+
+## Files
+
+| File | 用途 |
+| --- | --- |
+| `prometheus-scrape.yaml` | node / wireguard / blackbox scrape設定例 |
+| `blackbox-modules.yaml` | ICMP/TCP probe module設定例 |
+| `prometheus-rules.yaml` | tunnel/backend/host/service alert rule例 |
+| `grafana-dashboard.json` | Grafana dashboard import用JSON |
+
+## 現状トポロジ
+
+```text
+Internet / Client
+  -> alice-01:80/443/25565
+  -> HAProxy
+  -> WireGuard wg0
+  -> k8s4 wg0
+  -> inuyama backend VIPs
+```
+
+| Endpoint | Address |
+| --- | --- |
+| `k8s4 wg0` | `172.31.255.1` |
+| `alice wg0` | `172.31.255.2` |
+| Ingress VIP | `192.168.1.240` |
+| Minecraft VIP | `192.168.1.241` |
+
+## 使い方
+
+1. `prometheus-scrape.yaml` のtargetsを既存Prometheus設定に取り込む。
+2. `blackbox-modules.yaml` のmoduleを既存blackbox_exporter設定に取り込む。
+3. `prometheus-rules.yaml` をPrometheus ruleとして読み込む。
+4. `grafana-dashboard.json` をGrafanaにimportする。
+
+`grafana-dashboard.json` の先頭パネルは `type: canvas` の固定配置ネットワークマップです。下段のStat/Time seriesパネルはPrometheus query-backedです。Canvas上の動的色分けはGrafana上でmetric-value要素を調整して追加してください。
+
+`alice-01` の exporter はpublic internetへ公開せず、WireGuard内部または監視拠点からだけscrapeしてください。
