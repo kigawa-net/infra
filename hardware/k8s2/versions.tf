@@ -2,9 +2,9 @@ terraform {
   required_version = ">= 1.6"
 
   backend "s3" {
-    bucket   = "infra"
-    key      = "hardware/20/terraform.tfstate"
-    region   = "auto"
+    bucket = "infra"
+    key    = "hardware/20/terraform.tfstate"
+    region = "auto"
     endpoints = {
       s3 = "https://e9f30fd43ef4cc3d46050e34dad5c811.r2.cloudflarestorage.com"
     }

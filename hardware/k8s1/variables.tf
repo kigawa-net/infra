@@ -80,6 +80,12 @@ variable "kube_vip_interface" {
   default = "ens18"
 }
 
+variable "kube_vip_api_server_ip" {
+  description = "kube-vipがリーダー選出で参照するAPIサーバーIP"
+  type        = string
+  default     = "192.168.1.104"
+}
+
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string

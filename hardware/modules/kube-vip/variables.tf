@@ -50,6 +50,6 @@ variable "bgp_peer_as" {
 }
 
 variable "api_server_ip" {
-  description = "リーダー選出用APIサーバーIP。bootstrap時はhaproxy(192.168.1.104)、VIP稼働後は192.168.1.100に変更してhaproxyを廃止可能"
+  description = "kube-vipがリーダー選出で参照するAPIサーバーIP。VIP自身を指定するとVIP喪失時に自己参照で復旧不能になるため、HAProxyまたは正常なcontrol-planeを指定する"
   type        = string
 }
