@@ -14,6 +14,22 @@ data "external" "sudo_password" {
   ]
 }
 
+data "external" "inuyama_wireguard_private_key" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.inuyama_wireguard_private_key_bitwarden_id}" | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "inuyama_wireguard_public_key" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
@@ -63,8 +79,98 @@ module "control_plane" {
   join_certificate_key = data.external.join_info.result.certificate_key
 }
 
-module "bgp" {
+resource "null_resource" "inuyama_wireguard" {
   depends_on = [module.control_plane]
+
+  triggers = {
+    host                  = var.host
+    interface             = var.inuyama_wireguard_interface
+    address               = var.inuyama_wireguard_address
+    listen_port           = tostring(var.wireguard_listen_port)
+    alice_address         = var.alice_wireguard_address
+    alice_public_key      = sha256(var.alice_wireguard_public_key)
+    alice_endpoint        = var.alice_wireguard_endpoint
+    inuyama_public_key    = sha256(data.external.inuyama_wireguard_public_key.result.value)
+    private_key_secret_id = var.inuyama_wireguard_private_key_bitwarden_id
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = data.external.inuyama_wireguard_private_key.result.value
+    destination = "/tmp/inuyama-wireguard-private.key"
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -eo pipefail
+      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      umask 077
+      exec > >(tee -a /tmp/inuyama-wireguard-setup.log) 2>&1
+
+      case "${var.inuyama_wireguard_interface}" in
+        ""|*[!a-zA-Z0-9._-]*)
+          echo "inuyama_wireguard_interface contains unsupported characters"
+          exit 1
+          ;;
+      esac
+
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -y
+      apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -f -y
+      apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y ca-certificates wireguard
+
+      install -d -m 700 /etc/wireguard
+
+      derived_public_key=$(wg pubkey < /tmp/inuyama-wireguard-private.key)
+      configured_public_key="${data.external.inuyama_wireguard_public_key.result.value}"
+      if [ "$derived_public_key" != "$configured_public_key" ]; then
+        echo "WireGuard private/public key pair mismatch"
+        exit 1
+      fi
+
+      install -m 600 /tmp/inuyama-wireguard-private.key /etc/wireguard/inuyama_private.key
+      printf '%s\n' "$configured_public_key" > /etc/wireguard/inuyama_public.key
+      chmod 600 /etc/wireguard/inuyama_private.key /etc/wireguard/inuyama_public.key
+      inuyama_private_key=$(cat /etc/wireguard/inuyama_private.key)
+
+      cat > /etc/wireguard/${var.inuyama_wireguard_interface}.conf <<WGCONF
+      [Interface]
+      Address = ${var.inuyama_wireguard_address}
+      ListenPort = ${var.wireguard_listen_port}
+      PrivateKey = $inuyama_private_key
+      MTU = ${var.wireguard_mtu}
+
+      [Peer]
+      PublicKey = ${var.alice_wireguard_public_key}
+      AllowedIPs = ${var.alice_wireguard_address}/32
+      Endpoint = ${var.alice_wireguard_endpoint}
+      PersistentKeepalive = 25
+      WGCONF
+
+      chmod 600 /etc/wireguard/${var.inuyama_wireguard_interface}.conf
+      systemctl enable wg-quick@${var.inuyama_wireguard_interface}
+      systemctl restart wg-quick@${var.inuyama_wireguard_interface}
+      wg show ${var.inuyama_wireguard_interface}
+    SCRIPT
+    destination = "/tmp/inuyama-wireguard-setup.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/inuyama-wireguard-setup.sh && rm -f /tmp/inuyama-wireguard-setup.sh /tmp/inuyama-wireguard-private.key",
+    ]
+  }
+}
+
+module "bgp" {
+  depends_on = [module.control_plane, null_resource.inuyama_wireguard]
   source     = "../modules/bgp-bird"
 
   host            = var.host
@@ -76,6 +182,16 @@ module "bgp" {
   bgp_local_as    = var.bgp_local_as
   bgp_peers       = var.bgp_peers
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
+  external_bgp_peers = [
+    {
+      local_ip        = trimsuffix(var.inuyama_wireguard_address, "/30")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = var.alice_wireguard_address
+      neighbor_as     = var.alice_bgp_as
+      import_prefixes = []
+      export_prefixes = ["192.168.1.0/24"]
+    }
+  ]
 }
 
 module "kube_vip" {
@@ -90,6 +206,111 @@ module "kube_vip" {
   vip_address   = var.kube_vip_address
   interface     = var.kube_vip_interface
   api_server_ip = "192.168.1.100"
+}
+
+resource "null_resource" "alice_gateway_services" {
+  depends_on = [module.control_plane]
+
+  triggers = {
+    host                   = var.host
+    metallb_namespace      = var.alice_metallb_namespace
+    metallb_pool_name      = var.alice_metallb_pool_name
+    metallb_base_range     = var.alice_metallb_base_range
+    metallb_reserved_range = var.alice_metallb_reserved_range
+    ingress_vip            = var.alice_ingress_vip
+    minecraft_vip          = var.alice_minecraft_vip
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -eo pipefail
+      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      exec > >(tee -a /tmp/alice-gateway-services.log) 2>&1
+
+      KUBECTL="kubectl --kubeconfig=/etc/kubernetes/admin.conf --server=https://${var.host}:6443 --request-timeout=30s"
+
+      for attempt in 1 2 3 4 5; do
+        if $KUBECTL get --raw=/readyz >/dev/null; then
+          break
+        fi
+        if [ "$attempt" = "5" ]; then
+          echo "kubernetes api is not ready"
+          exit 1
+        fi
+        sleep 5
+      done
+
+      $KUBECTL -n ${var.alice_metallb_namespace} patch ipaddresspool ${var.alice_metallb_pool_name} --type=merge -p '{"spec":{"addresses":["${var.alice_metallb_base_range}","${var.alice_metallb_reserved_range}"],"autoAssign":true,"avoidBuggyIPs":true}}'
+
+      cat > /tmp/alice-gateway-services.yaml <<YAML
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: alice-ingress
+        namespace: system
+        labels:
+          app.kigawa.net/component: alice-gateway
+          app.kigawa.net/managed-by: terraform
+      spec:
+        type: LoadBalancer
+        loadBalancerIP: ${var.alice_ingress_vip}
+        externalTrafficPolicy: Cluster
+        selector:
+          app.kubernetes.io/instance: haproxy
+          app.kubernetes.io/name: kubernetes-ingress
+        ports:
+        - appProtocol: http
+          name: http
+          port: 80
+          protocol: TCP
+          targetPort: http
+        - appProtocol: https
+          name: https
+          port: 443
+          protocol: TCP
+          targetPort: https
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: alice-minecraft
+        namespace: kigawa-net
+        labels:
+          app.kigawa.net/component: alice-gateway
+          app.kigawa.net/managed-by: terraform
+      spec:
+        type: LoadBalancer
+        loadBalancerIP: ${var.alice_minecraft_vip}
+        externalTrafficPolicy: Cluster
+        selector:
+          app: mc-router
+        ports:
+        - name: mc-router
+          port: 25565
+          protocol: TCP
+          targetPort: 25565
+      YAML
+
+      $KUBECTL apply -f /tmp/alice-gateway-services.yaml
+      $KUBECTL -n system get svc alice-ingress -o wide
+      $KUBECTL -n kigawa-net get svc alice-minecraft -o wide
+    SCRIPT
+    destination = "/tmp/alice-gateway-services.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash -c 'bash /tmp/alice-gateway-services.sh && rm -f /tmp/alice-gateway-services.sh /tmp/alice-gateway-services.yaml'",
+    ]
+  }
 }
 
 module "knot" {

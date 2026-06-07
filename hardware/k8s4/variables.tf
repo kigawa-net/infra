@@ -72,3 +72,88 @@ variable "dns_vip" {
   type        = string
   default     = "192.168.1.53"
 }
+
+variable "inuyama_wireguard_private_key_bitwarden_id" {
+  type    = string
+  default = "549fe18f-afa9-477e-b4ce-b45f0033e8f2"
+}
+
+variable "inuyama_wireguard_public_key_bitwarden_id" {
+  type    = string
+  default = "b389e2ea-5b86-4bbf-b795-b45f00340001"
+}
+
+variable "inuyama_wireguard_interface" {
+  type    = string
+  default = "wg0"
+}
+
+variable "inuyama_wireguard_address" {
+  type    = string
+  default = "172.31.255.1/30"
+}
+
+variable "alice_wireguard_address" {
+  type    = string
+  default = "172.31.255.2"
+}
+
+variable "alice_wireguard_public_key" {
+  type    = string
+  default = "/bsBpHC0xLxdncldAE1Qo7bWTIXgcJm3Vui6sZOtPhs="
+}
+
+variable "alice_wireguard_endpoint" {
+  type    = string
+  default = "161.248.62.66:51820"
+}
+
+variable "wireguard_listen_port" {
+  type    = number
+  default = 51820
+}
+
+variable "wireguard_mtu" {
+  type    = number
+  default = 1420
+}
+
+variable "inuyama_asn" {
+  type    = number
+  default = 65010
+}
+
+variable "alice_bgp_as" {
+  type    = number
+  default = 65020
+}
+
+variable "alice_metallb_namespace" {
+  type    = string
+  default = "metallb-system"
+}
+
+variable "alice_metallb_pool_name" {
+  type    = string
+  default = "main-pool"
+}
+
+variable "alice_metallb_base_range" {
+  type    = string
+  default = "192.168.1.50-192.168.1.99"
+}
+
+variable "alice_metallb_reserved_range" {
+  type    = string
+  default = "192.168.1.240-192.168.1.249"
+}
+
+variable "alice_ingress_vip" {
+  type    = string
+  default = "192.168.1.240"
+}
+
+variable "alice_minecraft_vip" {
+  type    = string
+  default = "192.168.1.241"
+}

@@ -49,3 +49,16 @@ variable "advertised_vips" {
   type        = list(string)
   default     = []
 }
+
+variable "external_bgp_peers" {
+  description = "eBGP peers with explicit prefix filters. Used for site-to-site peers outside the inuyama iBGP mesh."
+  type = list(object({
+    local_ip        = string
+    local_as        = number
+    neighbor_ip     = string
+    neighbor_as     = number
+    import_prefixes = list(string)
+    export_prefixes = list(string)
+  }))
+  default = []
+}

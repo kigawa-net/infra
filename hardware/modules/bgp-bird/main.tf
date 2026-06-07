@@ -6,6 +6,11 @@ locals {
     "protocol bgp peer${idx} {\n  local ${var.bgp_router_id} as ${var.bgp_local_as};\n  neighbor ${peer_ip} as ${var.bgp_local_as};\n  ipv4 {\n    import all;\n    export all;\n  };\n}"
   ])
 
+  external_peer_blocks = join("\n\n", [
+    for idx, peer in var.external_bgp_peers :
+    "protocol bgp external${idx} {\n  local ${peer.local_ip} as ${peer.local_as};\n  neighbor ${peer.neighbor_ip} as ${peer.neighbor_as};\n  ipv4 {\n    import filter {\n${join("\n", [for prefix in peer.import_prefixes : "      if net = ${prefix} then accept;"])}\n      reject;\n    };\n    export filter {\n${join("\n", [for prefix in peer.export_prefixes : "      if net = ${prefix} then accept;"])}\n      reject;\n    };\n  };\n}"
+  ])
+
   bird_conf = <<-CONF
 log syslog all;
 
@@ -36,6 +41,8 @@ protocol static local_vips {
 %{~ endfor }
 }
 %{~ endif }
+
+${local.external_peer_blocks}
 
 protocol bgp kube_vip {
   local ${local.bgp_loopback_ip} as ${var.bgp_local_as};
@@ -98,6 +105,7 @@ resource "null_resource" "bird" {
     pod_yaml        = local.pod_manifest
     bgp_loopback_ip = local.bgp_loopback_ip
     advertised_vips = join(",", var.advertised_vips)
+    external_peers  = jsonencode(var.external_bgp_peers)
   }
 
   connection {

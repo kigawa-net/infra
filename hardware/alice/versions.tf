@@ -3,7 +3,7 @@ terraform {
 
   backend "s3" {
     bucket = "infra"
-    key    = "hardware/120/terraform.tfstate"
+    key    = "hardware/66/terraform.tfstate"
     region = "auto"
     endpoints = {
       s3 = "https://e9f30fd43ef4cc3d46050e34dad5c811.r2.cloudflarestorage.com"
