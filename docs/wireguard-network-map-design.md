@@ -2,26 +2,25 @@
 
 **対象リポジトリ:** `kigawa-net/infra`
 **対象:** `inuyama` / `alice` 間の host + WireGuard 可視化
-**推奨方式:** 初期実装は Grafana Canvas。自動トポロジ化が必要になったら Node Graph を追加する。
+**推奨方式:** Shumoku topology YAML を正とし、Prometheus の値をリンク使用率・状態表示へ紐付ける。
 
 ---
 
 ## 1. 目的
 
-`host + WireGuard` の状態を単なる時系列グラフではなく、拠点、ホスト、WireGuard tunnel、LB/BGP の関係が分かるネットワークマップとして表示する。
+`host + WireGuard` の状態を単なる時系列グラフではなく、拠点、ホスト、WireGuard tunnel、LB/BGP、backend VIP の関係が分かるネットワークマップとして表示する。
 
-| 方式 | 向いている用途 |
+| 方式 | 位置づけ |
 | --- | --- |
-| Grafana Canvas / Node Graph | Prometheus中心で軽量にマップ化する |
-| NetBox + Grafana / Weathermap | 拠点、機器、回線情報も台帳管理する |
+| Shumoku | ネットワークトポロジーマップの正。YAMLをGit管理し、必要に応じてPrometheusを紐付ける |
+| Grafana Canvas / Node Graph | 既存Grafana監視の補助表示。時系列パネルやalert確認に使う |
+| NetBox + Shumoku | 機器、回線、IPAMを台帳管理したくなった場合の将来拡張 |
 
-初期段階では **Grafana Canvas** を採用する。理由は、`inuyama` / `alice` / host / `wg0` / LB / BGP の関係を固定配置でき、運用者が見たい構図にしやすいため。
+Shumokuを採用する理由は、ネットワーク図を `topology.yaml` としてレビュー可能なIaCにでき、Grafanaのパネル編集に依存せず host / port / link の関係を明示できるため。
 
 ---
 
 ## 2. 対象トポロジ
-
-### 2.1 現状
 
 現状のWireGuard endpointは `k8s4` と `alice-01` の1本を正とする。
 
@@ -44,12 +43,12 @@ k8s4
   - Kubernetes control-plane
    |
    v
-inuyama Kubernetes / MetalLB / Ingress / Minecraft
+inuyama Kubernetes / kube-vip LoadBalancer
+  - Ingress VIP: 192.168.1.240
+  - Minecraft backend VIP: 192.168.1.241
 ```
 
-### 2.2 将来拡張
-
-`k8s1`, `k8s2`, `k8s4` の各control-planeにWireGuard endpointを増やす場合は、star型で描く。
+将来 `k8s1`, `k8s2`, `k8s4` の各control-planeにWireGuard endpointを増やす場合は、`alice-01` を中心としたstar型にする。
 
 ```text
           k8s1
@@ -65,81 +64,68 @@ k8s2 -- alice-01 -- Internet / Client
 
 ---
 
-## 3. マップ分割
+## 3. Shumoku定義
 
-一枚に詰め込まず、運用では次の3枚に分ける。
+トポロジー定義は次を正とする。
 
-| Dashboard | 表示内容 |
-| --- | --- |
-| Physical map | site、host、LAN、router/switchの物理配置 |
-| Overlay map | WireGuard tunnel、BGP peer、handshake、RTT |
-| Service map | Client -> alice HAProxy -> WireGuard -> inuyama Service |
+```text
+platform/monitoring/wireguard-map/shumoku-topology.yaml
+```
 
-最小実装では **Overlay map** と **Service map** を1枚のCanvasにまとめてよい。
-
----
-
-## 4. 表示ノード
+ShumokuのYAMLは `nodes` と `links` で構成する。現状はOverlay mapとService mapを1枚にまとめる。
 
 | Node | Site | Role |
 | --- | --- | --- |
+| `internet-client` | external | public client |
 | `alice-01` | alice | public gateway, HAProxy, WireGuard endpoint, FRR/BGP |
-| `k8s1` | inuyama | Kubernetes control-plane / etcd |
-| `k8s2` | inuyama | Kubernetes control-plane / etcd |
 | `k8s4` | inuyama | Kubernetes control-plane / etcd, WireGuard endpoint, BIRD/BGP |
 | `inuyama-ingress-vip` | inuyama | `192.168.1.240`, HTTP/HTTPS backend VIP |
 | `minecraft-backend-vip` | inuyama | `192.168.1.241`, Minecraft backend VIP |
 
-ノード状態として次を表示する。
-
-| 表示 | Prometheus metric |
+| Link | 表示 |
 | --- | --- |
-| host up/down | `up{job="node"}` |
-| WireGuard service | `node_systemd_unit_state{name="wg-quick@wg0.service", state="active"}` |
-| CPU | `node_cpu_seconds_total` |
-| memory | `node_memory_*` |
-| wg0 RX/TX | `node_network_receive_bytes_total{device="wg0"}`, `node_network_transmit_bytes_total{device="wg0"}` |
-| HAProxy active | `node_systemd_unit_state{name="haproxy.service", state="active"}` |
-| BGP daemon active | `node_systemd_unit_state{name="frr.service", state="active"}` or BIRD exporter equivalent |
+| `internet-to-alice` | Internetからalice公開ポートへの入口 |
+| `alice-k8s4-wireguard` | WireGuard tunnel / BGP peer |
+| `k8s4-to-ingress` | HTTP/HTTPS backend path |
+| `k8s4-to-minecraft` | Minecraft backend path |
+
+生成物のSVG/HTML/PNGはコミットしない。必要なときにShumoku CLIまたはShumoku serverで生成する。
+
+```bash
+npx shumoku render platform/monitoring/wireguard-map/shumoku-topology.yaml -o /tmp/wireguard-map.svg
+npx shumoku render platform/monitoring/wireguard-map/shumoku-topology.yaml -f html -o /tmp/wireguard-map.html
+```
 
 ---
 
-## 5. 表示エッジ
+## 4. Prometheus連携
 
-現状の最小エッジは次の1本。
+Shumoku serverでライブ表示する場合は、TopologyのSettingsからPrometheusをMetrics Sourceとして追加し、Node MappingでShumoku nodeと監視対象hostを紐付ける。
 
-```text
-k8s4 wg0 <-> alice-01 wg0
-```
-
-Service mapでは次の流れを表示する。
-
-```text
-Internet / Client
-  -> alice-01:80/443/25565
-  -> alice HAProxy
-  -> wg0 tunnel
-  -> 192.168.1.240:80/443
-  -> 192.168.1.241:25565
-```
-
-エッジ状態として次を表示する。
-
-| 表示 | Prometheus metric / query |
+| Shumoku node | Prometheus対象 |
 | --- | --- |
-| RX bitrate | `rate(node_network_receive_bytes_total{device="wg0"}[5m]) * 8` |
-| TX bitrate | `rate(node_network_transmit_bytes_total{device="wg0"}[5m]) * 8` |
-| alice -> k8s4 bitrate | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
-| k8s4 -> alice bitrate | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
-| alice -> k8s4 traffic volume | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
-| k8s4 -> alice traffic volume | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
+| `alice-01` | `172.31.255.2:9100` or alice scrape label |
+| `k8s4` | `192.168.1.120:9100` or `k8s4` |
+| `inuyama-ingress-vip` | blackbox target `192.168.1.240:80`, `192.168.1.240:443` |
+| `minecraft-backend-vip` | blackbox target `192.168.1.241:25565` |
+
+現状は `k8s4` の `wg0` node_exporter metricsを使い、WireGuard linkの方向別trafficを表示する。
+
+| Direction | PromQL |
+| --- | --- |
+| `alice -> k8s4` bitrate | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
+| `k8s4 -> alice` bitrate | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
+| `alice -> k8s4` traffic volume | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
+| `k8s4 -> alice` traffic volume | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
 | handshake age | `time() - wireguard_latest_handshake_seconds` |
 | tunnel up/down | `probe_success{job="blackbox-wireguard"}` |
 | RTT | `probe_duration_seconds{job="blackbox-wireguard"}` |
 
+`alice-01` のnode_exporterをscrapeできるようになったら、alice側の `wg0` metricsもShumokuのリンク表示に追加する。
+
 ---
 
-## 6. Exporter構成
+## 5. Exporter構成
 
 各ホストに配置する。
 
@@ -153,14 +139,17 @@ wireguard_exporter
 ```text
 Prometheus
 blackbox_exporter
+Shumoku
 Grafana
 ```
 
-WireGuard exporterが未導入の場合でも、初期段階では `node_exporter` の `wg0` interface traffic と `blackbox_exporter` の疎通確認でCanvas化できる。
+WireGuard exporterが未導入の場合でも、初期段階では `node_exporter` の `wg0` interface traffic と `blackbox_exporter` の疎通確認でShumokuのリンク状態を表現する。
+
+`alice-01` のnode_exporterをpublic側で開けず、WireGuard内部またはPrometheus配置拠点からのみscrapeする。
 
 ---
 
-## 7. Prometheus scrape例
+## 6. Prometheus scrape例
 
 実環境の最小例。
 
@@ -197,83 +186,9 @@ scrape_configs:
         replacement: blackbox-exporter:9115
 ```
 
-`alice-01` のnode_exporterをpublic側で開けず、WireGuard内部またはPrometheus配置拠点からのみscrapeする。
-
 ---
 
-## 8. PromQL
-
-### Host up
-
-```promql
-up{job="node"}
-```
-
-### WireGuard service active
-
-```promql
-node_systemd_unit_state{name="wg-quick@wg0.service", state="active"}
-```
-
-### wg0 receive bitrate
-
-```promql
-rate(node_network_receive_bytes_total{device="wg0"}[5m]) * 8
-```
-
-### wg0 transmit bitrate
-
-```promql
-rate(node_network_transmit_bytes_total{device="wg0"}[5m]) * 8
-```
-
-### WireGuard handshake age
-
-```promql
-time() - wireguard_latest_handshake_seconds
-```
-
-### Tunnel reachability
-
-```promql
-probe_success{job="blackbox-wireguard"}
-```
-
-### Tunnel RTT
-
-```promql
-probe_duration_seconds{job="blackbox-wireguard"}
-```
-
----
-
-## 9. Grafana Canvas設計
-
-Canvasでは固定配置で表示する。
-
-```text
-[Internet]
-    |
-    | 80/443/25565
-    v
-[alice-01]
-  HAProxy: active
-  BGP: established
-  wg0: 172.31.255.2
-    |
-    | alice -> k8s4 bps + last 5m bytes
-    | k8s4 -> alice bps + last 5m bytes
-    | RTT ms / handshake age / OK
-    v
-[k8s4]
-  wg0: 172.31.255.1
-  BIRD: established
-    |
-    +--> [Ingress VIP 192.168.1.240]
-    +--> [Minecraft VIP 192.168.1.241]
-```
-
-色分けは次を標準にする。
+## 7. 表示状態としきい値
 
 | 状態 | 表示 |
 | --- | --- |
@@ -292,38 +207,7 @@ Canvasでは固定配置で表示する。
 
 ---
 
-## 10. Grafana Node Graph設計
-
-Node Graphを使う場合は、Prometheusの値をそのままではなく `nodes` / `edges` 形式へ加工する。
-
-### nodes
-
-```text
-id,title,subtitle,mainstat
-alice-01,alice-01,alice,UP
-k8s1,k8s1,inuyama,UP
-k8s2,k8s2,inuyama,UP
-k8s4,k8s4,inuyama,UP
-```
-
-### edges
-
-```text
-id,source,target,mainstat,secondarystat
-wg-k8s4-alice,k8s4,alice-01,42 Mbps,8 ms
-```
-
-この形式は Infinity datasource や JSON API datasource で返す。将来的に複数WireGuard endpointへ拡張する場合は、edgeを増やす。
-
-```text
-wg-k8s1-alice,k8s1,alice-01,15 Mbps,9 ms
-wg-k8s2-alice,k8s2,alice-01,18 Mbps,8 ms
-wg-k8s4-alice,k8s4,alice-01,42 Mbps,7 ms
-```
-
----
-
-## 11. Alert設計
+## 8. Alert設計
 
 最小アラートは次の通り。
 
@@ -337,17 +221,17 @@ wg-k8s4-alice,k8s4,alice-01,42 Mbps,7 ms
 
 ---
 
-## 12. 最小実装順
+## 9. 最小実装順
 
-1. `node_exporter` で `alice-01`, `k8s1`, `k8s2`, `k8s4` をscrapeする。
-2. `blackbox_exporter` で `172.31.255.1`, `172.31.255.2`, `192.168.1.240:80`, `192.168.1.240:443`, `192.168.1.241:25565` をprobeする。
-3. `wireguard_exporter` を `alice-01` と `k8s4` に入れてhandshake ageを取得する。
-4. Grafana Canvasで固定配置のOverlay/Service mapを作る。
-5. 必要になったら Node Graph用JSON APIを追加し、自動トポロジ化する。
+1. `platform/monitoring/wireguard-map/shumoku-topology.yaml` をShumokuへ登録する。
+2. `node_exporter` で `alice-01`, `k8s1`, `k8s2`, `k8s4` をscrapeする。
+3. `blackbox_exporter` で `172.31.255.1`, `172.31.255.2`, `192.168.1.240:80`, `192.168.1.240:443`, `192.168.1.241:25565` をprobeする。
+4. `wireguard_exporter` を `alice-01` と `k8s4` に入れてhandshake ageを取得する。
+5. Shumoku serverのPrometheus Metrics SourceとNode Mappingでtraffic / RTT / handshakeをリンクへ紐付ける。
 
 ---
 
-## 13. 結論
+## 10. 結論
 
 `host + WireGuard` のネットワークマップは次の構成で始める。
 
@@ -358,9 +242,12 @@ Prometheus
   `- blackbox_exporter
         |
         v
+Shumoku
+  |- topology.yaml: host / WireGuard / backend VIP の構造
+  `- Prometheus Metrics Source: traffic / RTT / status
+
 Grafana
-  |- Canvas: 固定配置のネットワークマップ
-  `- Node Graph: nodes/edges形式の自動トポロジ
+  `- 既存監視ダッシュボードと時系列確認
 ```
 
-初期実装は Grafana Canvas を正とする。
+初期実装は Shumoku topology YAML を正とする。
