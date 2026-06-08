@@ -129,6 +129,10 @@ Internet / Client
 | --- | --- |
 | RX bitrate | `rate(node_network_receive_bytes_total{device="wg0"}[5m]) * 8` |
 | TX bitrate | `rate(node_network_transmit_bytes_total{device="wg0"}[5m]) * 8` |
+| alice -> k8s4 bitrate | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
+| k8s4 -> alice bitrate | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` |
+| alice -> k8s4 traffic volume | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
+| k8s4 -> alice traffic volume | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
 | handshake age | `time() - wireguard_latest_handshake_seconds` |
 | tunnel up/down | `probe_success{job="blackbox-wireguard"}` |
 | RTT | `probe_duration_seconds{job="blackbox-wireguard"}` |
@@ -257,7 +261,9 @@ Canvasでは固定配置で表示する。
   BGP: established
   wg0: 172.31.255.2
     |
-    | RX/TX Mbps / RTT ms / handshake age / OK
+    | alice -> k8s4 bps + last 5m bytes
+    | k8s4 -> alice bps + last 5m bytes
+    | RTT ms / handshake age / OK
     v
 [k8s4]
   wg0: 172.31.255.1
