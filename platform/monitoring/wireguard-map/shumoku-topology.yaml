@@ -1,0 +1,55 @@
+name: inuyama-alice-wireguard
+
+nodes:
+  - id: internet-client
+    label: Internet / Client
+    type: cloud
+
+  - id: alice-01
+    label: alice-01
+    type: router
+    vendor: linux
+    model: HAProxy / FRR / WireGuard
+
+  - id: k8s4
+    label: k8s4
+    type: server
+    vendor: linux
+    model: Kubernetes / BIRD / WireGuard
+
+  - id: inuyama-ingress-vip
+    label: Ingress VIP 192.168.1.240
+    type: load-balancer
+    vendor: kubernetes
+    model: kube-vip LoadBalancer
+
+  - id: minecraft-backend-vip
+    label: Minecraft VIP 192.168.1.241
+    type: server
+    vendor: kubernetes
+    model: Minecraft Service
+
+links:
+  - id: internet-to-alice
+    from: internet-client
+    to: alice-01
+    label: public ingress tcp/80, tcp/443, tcp/25565
+    bandwidth: 1G
+
+  - id: alice-k8s4-wireguard
+    from: alice-01
+    to: k8s4
+    label: WireGuard wg0 172.31.255.2/30 <-> 172.31.255.1/30 / BGP
+    bandwidth: 1G
+
+  - id: k8s4-to-ingress
+    from: k8s4
+    to: inuyama-ingress-vip
+    label: HTTP/HTTPS backend tcp/80, tcp/443
+    bandwidth: 1G
+
+  - id: k8s4-to-minecraft
+    from: k8s4
+    to: minecraft-backend-vip
+    label: Minecraft backend tcp/25565
+    bandwidth: 1G

@@ -1,6 +1,6 @@
 # WireGuard Network Map Monitoring Assets
 
-`inuyama` / `alice` 間の WireGuard gateway を Grafana でネットワークマップ表示するための雛形です。
+`inuyama` / `alice` 間の WireGuard gateway を Shumoku でネットワークトポロジーマップ表示するための雛形です。
 
 関連設計書:
 
@@ -11,10 +11,10 @@
 
 | File | 用途 |
 | --- | --- |
+| `shumoku-topology.yaml` | Shumoku topology map定義 |
 | `prometheus-scrape.yaml` | node / wireguard / blackbox scrape設定例 |
 | `blackbox-modules.yaml` | ICMP/TCP probe module設定例 |
 | `prometheus-rules.yaml` | tunnel/backend/host/service alert rule例 |
-| `grafana-dashboard.json` | Grafana dashboard import用JSON |
 
 ## 現状トポロジ
 
@@ -39,17 +39,25 @@ Internet / Client
 1. `prometheus-scrape.yaml` のtargetsを既存Prometheus設定に取り込む。
 2. `blackbox-modules.yaml` のmoduleを既存blackbox_exporter設定に取り込む。
 3. `prometheus-rules.yaml` をPrometheus ruleとして読み込む。
-4. `grafana-dashboard.json` をGrafanaにimportする。
+4. `shumoku-topology.yaml` をShumokuへ登録する。
+5. Shumoku serverのMetrics SourceにPrometheusを追加し、Node Mappingで `alice-01`, `k8s4`, backend VIPを監視対象へ紐付ける。
 
-`grafana-dashboard.json` の先頭パネルは `type: canvas` の固定配置ネットワークマップです。WireGuard tunnel 上には query-backed の `metric-value` を置き、方向別に現在のbitrateと直近5分の転送量を表示します。下段のStat/Time seriesパネルもPrometheus query-backedです。
+CLIで静的図を生成する場合は次を使う。生成したSVG/HTML/PNGはコミットしない。
 
-Canvas上のトラフィック表示:
+```bash
+npx shumoku render platform/monitoring/wireguard-map/shumoku-topology.yaml -o /tmp/wireguard-map.svg
+npx shumoku render platform/monitoring/wireguard-map/shumoku-topology.yaml -f html -o /tmp/wireguard-map.html
+```
+
+Shumoku上のWireGuard linkには、Prometheus連携で方向別のbitrateと直近5分の転送量を表示する。
 
 | Direction | Bitrate | Traffic volume |
 | --- | --- | --- |
 | `alice -> k8s4` | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
 | `k8s4 -> alice` | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
 
-色分けはトラフィック量の強さを示します。障害状態は下段のprobe/handshake/serviceパネルとalert ruleを正としてください。
+色分けはトラフィック量の強さを示す。障害状態はprobe/handshake/service alert ruleを正とする。
+
+Grafana dashboard本体は `kigawa01/k8s-system` の `prometheus/wireguard-network-map-dashboard.yml` をArgoCDで同期する。これは既存監視の補助表示として残す。
 
 `alice-01` の exporter はpublic internetへ公開せず、WireGuard内部または監視拠点からだけscrapeしてください。

@@ -446,7 +446,7 @@ Kubernetes API `6443/tcp` は、aliceから運用上必要な場合のみ許可�
 
 `alice` と `inuyama` 間の host / WireGuard / BGP / HAProxy / backend VIP の可視化は、[WireGuard Network Map 設計書](wireguard-network-map-design.md) を正とする。
 
-最小構成では Grafana Canvas に以下を表示する。
+最小構成では Shumoku topology map に以下を表示する。
 
 | 対象 | 表示 |
 | --- | --- |
