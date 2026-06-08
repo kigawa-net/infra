@@ -18,7 +18,32 @@
         "x": 0,
         "y": 0
       },
-      "targets": [],
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m])) * 8",
+          "instant": true,
+          "legendFormat": "alice -> k8s4",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(node_network_transmit_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m])) * 8",
+          "instant": true,
+          "legendFormat": "k8s4 -> alice",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(increase(node_network_receive_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m]))",
+          "instant": true,
+          "legendFormat": "alice -> k8s4 5m",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(increase(node_network_transmit_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m]))",
+          "instant": true,
+          "legendFormat": "k8s4 -> alice 5m",
+          "refId": "D"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -26,20 +51,212 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "dark-gray",
                 "value": null
               },
               {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 10000000
+              },
+              {
+                "color": "orange",
+                "value": 50000000
+              },
+              {
                 "color": "red",
-                "value": 80
+                "value": 100000000
               }
             ]
           },
           "color": {
             "mode": "thresholds"
-          }
+          },
+          "unit": "bps",
+          "decimals": 1,
+          "noValue": "no data"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alice -> k8s4"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-gray",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10000000
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50000000
+                    },
+                    {
+                      "color": "red",
+                      "value": 100000000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "k8s4 -> alice"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bps"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-gray",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 10000000
+                    },
+                    {
+                      "color": "orange",
+                      "value": 50000000
+                    },
+                    {
+                      "color": "red",
+                      "value": 100000000
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alice -> k8s4 5m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-gray",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 67108864
+                    },
+                    {
+                      "color": "orange",
+                      "value": 268435456
+                    },
+                    {
+                      "color": "red",
+                      "value": 1073741824
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "k8s4 -> alice 5m"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-gray",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 67108864
+                    },
+                    {
+                      "color": "orange",
+                      "value": 268435456
+                    },
+                    {
+                      "color": "red",
+                      "value": 1073741824
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "inlineEditing": false,
@@ -230,7 +447,7 @@
                 "size": 14,
                 "text": {
                   "mode": "fixed",
-                  "fixed": "WireGuard tunnel / BGP over wg0\\nRX/TX Mbps / RTT / handshake",
+                  "fixed": "WireGuard tunnel / BGP over wg0\\nlive bps + last 5m volume / RTT / handshake",
                   "field": ""
                 }
               },
@@ -279,6 +496,304 @@
               "border": {
                 "color": {
                   "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "type": "rectangle",
+              "name": "traffic_alice_to_k8s4_bar",
+              "placement": {
+                "left": 650,
+                "top": 116,
+                "width": 288,
+                "height": 6
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "transparent"
+                },
+                "size": 1,
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "",
+                  "field": ""
+                }
+              },
+              "background": {
+                "color": {
+                  "field": "alice -> k8s4",
+                  "fixed": "#4C566A"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "type": "text",
+              "name": "traffic_alice_to_k8s4_label",
+              "placement": {
+                "left": 656,
+                "top": 124,
+                "width": 92,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#A3BE8C"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "alice -> k8s4",
+                  "field": ""
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "type": "metric-value",
+              "name": "traffic_alice_to_k8s4_bps",
+              "placement": {
+                "left": 754,
+                "top": 124,
+                "width": 92,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#ECEFF4"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "field",
+                  "fixed": "",
+                  "field": "alice -> k8s4"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2E3440"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#4C566A"
+                }
+              }
+            },
+            {
+              "type": "metric-value",
+              "name": "traffic_alice_to_k8s4_5m",
+              "placement": {
+                "left": 852,
+                "top": 124,
+                "width": 84,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#ECEFF4"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "field",
+                  "fixed": "",
+                  "field": "alice -> k8s4 5m"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2E3440"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#4C566A"
+                }
+              }
+            },
+            {
+              "type": "rectangle",
+              "name": "traffic_k8s4_to_alice_bar",
+              "placement": {
+                "left": 650,
+                "top": 156,
+                "width": 288,
+                "height": 6
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "transparent"
+                },
+                "size": 1,
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "",
+                  "field": ""
+                }
+              },
+              "background": {
+                "color": {
+                  "field": "k8s4 -> alice",
+                  "fixed": "#4C566A"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "type": "text",
+              "name": "traffic_k8s4_to_alice_label",
+              "placement": {
+                "left": 656,
+                "top": 164,
+                "width": 92,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#B48EAD"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "k8s4 -> alice",
+                  "field": ""
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              }
+            },
+            {
+              "type": "metric-value",
+              "name": "traffic_k8s4_to_alice_bps",
+              "placement": {
+                "left": 754,
+                "top": 164,
+                "width": 92,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#ECEFF4"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "field",
+                  "fixed": "",
+                  "field": "k8s4 -> alice"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2E3440"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#4C566A"
+                }
+              }
+            },
+            {
+              "type": "metric-value",
+              "name": "traffic_k8s4_to_alice_5m",
+              "placement": {
+                "left": 852,
+                "top": 164,
+                "width": 84,
+                "height": 24
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "config": {
+                "align": "center",
+                "valign": "middle",
+                "color": {
+                  "fixed": "#ECEFF4"
+                },
+                "size": 12,
+                "text": {
+                  "mode": "field",
+                  "fixed": "",
+                  "field": "k8s4 -> alice 5m"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2E3440"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#4C566A"
                 }
               }
             },
@@ -489,7 +1004,7 @@
                 "size": 14,
                 "text": {
                   "mode": "fixed",
-                  "fixed": "Status panels below are query-backed. This Canvas panel fixes the topology layout.",
+                  "fixed": "Canvas traffic labels are query-backed. Color indicates current bps / last 5m volume thresholds.",
                   "field": ""
                 }
               },
@@ -861,6 +1376,61 @@
           }
         }
       }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "wg0 traffic volume (last 5m)",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(node_network_receive_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m]))",
+          "legendFormat": "alice -> k8s4",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(node_network_transmit_bytes_total{instance=~\"(k8s4|192.168.1.120:9100)\", device=\"wg0\"}[5m]))",
+          "legendFormat": "k8s4 -> alice",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-gray",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              },
+              {
+                "color": "yellow",
+                "value": 67108864
+              },
+              {
+                "color": "orange",
+                "value": 268435456
+              },
+              {
+                "color": "red",
+                "value": 1073741824
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "30s",
@@ -882,6 +1452,6 @@
   "timezone": "browser",
   "title": "WireGuard Network Map - alice / inuyama",
   "uid": "wireguard-network-map-alice-inuyama",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

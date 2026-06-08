@@ -41,6 +41,15 @@ Internet / Client
 3. `prometheus-rules.yaml` をPrometheus ruleとして読み込む。
 4. `grafana-dashboard.json` をGrafanaにimportする。
 
-`grafana-dashboard.json` の先頭パネルは `type: canvas` の固定配置ネットワークマップです。下段のStat/Time seriesパネルはPrometheus query-backedです。Canvas上の動的色分けはGrafana上でmetric-value要素を調整して追加してください。
+`grafana-dashboard.json` の先頭パネルは `type: canvas` の固定配置ネットワークマップです。WireGuard tunnel 上には query-backed の `metric-value` を置き、方向別に現在のbitrateと直近5分の転送量を表示します。下段のStat/Time seriesパネルもPrometheus query-backedです。
+
+Canvas上のトラフィック表示:
+
+| Direction | Bitrate | Traffic volume |
+| --- | --- | --- |
+| `alice -> k8s4` | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
+| `k8s4 -> alice` | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|192.168.1.120:9100)", device="wg0"}[5m]))` |
+
+色分けはトラフィック量の強さを示します。障害状態は下段のprobe/handshake/serviceパネルとalert ruleを正としてください。
 
 `alice-01` の exporter はpublic internetへ公開せず、WireGuard内部または監視拠点からだけscrapeしてください。
