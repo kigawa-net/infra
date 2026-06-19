@@ -118,7 +118,7 @@ resource "null_resource" "alice_gateway" {
 
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
-      apt-get install -y ca-certificates frr haproxy iproute2 iptables ufw wireguard
+      apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
 
       install -d -m 700 /etc/wireguard
 
@@ -183,12 +183,16 @@ resource "null_resource" "alice_gateway" {
         ufw allow 25565/tcp
         ufw allow ${var.wireguard_listen_port}/udp
         ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 179 proto tcp
+        ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 9100 proto tcp
         ufw deny 179/tcp
         ufw deny 6443/tcp
         ufw deny 2379:2380/tcp
         ufw deny 10250/tcp
         ufw --force enable
       fi
+
+      systemctl enable prometheus-node-exporter
+      systemctl restart prometheus-node-exporter
 
       wg show ${var.wireguard_interface}
       vtysh -c 'show bgp summary' || true
