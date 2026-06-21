@@ -1,0 +1,59 @@
+name: Terraform Platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'platform モジュール名 (例: mcp-growi)'
+        required: true
+        type: string
+      command:
+        description: 'terraform コマンド'
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+jobs:
+  terraform:
+    runs-on: arc-runner-set-infra
+    environment: ${{ inputs.command == 'apply' && 'production' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q jq unzip curl
+
+      - name: Install bws CLI
+        run: |
+          BWS_VERSION=$(curl -s https://api.github.com/repos/bitwarden/sdk-sm/releases/latest | jq -r '.tag_name')
+          BWS_TAG=${BWS_VERSION#bws-}
+          curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
+          unzip bws.zip bws
+          sudo mv bws /usr/local/bin/
+          bws --version
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform Init
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: ./platform/run.sh ${{ inputs.module }} init -input=false
+
+      - name: Terraform Plan
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: ./platform/run.sh ${{ inputs.module }} plan -input=false -out=tfplan
+
+      - name: Terraform Apply
+        if: inputs.command == 'apply'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: ./platform/run.sh ${{ inputs.module }} apply -input=false tfplan
