@@ -147,20 +147,38 @@ graph LR
 
 ## IPアドレス設計
 
-| IPアドレス | 用途 | 管理方法 | ホスト |
-|-----------|------|---------|--------|
-| 192.168.1.1 | 物理ルーター | 静的割当 | - |
-| 192.168.1.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) | k8s1, k8s2, k8s4 |
-| 192.168.1.53 | DNS VIP | Bird (BGP広告) | k8s1, k8s2, k8s4 |
-| 192.168.1.100 | K8s API VIP | kube-vip | k8s1, k8s2, k8s4 |
-| 192.168.1.103 | k8s1 (Node) | 静的割当 | k8s1 |
-| 192.168.1.104 | k8s2 (Node) | 静的割当 | k8s2 |
-| 192.168.1.120 | k8s4 (Node) | 静的割当 | k8s4 |
-| 192.168.1.30 | k8s-worker3 | 静的割当 | k8s-worker3 |
-| 192.168.1.150 | k8s-worker5 | 静的割当 | k8s-worker5 |
-| 192.168.1.50 | 汎用ワーカーホスト | 静的割当 | Inuyama Worker |
-| 161.248.62.66 | Alice Gateway (Public) | 静的割当 | alice |
-| 172.31.255.2 | Alice Gateway (WG) | WireGuard | alice |
-| 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | inuyama |
-| 10.244.0.0/16 | Pod ネットワーク | Flannel | - |
-| 10.96.0.0/12 | Service ネットワーク | Kubernetes | - |
+Inuyamaサイト（`192.168.1.0/24`）では、管理の容易性と将来の拡張性を確保するため、以下のサブネットポリシーに基づいてIPアドレスを割り当てています。
+
+### 1. サブネットポリシー
+
+| IPレンジ | 用途 | 備考 |
+|----------|------|------|
+| `192.168.1.1` - `.9` | 物理インフラ / ネットワーク機器 | ルーター、スイッチ等 |
+| `192.168.1.10` - `.49` | K8s Worker ノード | 静的割当 |
+| `192.168.1.50` - `.99` | サービス VIP (Anycast等) | DNS VIP, 金属LB用等 |
+| `192.168.1.100` - `.149` | K8s Control Plane ノード | API VIP, 各ノード物理IP |
+| `192.168.1.150` - `.199` | 固定IPデバイス / 管理用ホスト | 監視、ストレージ等 |
+| `192.168.1.200` - `.249` | 追加サービス VIP / 予備 | Ingress VIP等 |
+| `192.168.1.250` - `.254` | 特殊 / Gateway VIP | VRRP用ゲートウェイ等 |
+
+### 2. 具体的なIP割り当て一覧
+
+| IPアドレス | ホスト / 用途 | 管理方法 | カテゴリ |
+|-----------|--------------|----------|----------|
+| 192.168.1.1 | 物理ルーター | 静的割当 | インフラ |
+| 192.168.1.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) | ゲートウェイ |
+| 192.168.1.53 | DNS VIP | Bird (BGP広告) | VIP |
+| 192.168.1.100 | K8s API VIP | kube-vip | CP (VIP) |
+| 192.168.1.103 | k8s1 (Node) | 静的割当 | CP (Node) |
+| 192.168.1.104 | k8s2 (Node) | 静的割当 | CP (Node) |
+| 192.168.1.120 | k8s4 (Node) | 静的割当 | CP (Node) |
+| 192.168.1.30 | k8s-worker3 | 静的割当 | Worker |
+| 192.168.1.150 | k8s-worker5 | 静的割当 | Worker |
+| 192.168.1.50 | 汎用ワーカーホスト | 静的割当 | Worker |
+| 192.168.1.240 | Ingress VIP | kube-vip / BGP | VIP |
+| 192.168.1.241 | Minecraft VIP | kube-vip / BGP | VIP |
+| 161.248.62.66 | Alice Gateway (Public) | 静的割当 | Alice |
+| 172.31.255.2 | Alice Gateway (WG) | WireGuard | Alice |
+| 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | Inuyama |
+| 10.244.0.0/16 | Pod ネットワーク | Flannel | K8s Internal |
+| 10.96.0.0/12 | Service ネットワーク | Kubernetes | K8s Internal |
