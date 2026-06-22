@@ -1,6 +1,11 @@
 name: Terraform Platform
 
 on:
+  push:
+    branches: [main]
+    paths: ['platform/**']
+  pull_request:
+    paths: ['platform/**']
   workflow_dispatch:
     inputs:
       module:
@@ -17,16 +22,47 @@ on:
           - apply
 
 jobs:
-  terraform:
+  detect-modules:
     runs-on: arc-runner-set-infra
-    environment: ${{ inputs.command == 'apply' && 'production' || '' }}
+    outputs:
+      modules: ${{ steps.detect.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get update -q && sudo apt-get install -y -q jq
+
+      - name: 変更されたモジュールを検出
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODULES='["${{ inputs.module }}"]'
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            MODULES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- platform/ \
+              | cut -d'/' -f2 | grep -v '^$' | sort -u \
+              | jq -R . | jq -sc .)
+          else
+            MODULES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- platform/ \
+              | cut -d'/' -f2 | grep -v '^$' | sort -u \
+              | jq -R . | jq -sc .)
+          fi
+          echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
+          echo "検出されたモジュール: $MODULES"
+
+  terraform:
+    needs: detect-modules
+    if: needs.detect-modules.outputs.modules != '[]' && needs.detect-modules.outputs.modules != ''
+    runs-on: arc-runner-set-infra
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q jq unzip curl
+        run: sudo apt-get update -q && sudo apt-get install -y -q jq unzip curl
 
       - name: Install bws CLI
         run: |
@@ -37,23 +73,63 @@ jobs:
           sudo mv bws /usr/local/bin/
           bws --version
 
-      - name: Install Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
 
       - name: Terraform Init
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./platform/run.sh ${{ inputs.module }} init -input=false
+        run: ./platform/run.sh ${{ matrix.module }} init -input=false
 
       - name: Terraform Plan
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./platform/run.sh ${{ inputs.module }} plan -input=false -out=tfplan
+        run: |
+          ./platform/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
+            2>&1 | tee plan_output.txt
+
+      - name: PR にプランをコメント
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('plan_output.txt', 'utf8');
+            const truncated = output.length > 60000
+              ? output.slice(0, 60000) + '\n\n...(出力が長いため省略)'
+              : output;
+            const header = `### Terraform Plan \`${{ matrix.module }}\``;
+            const body = `${header}\n\`\`\`\n${truncated}\n\`\`\``;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.startsWith(header)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
       - name: Terraform Apply
-        if: inputs.command == 'apply'
+        if: >
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.command == 'apply')
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./platform/run.sh ${{ inputs.module }} apply -input=false tfplan
+        run: ./platform/run.sh ${{ matrix.module }} apply -input=false tfplan
