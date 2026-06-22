@@ -336,4 +336,20 @@ module "knot_resolver" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
+  dns_vip         = var.dns_vip
+}
+
+module "keepalived" {
+  source = "../modules/keepalived"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  interface         = var.kube_vip_interface
+  virtual_router_id = 1
+  priority          = 90
+  virtual_ip        = var.gateway_vip
+  state             = "BACKUP"
 }

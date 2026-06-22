@@ -53,3 +53,9 @@ variable "cache_size_mb" {
   type        = number
   default     = 512
 }
+
+variable "dns_vip" {
+  description = "DNS VIPのIPアドレス"
+  type        = string
+  default     = ""
+}

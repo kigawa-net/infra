@@ -58,7 +58,7 @@ locals {
         - manager
         env:
         - name: vip_arp
-          value: "true"
+          value: "false"
         - name: bgp_enable
           value: "true"
         - name: bgp_routerid

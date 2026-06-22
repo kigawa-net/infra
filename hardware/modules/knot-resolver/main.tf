@@ -8,6 +8,9 @@ network:
     - interface: "0.0.0.0@53"
     - interface: "0.0.0.0@853"
       kind: dot
+%{~ if var.dns_vip != "" }
+    - interface: "${var.dns_vip}@53"
+%{~ endif }
 
 cache:
   size-max: ${var.cache_size_mb}M
@@ -26,10 +29,10 @@ forward:
 %{~ endfor ~}
   - subtree: "."
     servers:
-      - 8.8.8.8
-      - 8.8.4.4
       - 1.1.1.1
       - 1.0.0.1
+      - 8.8.8.8
+      - 8.8.4.4
 CONF
 }
 

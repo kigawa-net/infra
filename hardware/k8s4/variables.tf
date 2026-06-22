@@ -79,6 +79,12 @@ variable "dns_vip" {
   default     = "192.168.1.53"
 }
 
+variable "gateway_vip" {
+  description = "デフォルトゲートウェイの仮想IPアドレス"
+  type        = string
+  default     = "192.168.1.254"
+}
+
 variable "inuyama_wireguard_private_key_bitwarden_id" {
   type    = string
   default = "549fe18f-afa9-477e-b4ce-b45f0033e8f2"

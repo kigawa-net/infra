@@ -78,3 +78,9 @@ variable "dns_vip" {
   type        = string
   default     = "192.168.1.53"
 }
+
+variable "gateway_vip" {
+  description = "デフォルトゲートウェイの仮想IPアドレス"
+  type        = string
+  default     = "192.168.1.254"
+}
