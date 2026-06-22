@@ -1,15 +1,26 @@
-name: Terraform Platform
+name: Terraform
 
 on:
   push:
     branches: [main]
-    paths: ['platform/**']
+    paths:
+      - 'platform/**'
+      - 'hardware/**'
   pull_request:
-    paths: ['platform/**']
+    paths:
+      - 'platform/**'
+      - 'hardware/**'
   workflow_dispatch:
     inputs:
+      dir:
+        description: 'ディレクトリ (platform or hardware)'
+        required: true
+        type: choice
+        options:
+          - platform
+          - hardware
       module:
-        description: 'platform モジュール名 (例: mcp-growi)'
+        description: 'モジュール名 (例: mcp-growi, alice, .)'
         required: true
         type: string
       command:
@@ -38,15 +49,42 @@ jobs:
         id: detect
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            MODULES='["${{ inputs.module }}"]'
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            MODULES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- platform/ \
-              | cut -d'/' -f2 | grep -v '^$' | sort -u \
-              | jq -R . | jq -sc .)
+            MODULES='[{"dir": "${{ inputs.dir }}", "module": "${{ inputs.module }}"}]'
           else
-            MODULES=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- platform/ \
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              DIFF_SPEC="origin/${{ github.base_ref }}...HEAD"
+            else
+              DIFF_SPEC="${{ github.event.before }} ${{ github.sha }}"
+            fi
+            
+            # platform モジュールの検出
+            PLATFORM_MODULES=$(git diff --name-only $DIFF_SPEC -- platform/ \
               | cut -d'/' -f2 | grep -v '^$' | sort -u \
-              | jq -R . | jq -sc .)
+              | xargs -I {} echo '{"dir": "platform", "module": "{}"}')
+            
+            # hardware モジュールの検出
+            # 1. サブディレクトリ (alice, k8s1, etc.)
+            HARDWARE_SUB_MODULES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
+              | grep '^hardware/[^/]\+/' | cut -d'/' -f2 | grep -v '^modules$' | sort -u \
+              | xargs -I {} echo '{"dir": "hardware", "module": "{}"}')
+            
+            # 2. 直下のファイル (main.tf, variables.tf, etc.)
+            HARDWARE_ROOT_FILES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
+              | grep '^hardware/[^/]\+$' | wc -l)
+            if [ "$HARDWARE_ROOT_FILES" -gt 0 ]; then
+              HARDWARE_ROOT_MODULE='{"dir": "hardware", "module": "."}'
+            else
+              HARDWARE_ROOT_MODULE=""
+            fi
+            
+            # hardware/modules が変更された場合は、ひとまず hardware/. を実行対象に含める
+            HARDWARE_MODULES_CHANGES=$(git diff --name-only $DIFF_SPEC -- hardware/modules/ | wc -l)
+            if [ "$HARDWARE_MODULES_CHANGES" -gt 0 ]; then
+              HARDWARE_ROOT_MODULE='{"dir": "hardware", "module": "."}'
+            fi
+
+            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}" \
+              | grep -v '^$' | sort -u | jq -sc .)
           fi
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
           echo "検出されたモジュール: $MODULES"
@@ -56,8 +94,9 @@ jobs:
     if: needs.detect-modules.outputs.modules != '[]' && needs.detect-modules.outputs.modules != ''
     runs-on: arc-runner-set-infra
     strategy:
+      max-parallel: 1
       matrix:
-        module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
+        include: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,13 +119,13 @@ jobs:
       - name: Terraform Init
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./platform/run.sh ${{ matrix.module }} init -input=false
+        run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} init -input=false
 
       - name: Terraform Plan
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
-          ./platform/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
+          ./${{ matrix.dir }}/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
             2>&1 | tee plan_output.txt
 
       - name: PR にプランをコメント
@@ -99,7 +138,7 @@ jobs:
             const truncated = output.length > 60000
               ? output.slice(0, 60000) + '\n\n...(出力が長いため省略)'
               : output;
-            const header = `### Terraform Plan \`${{ matrix.module }}\``;
+            const header = `### Terraform Plan \`${{ matrix.dir }}/${{ matrix.module }}\``;
             const body = `${header}\n\`\`\`\n${truncated}\n\`\`\``;
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -132,4 +171,4 @@ jobs:
           (github.event_name == 'workflow_dispatch' && inputs.command == 'apply')
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./platform/run.sh ${{ matrix.module }} apply -input=false tfplan
+        run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
