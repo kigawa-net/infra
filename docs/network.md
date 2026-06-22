@@ -16,7 +16,7 @@
     - **ソフトウェア**: [Bird2](https://bird.network.cz/)
     - **設定ファイルパス**: `/etc/bird/bird.conf`
     - **ピアリング設定**: 各ノードの `bird.conf` に、他のコントロールプレーンノードが隣接ノードとして定義されています。
-- **AS番号**: `65000` を主に使用しています。
+- **AS番号**: `65000` (Inuyama K8s) を主に使用しています。
 - **広告ルート**:
     - **DNS VIP (192.168.1.53)**: 各コントロールプレーンノードが自身にこのIPをアサインし、BGP経由で広告します。
     - **Kubernetes サービスネットワーク**: kube-vip 等を通じて広告される場合があります。
@@ -82,8 +82,8 @@ graph TB
         Alice --- FRR
     end
 
-    subgraph "Local Network (192.168.1.0/24)"
-        subgraph "Kubernetes Control Plane (AS 65000)"
+    subgraph "Inuyama Site (192.168.1.0/24)"
+        subgraph "Inuyama K8s (AS 65000)"
             k8s1[k8s1<br/>192.168.1.103]
             k8s2[k8s2<br/>192.168.1.104]
             k8s4[k8s4<br/>192.168.1.120]
@@ -127,7 +127,7 @@ graph TB
 
 ```mermaid
 graph LR
-    subgraph "AS 65000 (Local K8s)"
+    subgraph "AS 65000 (Inuyama K8s)"
         k8s1 <--> k8s2
         k8s2 <--> k8s4
         k8s4 <--> k8s1
@@ -142,7 +142,7 @@ graph LR
     end
 
     Alice <-- "eBGP<br/>WireGuard" --> Inuyama
-    k8s4 -- "Optional / Future" -.-> Alice
+    k8s4 -. "Optional / Future" .-> Alice
 ```
 
 ## IPアドレス設計
@@ -158,9 +158,9 @@ graph LR
 | 192.168.1.120 | k8s4 (Node) | 静的割当 | k8s4 |
 | 192.168.1.30 | k8s-worker3 | 静的割当 | k8s-worker3 |
 | 192.168.1.150 | k8s-worker5 | 静的割当 | k8s-worker5 |
-| 192.168.1.50 | 汎用ワーカーホスト | 静的割当 | hardware/main.tf |
+| 192.168.1.50 | 汎用ワーカーホスト | 静的割当 | Inuyama Worker |
 | 161.248.62.66 | Alice Gateway (Public) | 静的割当 | alice |
 | 172.31.255.2 | Alice Gateway (WG) | WireGuard | alice |
-| 172.31.255.1 | Inuyama (WG) | WireGuard | inuyama |
+| 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | inuyama |
 | 10.244.0.0/16 | Pod ネットワーク | Flannel | - |
 | 10.96.0.0/12 | Service ネットワーク | Kubernetes | - |

@@ -27,7 +27,7 @@ variable "bgp_router_id" {
 }
 
 variable "bgp_local_as" {
-  description = "ローカルAS番号"
+  description = "Inuyamaサイト(ローカル)のAS番号"
   type        = number
   default     = 65000
 }
@@ -51,7 +51,7 @@ variable "advertised_vips" {
 }
 
 variable "external_bgp_peers" {
-  description = "eBGP peers with explicit prefix filters. Used for site-to-site peers outside the inuyama iBGP mesh."
+  description = "eBGP peers with explicit prefix filters. Used for site-to-site peers outside the Inuyama iBGP mesh."
   type = list(object({
     local_ip        = string
     local_as        = number

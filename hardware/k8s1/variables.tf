@@ -59,8 +59,9 @@ variable "sudo_password_bitwarden_id" {
 }
 
 variable "bgp_local_as" {
-  type    = number
-  default = 65000
+  description = "Inuyama K8s (ローカル) の AS 番号"
+  type        = number
+  default     = 65000
 }
 
 variable "bgp_peers" {

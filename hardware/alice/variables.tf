@@ -58,7 +58,7 @@ variable "wireguard_peer_allowed_ips" {
   type = list(string)
   default = [
     "172.31.255.1/32",
-    "192.168.1.0/24",
+    "192.168.1.0/24", # Inuyama Site Network
   ]
 }
 
