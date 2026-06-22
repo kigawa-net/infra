@@ -4,12 +4,13 @@ ListenPort = ${listen_port}
 PrivateKey = __ALICE_PRIVATE_KEY__
 MTU = ${mtu}
 
-%{ if peer_public_key != "" ~}
+%{ for peer in peers ~}
 [Peer]
-PublicKey = ${peer_public_key}
-AllowedIPs = ${peer_allowed_ips}
-%{ if peer_endpoint != "" ~}
-Endpoint = ${peer_endpoint}
+PublicKey = ${peer.public_key}
+AllowedIPs = ${join(", ", peer.allowed_ips)}
+%{ if peer.endpoint != "" ~}
+Endpoint = ${peer.endpoint}
 %{ endif ~}
-PersistentKeepalive = ${persistent_keepalive}
-%{ endif ~}
+PersistentKeepalive = ${peer.persistent_keepalive}
+
+%{ endfor ~}

@@ -11,14 +11,31 @@ locals {
   )
   alice_network_statements = [for prefix in var.alice_advertised_prefixes : "  network ${prefix}"]
 
+  k8s_wireguard_peers = concat(
+    var.k8s1_wireguard_public_key != "" ? [{
+      public_key           = var.k8s1_wireguard_public_key
+      allowed_ips          = ["${var.k8s1_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
+    var.k8s2_wireguard_public_key != "" ? [{
+      public_key           = var.k8s2_wireguard_public_key
+      allowed_ips          = ["${var.k8s2_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
+  )
+
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {
-    address              = var.wireguard_address
-    listen_port          = var.wireguard_listen_port
-    mtu                  = var.wireguard_mtu
-    peer_public_key      = data.external.inuyama_wireguard_public_key.result.value
-    peer_allowed_ips     = join(", ", var.wireguard_peer_allowed_ips)
-    peer_endpoint        = var.inuyama_wireguard_endpoint
-    persistent_keepalive = var.wireguard_persistent_keepalive
+    address     = var.wireguard_address
+    listen_port = var.wireguard_listen_port
+    mtu         = var.wireguard_mtu
+    peers = concat([{
+      public_key           = data.external.inuyama_wireguard_public_key.result.value
+      allowed_ips          = var.wireguard_peer_allowed_ips
+      endpoint             = var.inuyama_wireguard_endpoint
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }], local.k8s_wireguard_peers)
   })
 
   frr_config = templatefile("${path.module}/templates/frr.conf.tpl", {
@@ -70,6 +87,8 @@ resource "null_resource" "alice_gateway" {
     inuyama_wireguard_publickey_id = var.inuyama_wireguard_public_key_bitwarden_id
     inuyama_wireguard_publickey    = sha256(data.external.inuyama_wireguard_public_key.result.value)
     wireguard_config               = sha256(local.wireguard_config)
+    k8s1_wireguard_public_key      = sha256(var.k8s1_wireguard_public_key)
+    k8s2_wireguard_public_key      = sha256(var.k8s2_wireguard_public_key)
     frr_config                     = sha256(local.frr_config)
     haproxy_config                 = sha256(local.haproxy_config)
     firewall                       = tostring(var.manage_firewall)

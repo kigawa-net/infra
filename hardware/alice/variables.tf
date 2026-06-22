@@ -46,7 +46,7 @@ variable "wireguard_listen_port" {
 
 variable "wireguard_address" {
   type    = string
-  default = "172.31.255.2/30"
+  default = "172.31.255.2/24"
 }
 
 variable "wireguard_mtu" {
@@ -115,6 +115,30 @@ variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for alice TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
   default     = "192.168.1.241"
+}
+
+variable "k8s1_wireguard_public_key" {
+  description = "k8s1 の WireGuard 公開鍵 (空の場合はピア設定なし)"
+  type        = string
+  default     = ""
+}
+
+variable "k8s1_wireguard_address" {
+  description = "k8s1 の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.255.11"
+}
+
+variable "k8s2_wireguard_public_key" {
+  description = "k8s2 の WireGuard 公開鍵 (空の場合はピア設定なし)"
+  type        = string
+  default     = ""
+}
+
+variable "k8s2_wireguard_address" {
+  description = "k8s2 の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.255.12"
 }
 
 variable "manage_firewall" {
