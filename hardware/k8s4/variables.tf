@@ -1,6 +1,11 @@
 variable "host" {
   type    = string
-  default = "10.0.1.120"
+  default = "192.168.1.120"
+}
+
+variable "server_ip" {
+  type    = string
+  default = "10.0.0.140"
 }
 
 variable "ssh_user" {
@@ -54,13 +59,13 @@ variable "bgp_local_as" {
 variable "bgp_peers" {
   description = "iBGPピアのIPリスト"
   type        = list(string)
-  default     = ["10.0.1.103", "10.0.1.20"]
+  default     = ["10.0.0.103", "10.0.0.120"]
 }
 
 variable "kube_vip_address" {
   description = "コントロールプレーンVIPのIPアドレス"
   type        = string
-  default     = "10.0.1.100"
+  default     = "10.0.0.100"
 }
 
 variable "kube_vip_interface" {
@@ -71,7 +76,7 @@ variable "kube_vip_interface" {
 variable "kube_vip_api_server_ip" {
   description = "kube-vipがリーダー選出で参照するAPIサーバーIP"
   type        = string
-  default     = "10.0.1.104"
+  default     = "10.0.0.100"
 }
 
 variable "dns_vip" {
@@ -153,20 +158,20 @@ variable "alice_metallb_pool_name" {
 
 variable "alice_metallb_base_range" {
   type    = string
-  default = "10.0.1.50-10.0.1.99"
+  default = "10.0.0.50-10.0.0.99"
 }
 
 variable "alice_metallb_reserved_range" {
   type    = string
-  default = "10.0.1.240-10.0.1.249"
+  default = "10.0.0.240-10.0.0.249"
 }
 
 variable "alice_ingress_vip" {
   type    = string
-  default = "10.0.1.240"
+  default = "10.0.0.240"
 }
 
 variable "alice_minecraft_vip" {
   type    = string
-  default = "10.0.1.241"
+  default = "10.0.0.241"
 }

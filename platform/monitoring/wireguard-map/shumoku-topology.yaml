@@ -18,13 +18,13 @@ nodes:
     model: Kubernetes / BIRD / WireGuard
 
   - id: inuyama-ingress-vip
-    label: Ingress VIP 10.0.1.240
+    label: Ingress VIP 10.0.0.240
     type: load-balancer
     vendor: kubernetes
     model: kube-vip LoadBalancer
 
   - id: minecraft-backend-vip
-    label: Minecraft VIP 10.0.1.241
+    label: Minecraft VIP 10.0.0.241
     type: server
     vendor: kubernetes
     model: Minecraft Service

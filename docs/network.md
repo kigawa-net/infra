@@ -45,7 +45,7 @@
     - **役割**: 主にゲートウェイや特定のサービスにおけるVIPの冗長化に使用されます。
     - **設定**: `/etc/keepalived/keepalived.conf` にて VRRP インスタンス、優先度（Priority）、仮想ルーターID（Virtual Router ID）、認証パスワード、および管理対象のVIPが定義されます。
 - **kube-vip**:
-    - Kubernetes コントロールプレーンのAPIサーバー VIP (例: 10.0.1.100) を管理します。
+    - Kubernetes コントロールプレーンのAPIサーバー VIP (例: 10.0.0.100) を管理します。
     - **BGPモード**: 本環境ではBGPモードを推奨し、ARPモードは利用しません。これにより、レイヤー2の制限を受けずに柔軟なルーティングが可能になります。
     - 各コントロールプレーンノード上でスタティックポッドとして動作し、APIサーバーの可用性を担保します。
 
@@ -82,17 +82,16 @@ graph TB
         Alice --- FRR
     end
 
-    subgraph "Inuyama Site (10.0.0.0/16)"
+    subgraph "Inuyama Site (10.0.0.0/24)"
         subgraph "Inuyama K8s (AS 65000)"
-            k8s1[k8s1<br/>10.0.1.103]
-            k8s2[k8s2<br/>10.0.1.20]
-            k8s4[k8s4<br/>10.0.1.120]
+            k8s1[k8s1<br/>10.0.0.103]
+            k8s2[k8s2<br/>10.0.0.120]
+            k8s4[k8s4<br/>10.0.0.140]
         end
 
         subgraph "Kubernetes Workers"
-            worker3[k8s-worker3<br/>10.0.1.30]
-            worker5[k8s-worker5<br/>10.0.1.150]
-            worker_other[Other Workers<br/>10.0.1.50]
+            worker3[k8s-worker3<br/>10.0.0.30]
+            worker5[k8s-worker5<br/>10.0.0.40]
         end
 
         Router[Physical Router<br/>10.0.0.1]
@@ -114,7 +113,7 @@ graph TB
     k8s2 -.-> VIP_DNS
     k8s4 -.-> VIP_DNS
 
-    k8s1 -.-> VIP_K8S[K8s API VIP<br/>10.0.1.100]
+    k8s1 -.-> VIP_K8S[K8s API VIP<br/>10.0.0.100]
     k8s2 -.-> VIP_K8S
     k8s4 -.-> VIP_K8S
 
@@ -147,19 +146,20 @@ graph LR
 
 ## IPアドレス設計
 
-Inuyamaサイト（`10.0.0.0/16`）では、管理の容易性と将来の拡張性を確保するため、以下のサブネットポリシーに基づいてIPアドレスを割り当てています。
+Inuyamaサイト（`10.0.0.0/24`）では、管理の容易性と将来の拡張性を確保するため、以下のサブネットポリシーに基づいてIPアドレスを割り当てています。また、既存の `192.168.1.0/24` も管理用として維持されます。
 
 ### 1. サブネットポリシー
 
 | IPレンジ | 用途 | 備考 |
 |----------|------|------|
 | `10.0.0.1` - `.9` | 物理インフラ / ネットワーク機器 | ルーター、スイッチ等 |
-| `10.0.1.10` - `.49` | K8s Worker ノード | 静的割当 |
-| `10.0.0.50` - `.99` | サービス VIP (Anycast等) | DNS VIP, 金属LB用等 |
-| `10.0.1.100` - `.149` | K8s Control Plane ノード | API VIP, 各ノード物理IP |
-| `10.0.1.150` - `.199` | 固定IPデバイス / 管理用ホスト | 監視、ストレージ等 |
-| `10.0.1.200` - `.249` | 追加サービス VIP / 予備 | Ingress VIP等 |
-| `10.0.0.250` - `.254` | 特殊 / Gateway VIP | VRRP用ゲートウェイ等 |
+| `10.0.0.10` - `.49` | K8s Worker ノード | ワーカーノード物理IP |
+| `10.0.0.50` - `.69` | ネットワークサービス VIP | DNS VIP (`10.0.0.53`) 等 |
+| `10.0.0.100` - `.149` | K8s Control Plane ノード | ノード物理IP, API VIP |
+| `10.0.0.150` - `.199` | 固定IPデバイス / 管理用ホスト | 監視、ストレージ等 |
+| `10.0.0.200` - `.249` | サービス VIP | Ingress VIP, Minecraft VIP 等 |
+| `10.0.0.250` - `.254` | ゲートウェイ VIP | デフォルトゲートウェイ (`10.0.0.254`) 等 |
+| `192.168.1.0/24` | 管理用 / 旧ネットワーク | 既存デバイス、管理インターフェース |
 
 ### 2. 具体的なIP割り当て一覧
 
@@ -168,17 +168,21 @@ Inuyamaサイト（`10.0.0.0/16`）では、管理の容易性と将来の拡張
 | 10.0.0.1 | 物理ルーター | 静的割当 | インフラ |
 | 10.0.0.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) | ゲートウェイ |
 | 10.0.0.53 | DNS VIP | Bird (BGP広告) | VIP |
-| 10.0.1.100 | K8s API VIP | kube-vip | CP (VIP) |
-| 10.0.1.103 | k8s1 (Node) | 静的割当 | CP (Node) |
-| 10.0.1.20 | k8s2 (Node) | 静的割当 | CP (Node) |
-| 10.0.1.120 | k8s4 (Node) | 静的割当 | CP (Node) |
-| 10.0.1.30 | k8s-worker3 | 静的割当 | Worker |
-| 10.0.1.150 | k8s-worker5 | 静的割当 | Worker |
-| 10.0.1.50 | 汎用ワーカーホスト | 静的割当 | Worker |
-| 10.0.1.240 | Ingress VIP | kube-vip / BGP | VIP |
-| 10.0.1.241 | Minecraft VIP | kube-vip / BGP | VIP |
+| 10.0.0.100 | K8s API VIP | kube-vip | CP (VIP) |
+| 10.0.0.103 | k8s1 (Node) | 静的割当 | CP (Node) |
+| 10.0.0.120 | k8s2 (Node) | 静的割当 | CP (Node) |
+| 10.0.0.140 | k8s4 (Node) | 静的割当 | CP (Node) |
+| 10.0.0.30 | k8s-worker3 | 静的割当 | Worker |
+| 10.0.0.40 | k8s-worker5 | 静的割当 | Worker |
+| 10.0.0.240 | Ingress VIP | kube-vip / BGP | VIP |
+| 10.0.0.241 | Minecraft VIP | kube-vip / BGP | VIP |
 | 161.248.62.66 | Alice Gateway (Public) | 静的割当 | Alice |
 | 172.31.255.2 | Alice Gateway (WG) | WireGuard | Alice |
 | 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | Inuyama |
 | 10.244.0.0/16 | Pod ネットワーク | Flannel | K8s Internal |
 | 10.96.0.0/12 | Service ネットワーク | Kubernetes | K8s Internal |
+| 192.168.1.103 | k8s1 (旧IP/管理) | 静的割当 | 管理 |
+| 192.168.1.20 | k8s2 (旧IP/管理) | 静的割当 | 管理 |
+| 192.168.1.120 | k8s4 (旧IP/管理) | 静的割当 | 管理 |
+| 192.168.1.253 | main (作業用ホスト) | 静的割当 | 管理 |
+| 192.168.1.254 | 旧ゲートウェイ | 静的割当 | 管理 |

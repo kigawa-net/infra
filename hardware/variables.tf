@@ -1,6 +1,11 @@
 variable "host" {
   type    = string
-  default = "10.0.1.50"
+  default = "192.168.1.50"
+}
+
+variable "server_ip" {
+  type    = string
+  default = "10.0.0.51"
 }
 
 variable "ssh_user" {
@@ -8,10 +13,9 @@ variable "ssh_user" {
   default = "kigawa"
 }
 
-
 variable "k8s_endpoint" {
   type    = string
-  default = "k8s.kigawa.net"
+  default = "10.0.0.100"
 }
 
 variable "k8s_version" {
@@ -22,7 +26,7 @@ variable "k8s_version" {
 
 variable "control_plane_host" {
   type    = string
-  default = "k8s4"
+  default = "k8s1"
 }
 
 variable "control_plane_ssh_user" {

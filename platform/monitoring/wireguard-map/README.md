@@ -31,8 +31,8 @@ Internet / Client
 | --- | --- |
 | `k8s4 wg0` | `172.31.255.1` |
 | `alice wg0` | `172.31.255.2` |
-| Ingress VIP | `10.0.1.240` |
-| Minecraft VIP | `10.0.1.241` |
+| Ingress VIP | `10.0.0.240` |
+| Minecraft VIP | `10.0.0.241` |
 
 ## 使い方
 
@@ -53,8 +53,8 @@ Shumoku上のWireGuard linkには、Prometheus連携で方向別のbitrateと直
 
 | Direction | Bitrate | Traffic volume |
 | --- | --- | --- |
-| `alice -> k8s4` | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|10.0.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|10.0.1.120:9100)", device="wg0"}[5m]))` |
-| `k8s4 -> alice` | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.1.120:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.1.120:9100)", device="wg0"}[5m]))` |
+| `alice -> k8s4` | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m]))` |
+| `k8s4 -> alice` | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m])) * 8` | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m]))` |
 
 色分けはトラフィック量の強さを示す。障害状態はprobe/handshake/service alert ruleを正とする。
 
