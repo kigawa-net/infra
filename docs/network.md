@@ -63,39 +63,104 @@
     - `wg0` インターフェースを使用し、外部拠点やモバイルクライアントとのセキュアな通信路を提供します。
     - WireGuardネットワーク内のルーティングはFRRによって管理される場合があります。
 
-## IPアドレス設計
+## ネットワーク構成図
 
-| IPアドレス | 用途 | 管理方法 |
-|-----------|------|---------|
-| 192.168.1.1 | 物理ルーター | 静的割当 |
-| 192.168.1.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) |
-| 192.168.1.53 | DNS VIP | Bird (BGP広告) |
-| 192.168.1.100 | K8s API VIP | kube-vip |
-| 192.168.1.103 | k8s1 (Node) | 静的割当 |
-| 192.168.1.104 | k8s2 (Node) | 静的割当 |
-| 192.168.1.120 | k8s4 (Node) | 静的割当 |
-| 10.244.0.0/16 | Pod ネットワーク | Flannel |
-| 10.96.0.0/12 | Service ネットワーク | Kubernetes |
-
-## ネットワーク図 (論理構成)
+### 1. 物理・論理トポロジー
 
 ```mermaid
-graph TD
-    Internet((Internet)) <--> Alice[Alice Gateway]
-    Alice <--> WG[WireGuard Network]
-    Alice <--> K8sCP{K8s Control Plane}
-    
-    subgraph "K8s Control Plane (iBGP Full Mesh)"
-        k8s1[k8s1] --- k8s2[k8s2]
-        k8s2 --- k8s4[k8s4]
-        k8s4 --- k8s1
+graph TB
+    subgraph "External / Remote"
+        Inuyama[Inuyama Site<br/>172.31.255.1<br/>AS 65010]
+        Internet((Internet))
     end
-    
-    k8s1 -.-> DNS[DNS VIP: 192.168.1.53]
-    k8s2 -.-> DNS
-    k8s4 -.-> DNS
-    
-    k8s1 -.-> GW[Gateway VIP: 192.168.1.254]
-    k8s2 -.-> GW
-    k8s4 -.-> GW
+
+    subgraph "Alice Gateway (Cloud)"
+        Alice[Alice Gateway<br/>161.248.62.66<br/>AS 65020]
+        HAProxy[HAProxy<br/>SSL Termination]
+        FRR[FRR<br/>BGP/OSPF]
+        Alice --- HAProxy
+        Alice --- FRR
+    end
+
+    subgraph "Local Network (192.168.1.0/24)"
+        subgraph "Kubernetes Control Plane (AS 65000)"
+            k8s1[k8s1<br/>192.168.1.103]
+            k8s2[k8s2<br/>192.168.1.104]
+            k8s4[k8s4<br/>192.168.1.120]
+        end
+
+        subgraph "Kubernetes Workers"
+            worker3[k8s-worker3<br/>192.168.1.30]
+            worker5[k8s-worker5<br/>192.168.1.150]
+            worker_other[Other Workers<br/>192.168.1.50]
+        end
+
+        Router[Physical Router<br/>192.168.1.1]
+    end
+
+    %% Connections
+    Internet <--> Alice
+    Inuyama <-- "WireGuard (wg0)<br/>172.31.255.0/30" --> Alice
+    Alice <--> Router
+    Router <--> k8s1
+    Router <--> k8s2
+    Router <--> k8s4
+    Router <--> worker3
+    Router <--> worker5
+    Router <--> worker_other
+
+    %% VIPs
+    k8s1 -.-> VIP_DNS[DNS VIP<br/>192.168.1.53]
+    k8s2 -.-> VIP_DNS
+    k8s4 -.-> VIP_DNS
+
+    k8s1 -.-> VIP_K8S[K8s API VIP<br/>192.168.1.100]
+    k8s2 -.-> VIP_K8S
+    k8s4 -.-> VIP_K8S
+
+    k8s1 -.-> VIP_GW[Gateway VIP<br/>192.168.1.254]
+    k8s2 -.-> VIP_GW
+    k8s4 -.-> VIP_GW
 ```
+
+### 2. BGP ピアリング構成
+
+```mermaid
+graph LR
+    subgraph "AS 65000 (Local K8s)"
+        k8s1 <--> k8s2
+        k8s2 <--> k8s4
+        k8s4 <--> k8s1
+    end
+
+    subgraph "AS 65020 (Alice)"
+        Alice
+    end
+
+    subgraph "AS 65010 (Inuyama)"
+        Inuyama
+    end
+
+    Alice <-- "eBGP<br/>WireGuard" --> Inuyama
+    k8s4 -- "Optional / Future" -.-> Alice
+```
+
+## IPアドレス設計
+
+| IPアドレス | 用途 | 管理方法 | ホスト |
+|-----------|------|---------|--------|
+| 192.168.1.1 | 物理ルーター | 静的割当 | - |
+| 192.168.1.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) | k8s1, k8s2, k8s4 |
+| 192.168.1.53 | DNS VIP | Bird (BGP広告) | k8s1, k8s2, k8s4 |
+| 192.168.1.100 | K8s API VIP | kube-vip | k8s1, k8s2, k8s4 |
+| 192.168.1.103 | k8s1 (Node) | 静的割当 | k8s1 |
+| 192.168.1.104 | k8s2 (Node) | 静的割当 | k8s2 |
+| 192.168.1.120 | k8s4 (Node) | 静的割当 | k8s4 |
+| 192.168.1.30 | k8s-worker3 | 静的割当 | k8s-worker3 |
+| 192.168.1.150 | k8s-worker5 | 静的割当 | k8s-worker5 |
+| 192.168.1.50 | 汎用ワーカーホスト | 静的割当 | hardware/main.tf |
+| 161.248.62.66 | Alice Gateway (Public) | 静的割当 | alice |
+| 172.31.255.2 | Alice Gateway (WG) | WireGuard | alice |
+| 172.31.255.1 | Inuyama (WG) | WireGuard | inuyama |
+| 10.244.0.0/16 | Pod ネットワーク | Flannel | - |
+| 10.96.0.0/12 | Service ネットワーク | Kubernetes | - |
