@@ -58,7 +58,7 @@ variable "wireguard_peer_allowed_ips" {
   type = list(string)
   default = [
     "172.31.255.1/32",
-    "192.168.1.0/24", # Inuyama Site Network
+    "10.0.0.0/16", # Inuyama Site Network (Supernet)
   ]
 }
 
@@ -96,7 +96,7 @@ variable "bgp_router_id" {
 variable "inuyama_accepted_prefixes" {
   type = list(string)
   default = [
-    "192.168.1.0/24",
+    "10.0.0.0/16",
   ]
 }
 
@@ -108,13 +108,13 @@ variable "alice_advertised_prefixes" {
 variable "inuyama_ingress_vip" {
   description = "Inuyama ingress VIP for alice HTTP/HTTPS forwarding. Empty disables those HAProxy frontends."
   type        = string
-  default     = "192.168.1.240"
+  default     = "10.0.1.240"
 }
 
 variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for alice TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
-  default     = "192.168.1.241"
+  default     = "10.0.1.241"
 }
 
 variable "manage_firewall" {

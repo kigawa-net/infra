@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.103"
+  default = "10.0.1.103"
 }
 
 variable "ssh_user" {
@@ -67,13 +67,13 @@ variable "bgp_local_as" {
 variable "bgp_peers" {
   description = "iBGPピアのIPリスト"
   type        = list(string)
-  default     = ["192.168.1.20", "192.168.1.120"]
+  default     = ["10.0.1.20", "10.0.1.120"]
 }
 
 variable "kube_vip_address" {
   description = "コントロールプレーンVIPのIPアドレス"
   type        = string
-  default     = "192.168.1.100"
+  default     = "10.0.1.100"
 }
 
 variable "kube_vip_interface" {
@@ -84,17 +84,17 @@ variable "kube_vip_interface" {
 variable "kube_vip_api_server_ip" {
   description = "kube-vipがリーダー選出で参照するAPIサーバーIP"
   type        = string
-  default     = "192.168.1.104"
+  default     = "10.0.1.104"
 }
 
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string
-  default     = "192.168.1.53"
+  default     = "10.0.0.53"
 }
 
 variable "gateway_vip" {
   description = "デフォルトゲートウェイの仮想IPアドレス"
   type        = string
-  default     = "192.168.1.254"
+  default     = "10.0.0.254"
 }

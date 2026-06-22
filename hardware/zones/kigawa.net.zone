@@ -8,10 +8,10 @@ kigawa.net.     IN      SOA     ns.kigawa.net. contact.kigawa.net. (
                 3600    )       ; ttl
 
 kigawa.net.             IN NS           ns.kigawa.net.
-ns.kigawa.net.          IN A            192.168.1.102
-kigawa.net.             IN A            192.168.1.104
-mc.kigawa.net.          IN A            192.168.1.54
-*.kigawa.net.           IN A            192.168.1.104
+ns.kigawa.net.          IN A            10.0.1.102
+kigawa.net.             IN A            10.0.1.104
+mc.kigawa.net.          IN A            10.0.1.54
+*.kigawa.net.           IN A            10.0.1.104
 k8s.kigawa.net.         IN CNAME        haproxy.kigawa.net.
 mod.kigawa.net.         IN CNAME        mc.kigawa.net.
 oyu.kigawa.net.         IN CNAME        mc.kigawa.net.

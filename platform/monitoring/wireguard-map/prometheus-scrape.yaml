@@ -5,23 +5,23 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets:
-          - 192.168.1.103:9100
-          - 192.168.1.20:9100
-          - 192.168.1.120:9100
+          - 10.0.1.103:9100
+          - 10.0.1.20:9100
+          - 10.0.1.120:9100
           - 172.31.255.2:9100
         labels:
           site: inuyama-alice
     relabel_configs:
       - source_labels: [__address__]
-        regex: 192\.168\.1\.103:9100
+        regex: 10\.0\.1\.103:9100
         target_label: instance
         replacement: k8s1
       - source_labels: [__address__]
-        regex: 192\.168\.1\.20:9100
+        regex: 10\.0\.1\.20:9100
         target_label: instance
         replacement: k8s2
       - source_labels: [__address__]
-        regex: 192\.168\.1\.120:9100
+        regex: 10\.0\.1\.120:9100
         target_label: instance
         replacement: k8s4
       - source_labels: [__address__]
@@ -32,13 +32,13 @@ scrape_configs:
   - job_name: wireguard
     static_configs:
       - targets:
-          - 192.168.1.120:9586
+          - 10.0.1.120:9586
           - 172.31.255.2:9586
         labels:
           site: inuyama-alice
     relabel_configs:
       - source_labels: [__address__]
-        regex: 192\.168\.1\.120:9586
+        regex: 10\.0\.1\.120:9586
         target_label: instance
         replacement: k8s4
       - source_labels: [__address__]
@@ -70,9 +70,9 @@ scrape_configs:
       module: [tcp_connect]
     static_configs:
       - targets:
-          - 192.168.1.240:80
-          - 192.168.1.240:443
-          - 192.168.1.241:25565
+          - 10.0.1.240:80
+          - 10.0.1.240:443
+          - 10.0.1.241:25565
         labels:
           site: inuyama-alice
     relabel_configs:

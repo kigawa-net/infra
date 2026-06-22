@@ -46,21 +46,21 @@ BGP peer は WireGuard 内部のみで張る。
 | ---------------------- | ------------------------- |
 | Kubernetes拠点         | `inuyama`                 |
 | control-plane / etcd   | `k8s1`, `k8s2`, `k8s4`    |
-| Kubernetes API VIP     | `192.168.1.100`           |
-| 既存HAProxy            | `192.168.1.104`           |
+| Kubernetes API VIP     | `10.0.1.100`           |
+| 既存HAProxy            | `10.0.1.104`           |
 | kube-vip               | static Pod                |
 | alice                  | Kubernetesなし、1ホスト   |
 
-既存の重要方針として、Kubernetes API の利用者向け endpoint は VIP `192.168.1.100` を正とする。
+既存の重要方針として、Kubernetes API の利用者向け endpoint は VIP `10.0.1.100` を正とする。
 
-kube-vip 自身の leader election 用 API 参照先は、VIP 喪失時の自己参照デッドロックを避けるため、既存 HAProxy `192.168.1.104` または正常な control-plane を使う。
+kube-vip 自身の leader election 用 API 参照先は、VIP 喪失時の自己参照デッドロックを避けるため、既存 HAProxy `10.0.1.104` または正常な control-plane を使う。
 
 ```text
 Kubernetes API endpoint:
-  192.168.1.100:6443
+  10.0.1.100:6443
 
 kube-vip leader election API endpoint:
-  192.168.1.104:6443
+  10.0.1.104:6443
 ```
 
 ---
@@ -89,7 +89,7 @@ Internet
 | inuyama                     |
 |-----------------------------|
 | Kubernetes Cluster          |
-| API VIP: 192.168.1.100      |
+| API VIP: 10.0.1.100      |
 | k8s1: control-plane / etcd  |
 | k8s2: control-plane / etcd  |
 | k8s4: control-plane / etcd  |
@@ -145,7 +145,7 @@ Internet
 
 | 拠点      | Prefix              |
 | --------- | ------------------- |
-| inuyama   | `192.168.1.0/24`    |
+| inuyama   | `10.0.0.0/16`    |
 | alice     | 未確定。alice側実LANに合わせる |
 
 ## 5.2 WireGuard Transit
@@ -222,7 +222,7 @@ MTU = 1420
 
 [Peer]
 PublicKey = <inuyama-public-key>
-AllowedIPs = 172.31.255.1/32, 192.168.1.0/24
+AllowedIPs = 172.31.255.1/32, 10.0.0.0/16
 Endpoint = <inuyama-public-ip>:51820
 PersistentKeepalive = 25
 ```
@@ -264,14 +264,14 @@ wg0:
 最低限：
 
 ```text
-192.168.1.0/24
+10.0.0.0/16
 ```
 
 必要に応じて、Ingress / Service公開用VIPを `/32` で広告する。
 
 ```text
-192.168.1.240/32
-192.168.1.241/32
+10.0.1.240/32
+10.0.1.241/32
 ```
 
 ### alice → inuyama
@@ -288,9 +288,9 @@ wg0:
 aliceがinuyamaから受ける経路：
 
 ```text
-permit 192.168.1.0/24
-permit 192.168.1.240/32
-permit 192.168.1.241/32
+permit 10.0.0.0/16
+permit 10.0.1.240/32
+permit 10.0.1.241/32
 deny any
 ```
 
@@ -331,19 +331,19 @@ Client
 
 | alice frontend | inuyama backend       |
 | -------------- | --------------------- |
-| `:80`          | `192.168.1.240:80`    |
-| `:443`         | `192.168.1.240:443`   |
-| `:25565`       | `192.168.1.241:25565` |
+| `:80`          | `10.0.1.240:80`    |
+| `:443`         | `10.0.1.240:443`   |
+| `:25565`       | `10.0.1.241:25565` |
 
-犬山LAN `192.168.1.0/24` の kube-vip LoadBalancer 用VIPとして以下を予約する。
+犬山LAN `10.0.0.0/16` の kube-vip LoadBalancer 用VIPとして以下を予約する。
 
 | Address             | 用途                    |
 | ------------------- | ----------------------- |
-| `192.168.1.240`     | Ingress VIP             |
-| `192.168.1.241`     | Minecraft Backend VIP   |
-| `192.168.1.242-249` | 将来用VIP予約           |
+| `10.0.1.240`     | Ingress VIP             |
+| `10.0.1.241`     | Minecraft Backend VIP   |
+| `10.0.1.242-249` | 将来用VIP予約           |
 
-実環境では既存LoadBalancerがMetalLB `main-pool` で運用されているため、alice用VIPは `main-pool` に `192.168.1.240-192.168.1.249` を追加し、既存のIngress/Minecraft Serviceとは別のalice専用LoadBalancer Serviceとして割り当てる。
+実環境では既存LoadBalancerがMetalLB `main-pool` で運用されているため、alice用VIPは `main-pool` に `10.0.1.240-10.0.1.249` を追加し、既存のIngress/Minecraft Serviceとは別のalice専用LoadBalancer Serviceとして割り当てる。
 
 ---
 
@@ -381,17 +381,17 @@ frontend minecraft_in
 backend http_backend
     mode tcp
     option tcp-check
-    server web1 192.168.1.240:80 check
+    server web1 10.0.1.240:80 check
 
 backend https_backend
     mode tcp
     option tcp-check
-    server web1 192.168.1.240:443 check
+    server web1 10.0.1.240:443 check
 
 backend minecraft_backend
     mode tcp
     option tcp-check
-    server mc1 192.168.1.241:25565 check
+    server mc1 10.0.1.241:25565 check
 ```
 
 Minecraftは長時間接続を考慮し、`timeout client/server` を短くしすぎない。
@@ -423,9 +423,9 @@ Minecraftは長時間接続を考慮し、`timeout client/server` を短くし�
 | From | To | Port | 用途 |
 | --- | --- | ---: | --- |
 | `172.31.255.1` | `172.31.255.2` | `179/tcp` | BGP |
-| `alice-01` | `192.168.1.240` | `80/tcp` | HTTP転送 |
-| `alice-01` | `192.168.1.240` | `443/tcp` | HTTPS転送 |
-| `alice-01` | `192.168.1.241` | `25565/tcp` | Minecraft転送 |
+| `alice-01` | `10.0.1.240` | `80/tcp` | HTTP転送 |
+| `alice-01` | `10.0.1.240` | `443/tcp` | HTTPS転送 |
+| `alice-01` | `10.0.1.241` | `25565/tcp` | Minecraft転送 |
 
 ## 10.3 inuyama
 
@@ -433,9 +433,9 @@ inuyama側では、aliceから必要なバックエンドだけを許可する�
 
 | From | To | Port |
 | --- | --- | ---: |
-| `alice wg0` | `192.168.1.240` | `80/tcp` |
-| `alice wg0` | `192.168.1.240` | `443/tcp` |
-| `alice wg0` | `192.168.1.241` | `25565/tcp` |
+| `alice wg0` | `10.0.1.240` | `80/tcp` |
+| `alice wg0` | `10.0.1.240` | `443/tcp` |
+| `alice wg0` | `10.0.1.241` | `25565/tcp` |
 | `alice wg0` | BGP peer | `179/tcp` |
 
 Kubernetes API `6443/tcp` は、aliceから運用上必要な場合のみ許可する。
@@ -453,4 +453,4 @@ Kubernetes API `6443/tcp` は、aliceから運用上必要な場合のみ許可�
 | `alice-01` | host up/down, HAProxy, FRR, `wg0` RX/TX |
 | `k8s4` | host up/down, BIRD, `wg0` RX/TX |
 | WireGuard tunnel | RTT, handshake age, `probe_success` |
-| backend VIP | `192.168.1.240:80/443`, `192.168.1.241:25565` のTCP probe |
+| backend VIP | `10.0.1.240:80/443`, `10.0.1.241:25565` のTCP probe |

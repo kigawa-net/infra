@@ -189,7 +189,7 @@ module "bgp" {
       neighbor_ip     = var.alice_wireguard_address
       neighbor_as     = var.alice_bgp_as
       import_prefixes = []
-      export_prefixes = ["192.168.1.0/24"]
+      export_prefixes = ["10.0.0.0/16"]
     }
   ]
 }

@@ -8,7 +8,7 @@ onemc.world.     IN      SOA     ns.onemc.world. contact.kigawa.net. (
                 3600    )       ; ttl
 
 onemc.world.            IN NS           ns.kigawa.net.
-ns.onemc.world.         IN A            192.168.1.102
-onemc.world.            IN A            192.168.1.104
-mc.onemc.world.         IN A            192.168.1.103
+ns.onemc.world.         IN A            10.0.1.102
+onemc.world.            IN A            10.0.1.104
+mc.onemc.world.         IN A            10.0.1.103
 build.onemc.world.      IN CNAME        mc.onemc.world.

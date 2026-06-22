@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.150"
+  default = "10.0.1.150"
 }
 
 variable "ssh_user" {
@@ -22,7 +22,7 @@ variable "k8s_version" {
 
 variable "control_plane_host" {
   type    = string
-  default = "192.168.1.120"
+  default = "10.0.1.120"
 }
 
 variable "control_plane_ssh_user" {

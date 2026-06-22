@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.20"
+  default = "10.0.1.20"
 }
 
 variable "ssh_user" {
@@ -32,7 +32,7 @@ variable "control_plane_ssh_user" {
 variable "remove_dead_control_plane_ips" {
   description = "etcdから削除する死んだcontrol-planeのIPリスト (スペース区切り)"
   type        = string
-  default     = "192.168.1.106"
+  default     = "10.0.1.106"
 }
 
 variable "ssh_key_bitwarden_id" {
@@ -54,13 +54,13 @@ variable "bgp_local_as" {
 variable "bgp_peers" {
   description = "iBGPピアのIPリスト"
   type        = list(string)
-  default     = ["192.168.1.103", "192.168.1.120"]
+  default     = ["10.0.1.103", "10.0.1.120"]
 }
 
 variable "kube_vip_address" {
   description = "コントロールプレーンVIPのIPアドレス"
   type        = string
-  default     = "192.168.1.100"
+  default     = "10.0.1.100"
 }
 
 variable "kube_vip_interface" {
@@ -71,17 +71,17 @@ variable "kube_vip_interface" {
 variable "kube_vip_api_server_ip" {
   description = "kube-vipがリーダー選出で参照するAPIサーバーIP"
   type        = string
-  default     = "192.168.1.104"
+  default     = "10.0.1.104"
 }
 
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string
-  default     = "192.168.1.53"
+  default     = "10.0.0.53"
 }
 
 variable "gateway_vip" {
   description = "デフォルトゲートウェイの仮想IPアドレス"
   type        = string
-  default     = "192.168.1.254"
+  default     = "10.0.0.254"
 }

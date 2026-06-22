@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.50"
+  default = "10.0.1.50"
 }
 
 variable "ssh_user" {
