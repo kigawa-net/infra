@@ -62,6 +62,10 @@
 - **WireGuard**:
     - `wg0` インターフェースを使用し、外部拠点やモバイルクライアントとのセキュアな通信路を提供します。
     - WireGuardネットワーク内のルーティングはFRRによって管理される場合があります。
+    - **ピア構成** (`172.31.255.0/24`):
+        - Inuyama サイトゲートウェイ (`172.31.255.1`) — eBGP 接続、LAN (`192.168.1.0/24`) へのルーティング
+        - k8s1 (`172.31.255.11`) — 直接ピア
+        - k8s2 (`172.31.255.12`) — 直接ピア
 
 ## ネットワーク構成図
 
@@ -99,7 +103,9 @@ graph TB
 
     %% Connections
     Internet <--> Alice
-    Inuyama <-- "WireGuard (wg0)<br/>172.31.255.0/30" --> Alice
+    Inuyama <-- "WireGuard (wg0)<br/>172.31.255.0/24" --> Alice
+    k8s1 <-- "WireGuard (wg0)<br/>172.31.255.11" --> Alice
+    k8s2 <-- "WireGuard (wg0)<br/>172.31.255.12" --> Alice
     Alice <--> Router
     Router <--> k8s1
     Router <--> k8s2
@@ -177,8 +183,10 @@ Inuyamaサイト（`10.0.0.0/24`）では、管理の容易性と将来の拡張
 | 10.0.0.240 | Ingress VIP | kube-vip / BGP | VIP |
 | 10.0.0.241 | Minecraft VIP | kube-vip / BGP | VIP |
 | 161.248.62.66 | Alice Gateway (Public) | 静的割当 | Alice |
-| 172.31.255.2 | Alice Gateway (WG) | WireGuard | Alice |
+| 172.31.255.2/24 | Alice Gateway (WG) | WireGuard | Alice |
 | 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | Inuyama |
+| 172.31.255.11 | k8s1 (WG) | WireGuard | Inuyama |
+| 172.31.255.12 | k8s2 (WG) | WireGuard | Inuyama |
 | 10.244.0.0/16 | Pod ネットワーク | Flannel | K8s Internal |
 | 10.96.0.0/12 | Service ネットワーク | Kubernetes | K8s Internal |
 | 192.168.1.103 | k8s1 (旧IP/管理) | 静的割当 | 管理 |

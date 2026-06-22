@@ -90,3 +90,27 @@ variable "gateway_vip" {
   type        = string
   default     = "10.0.0.254"
 }
+
+variable "wireguard_address" {
+  description = "WireGuard インターフェースのアドレス"
+  type        = string
+  default     = "172.31.255.12/24"
+}
+
+variable "wireguard_server_public_key" {
+  description = "Alice の WireGuard 公開鍵 (cat /etc/wireguard/alice_public.key で取得)"
+  type        = string
+  default     = ""
+}
+
+variable "wireguard_server_endpoint" {
+  description = "Alice の WireGuard エンドポイント"
+  type        = string
+  default     = "161.248.62.66:51820"
+}
+
+variable "wireguard_server_allowed_ips" {
+  description = "WireGuard トンネル経由でルーティングする IP レンジ"
+  type        = list(string)
+  default     = ["172.31.255.0/24"]
+}
