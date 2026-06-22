@@ -100,7 +100,7 @@ variable "wireguard_address" {
 variable "wireguard_server_public_key" {
   description = "Alice の WireGuard 公開鍵 (cat /etc/wireguard/alice_public.key で取得)"
   type        = string
-  default     = ""
+  default     = "/bsBpHC0xLxdncldAE1Qo7bWTIXgcJm3Vui6sZOtPhs="
 }
 
 variable "wireguard_server_endpoint" {

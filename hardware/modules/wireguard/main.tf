@@ -5,7 +5,7 @@ resource "null_resource" "wireguard" {
     server_endpoint   = var.server_endpoint
     server_public_key = sha256(var.server_public_key)
     allowed_ips       = join(",", var.server_allowed_ips)
-    setup_version     = "2"
+    setup_version     = "3"
   }
 
   connection {
@@ -28,7 +28,7 @@ resource "null_resource" "wireguard" {
       apt-get update -y
       apt-get install -y $APT_OPTS wireguard
 
-      install -d -m 700 /etc/wireguard
+      install -d -m 711 /etc/wireguard
 
       if [ ! -f /etc/wireguard/privatekey ]; then
         wg genkey > /etc/wireguard/privatekey
