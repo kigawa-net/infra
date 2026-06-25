@@ -120,3 +120,12 @@ resource "null_resource" "worker_node" {
     ]
   }
 }
+
+module "node_exporter" {
+  source = "../modules/node-exporter"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
