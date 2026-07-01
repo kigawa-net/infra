@@ -106,7 +106,7 @@ jobs:
       - name: Install bws CLI
         run: |
           BWS_VERSION=$(curl -s https://api.github.com/repos/bitwarden/sdk-sm/releases/latest | jq -r '.tag_name')
-          BWS_TAG=${BWS_VERSION#bws-}
+          BWS_TAG=${BWS_VERSION#bws-v}
           curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
           unzip bws.zip bws
           sudo mv bws /usr/local/bin/
