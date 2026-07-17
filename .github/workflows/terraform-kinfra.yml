@@ -1,0 +1,127 @@
+name: Terraform (kinfra, experimental)
+
+# workflow_dispatch限定。既存の.github/workflows/terraform.ymlはそのまま維持し、
+# こちらはkinfraベースの新しいCIパスを手動実行で検証するためのもの。
+# 実モジュールでplan/applyの結果が既存run.sh方式と一致することを確認したのち、
+# 別PRで既存terraform.ymlのpush/PRトリガーをこちらに切り替える。
+on:
+  workflow_dispatch:
+    inputs:
+      dir:
+        description: 'ディレクトリ (platform or hardware)'
+        required: true
+        type: choice
+        options:
+          - platform
+          - hardware
+      module:
+        description: 'モジュール名 (例: mcp-growi, alice, . でhardware/platform自身)'
+        required: true
+        type: string
+      command:
+        description: 'kinfra コマンド'
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+jobs:
+  terraform:
+    runs-on: arc-runner-set-infra
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q jq unzip curl
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v5
+        with:
+          java-version: '24'
+          distribution: 'temurin'
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      # kigawa-net/kinfraのリリースパイプラインが復旧するまでの暫定策として、
+      # ソースからkinfra-cliをビルドする。リリースが安定して出せるようになったら
+      # install.sh相当のcurlに置き換える。
+      #
+      # refは、current apply/sub apply等が実装されたkigawa-net/kinfra側のPR
+      # (#346, worktree-kinfra-apply-autoapprove)を指している。マージ後は"dev"
+      # （あるいはリリースタグ）に切り替えること。
+      - name: Checkout kinfra
+        uses: actions/checkout@v4
+        with:
+          repository: kigawa-net/kinfra
+          ref: worktree-kinfra-apply-autoapprove
+          path: kinfra-src
+
+      - name: Build kinfra-cli
+        working-directory: kinfra-src
+        run: ./gradlew :kinfra-cli:installDist
+
+      - name: Add kinfra to PATH
+        run: echo "${{ github.workspace }}/kinfra-src/kinfra-cli/build/install/kinfra-cli/bin" >> "$GITHUB_PATH"
+
+      # kinfraはkinfra-parent.ktsのbackendConfigからR2認証情報(bws())を自動解決するため、
+      # 従来のようなbws CLIインストール/AWS_ACCESS_KEY_ID手動exportステップは不要。
+      # ただしplatform/mcp-growiのTF_VAR_keycloak_admin_passwordは、kinfraの
+      # variableMappings(bws())によるtfvars生成がsub plan/sub applyには未対応のため
+      # (kigawa-net/kinfra側の追加対応が必要、フォローアップ課題)、
+      # 従来通りここで直接exportする。
+      - name: Install bws CLI (for platform/mcp-growi TF_VAR only)
+        if: inputs.dir == 'platform'
+        run: |
+          BWS_VERSION=$(curl -s https://api.github.com/repos/bitwarden/sdk-sm/releases/latest | jq -r '.tag_name')
+          BWS_TAG=${BWS_VERSION#bws-}
+          curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
+          unzip bws.zip bws
+          sudo mv bws /usr/local/bin/
+
+      - name: Export TF_VAR_keycloak_admin_password (platform only)
+        if: inputs.dir == 'platform'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          echo "TF_VAR_keycloak_admin_password=$(bws secret get e38ac3a1-1988-44a4-8421-b47000d79995 | jq -r '.value')" >> "$GITHUB_ENV"
+
+      # kinfra sub plan/sub apply は kinfra login (git clone) を経由せず、
+      # 既にcheckout済みのワークスペースをそのままrepoPathとして使う。
+      - name: Configure kinfra login (point at checked-out workspace)
+        run: |
+          mkdir -p "$HOME/.local/kinfra"
+          cat > "$HOME/.local/kinfra/project.yaml" <<EOF
+          login:
+            repo: "${{ inputs.dir }}"
+            repoPath: "${{ github.workspace }}/${{ inputs.dir }}"
+            enabledProjects: []
+          EOF
+
+      - name: Run kinfra plan (module root, e.g. hardware/ itself)
+        if: inputs.module == '.'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: kinfra plan -input=false -no-color 2>&1 | tee plan_output.txt
+
+      - name: Run kinfra plan (sub-project)
+        if: inputs.module != '.'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: kinfra sub plan "${{ inputs.module }}" -input=false -no-color 2>&1 | tee plan_output.txt
+
+      - name: Run kinfra apply (module root)
+        if: inputs.command == 'apply' && inputs.module == '.'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: kinfra apply -input=false -auto-approve
+
+      - name: Run kinfra apply (sub-project)
+        if: inputs.command == 'apply' && inputs.module != '.'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: kinfra sub apply "${{ inputs.module }}" -input=false -auto-approve
