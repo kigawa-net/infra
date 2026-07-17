@@ -4,6 +4,11 @@
 // versions.tf `backend "s3" {}` block; only the R2 credentials (intentionally
 // omitted from the .tf files) are supplied here via -backend-config.
 //
+// r2Bucket/r2Endpoint are separate from backendConfig{} for the same reason,
+// but ARE needed by kinfra's change-detection feature (kigawa-net/kinfra#349/#350),
+// which stores a per-sub-project content hash cache in this same R2 bucket to
+// decide which sub-projects to skip on plan/apply/deploy.
+//
 // Note: platform/mcp-growi also needs TF_VAR_keycloak_admin_password (a plain
 // Terraform variable, not backend config). kinfra's variableMappings/bws()-based
 // tfvars generation is currently only wired for the top-level `plan`/`apply`
@@ -15,6 +20,8 @@ projectName = "infra-platform"
 
 terraform {
     workingDirectory = "."
+    r2Bucket = "infra"
+    r2Endpoint = "https://e9f30fd43ef4cc3d46050e34dad5c811.r2.cloudflarestorage.com"
     backendConfig {
         accessKey = bws("eb5eb0e8-2a4a-4398-a756-b37000d87d64")
         secretKey = bws("c39086cc-e112-40eb-b19f-b37000d89090")
