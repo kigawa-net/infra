@@ -51,14 +51,12 @@ jobs:
       # ソースからkinfra-cliをビルドする。リリースが安定して出せるようになったら
       # install.sh相当のcurlに置き換える。
       #
-      # refは、current apply/sub apply等が実装されたkigawa-net/kinfra側のPR
-      # (#346, worktree-kinfra-apply-autoapprove)を指している。マージ後は"dev"
-      # （あるいはリリースタグ）に切り替えること。
+      # current apply/sub apply等はkigawa-net/kinfra#346でdevにマージ済み。
       - name: Checkout kinfra
         uses: actions/checkout@v4
         with:
           repository: kigawa-net/kinfra
-          ref: worktree-kinfra-apply-autoapprove
+          ref: dev
           path: kinfra-src
 
       - name: Build kinfra-cli
