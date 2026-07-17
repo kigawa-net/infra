@@ -57,26 +57,34 @@ jobs:
               DIFF_SPEC="${{ github.event.before }} ${{ github.sha }}"
             fi
             
-            # platform モジュールの検出
+            # kinfra.kts/kinfra-parent.kts等のkinfra設定ファイルはterraformモジュール
+            # ではないため、モジュール検出の対象から除外する
+            EXCLUDE_PATTERN='\.kts$'
+
+            # platform モジュールの検出（サブディレクトリのみが対象。
+            # platform/直下のファイルはモジュールを持たないため対象外）
             PLATFORM_MODULES=$(git diff --name-only $DIFF_SPEC -- platform/ \
-              | cut -d'/' -f2 | grep -v '^$' | sort -u \
+              | grep -v "$EXCLUDE_PATTERN" \
+              | grep '^platform/[^/]\+/' | cut -d'/' -f2 | sort -u \
               | xargs -I {} echo '{"dir": "platform", "module": "{}"}')
-            
+
             # hardware モジュールの検出
             # 1. サブディレクトリ (alice, k8s1, etc.)
             HARDWARE_SUB_MODULES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
+              | grep -v "$EXCLUDE_PATTERN" \
               | grep '^hardware/[^/]\+/' | cut -d'/' -f2 | grep -v '^modules$' | sort -u \
               | xargs -I {} echo '{"dir": "hardware", "module": "{}"}')
-            
+
             # 2. 直下のファイル (main.tf, variables.tf, etc.)
             HARDWARE_ROOT_FILES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
+              | grep -v "$EXCLUDE_PATTERN" \
               | grep '^hardware/[^/]\+$' | wc -l)
             if [ "$HARDWARE_ROOT_FILES" -gt 0 ]; then
               HARDWARE_ROOT_MODULE='{"dir": "hardware", "module": "."}'
             else
               HARDWARE_ROOT_MODULE=""
             fi
-            
+
             # hardware/modules が変更された場合は、ひとまず hardware/. を実行対象に含める
             HARDWARE_MODULES_CHANGES=$(git diff --name-only $DIFF_SPEC -- hardware/modules/ | wc -l)
             if [ "$HARDWARE_MODULES_CHANGES" -gt 0 ]; then
