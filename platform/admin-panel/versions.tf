@@ -24,5 +24,14 @@ terraform {
       source  = "bitwarden-labs/bitwarden-sm"
       version = "~> 0.3"
     }
+    github = {
+      source  = "integrations/github"
+      version = "~> 6.0"
+    }
   }
+}
+
+provider "github" {
+  owner = "kigawa-net"
+  token = var.github_token
 }
