@@ -115,8 +115,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
+          # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
+          # on publish order. Find the most recent release actually tagged bws-v* instead.
           BWS_VERSION=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
-            https://api.github.com/repos/bitwarden/sdk-sm/releases/latest | jq -r '.tag_name')
+            "https://api.github.com/repos/bitwarden/sdk-sm/releases?per_page=30" \
+            | jq -r '[.[] | select(.tag_name | startswith("bws-v"))][0].tag_name')
           BWS_TAG=${BWS_VERSION#bws-v}
           curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
           unzip bws.zip bws
