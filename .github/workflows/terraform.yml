@@ -130,6 +130,11 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
+          # The default Node-based CLI wrapper isn't usable here — this self-hosted
+          # runner (arc-runner-set-infra) doesn't have node on PATH, so `terraform`
+          # would fail with "env: 'node': No such file or directory". Plan/apply
+          # work identically without the wrapper; it only adds output-parsing sugar.
+          terraform_wrapper: false
 
       - name: Terraform Init
         env:

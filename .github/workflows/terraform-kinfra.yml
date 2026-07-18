@@ -46,6 +46,10 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "~1.6"
+          # このself-hosted runnerにはnodeが無く、デフォルトのNode製CLIラッパーだと
+          # "env: 'node': No such file or directory" で失敗するため無効化する。
+          # plan/applyの動作自体には影響しない(出力パース用の追加機能が無効になるだけ)。
+          terraform_wrapper: false
 
       # kigawa-net/kinfraのリリースパイプラインが復旧するまでの暫定策として、
       # ソースからkinfra-cliをビルドする。リリースが安定して出せるようになったら
