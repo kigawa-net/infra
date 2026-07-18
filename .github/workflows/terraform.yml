@@ -136,14 +136,20 @@ jobs:
           # work identically without the wrapper; it only adds output-parsing sugar.
           terraform_wrapper: false
 
+      # BWS_ACCESS_TOKEN is read by the `bws` CLI inside run.sh (to fetch other secrets);
+      # BW_ACCESS_TOKEN is the env var the `bitwarden/bitwarden-secrets` Terraform provider
+      # itself expects (it replaced the now-defunct `bitwarden-labs/bitwarden-sm` provider,
+      # which used a different, un-namespaced env var convention). Same underlying token.
       - name: Terraform Init
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} init -input=false
 
       - name: Terraform Plan
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
           ./${{ matrix.dir }}/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
             2>&1 | tee plan_output.txt
@@ -191,4 +197,5 @@ jobs:
           (github.event_name == 'workflow_dispatch' && inputs.command == 'apply')
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
