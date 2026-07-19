@@ -8,12 +8,9 @@ resource "random_password" "ci_token" {
 }
 
 resource "bitwarden-secrets_secret" "ci_token" {
-  key   = "admin-panel-github-app-ci-token"
-  value = random_password.ci_token.result
-  # project_id intentionally omitted: passing var.bws_project_id (default null) here made
-  # the provider send an empty string to the API instead of treating it as unset, which
-  # fails UUID parsing ("expected length 32 for simple format, found 0"). Omitting the
-  # argument entirely avoids that; set a real project UUID here if/when one is needed.
+  key        = "admin-panel-github-app-ci-token"
+  value      = random_password.ci_token.result
+  project_id = var.bws_project_id
 }
 
 # CI(kigawa-net/kinfra#348 のcomposite action経由)がadmin-panelの
