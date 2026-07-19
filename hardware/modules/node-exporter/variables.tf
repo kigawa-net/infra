@@ -16,7 +16,7 @@ variable "sudo_password" {
   sensitive = true
 }
 
-variable "version" {
+variable "node_exporter_version" {
   description = "node_exporter のバージョン (例: 1.7.0)"
   type        = string
   default     = "1.7.0"

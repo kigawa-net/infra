@@ -19,7 +19,7 @@ locals {
 resource "null_resource" "node_exporter" {
   triggers = {
     host           = var.host
-    version        = var.version
+    version        = var.node_exporter_version
     listen_address = var.listen_address
   }
 
@@ -45,7 +45,7 @@ resource "null_resource" "node_exporter" {
       "echo '${var.sudo_password}' | sudo -S bash -c 'id node_exporter &>/dev/null || useradd --no-create-home --shell /bin/false node_exporter'",
 
       # バイナリインストール
-      "echo '${var.sudo_password}' | sudo -S bash -c 'cd /tmp && curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.version}/node_exporter-${var.version}.linux-amd64.tar.gz | tar xz && install -m 755 node_exporter-${var.version}.linux-amd64/node_exporter /usr/local/bin/node_exporter && rm -rf node_exporter-${var.version}.linux-amd64'",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'cd /tmp && curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.node_exporter_version}/node_exporter-${var.node_exporter_version}.linux-amd64.tar.gz | tar xz && install -m 755 node_exporter-${var.node_exporter_version}.linux-amd64/node_exporter /usr/local/bin/node_exporter && rm -rf node_exporter-${var.node_exporter_version}.linux-amd64'",
 
       # サービスファイル配置
       "echo '${var.sudo_password}' | sudo -S cp /tmp/node_exporter.service /etc/systemd/system/node_exporter.service",
