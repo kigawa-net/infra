@@ -68,7 +68,13 @@ jobs:
         run: ./gradlew :kinfra-cli:installDist
 
       - name: Add kinfra to PATH
-        run: echo "${{ github.workspace }}/kinfra-src/kinfra-cli/build/install/kinfra-cli/bin" >> "$GITHUB_PATH"
+        # installDistが生成する起動スクリプト名はGradleプロジェクト名(kinfra-cli)由来だが、
+        # install.sh経由の正式なインストールでは`kinfra`という名前になる(APP_NAME="kinfra")。
+        # 呼び出し側(このワークフロー)を将来のinstall.sh移行後もそのまま使えるよう、
+        # `kinfra`という名前のシンボリックリンクを作ってPATHに追加する。
+        run: |
+          ln -sf kinfra-cli "${{ github.workspace }}/kinfra-src/kinfra-cli/build/install/kinfra-cli/bin/kinfra"
+          echo "${{ github.workspace }}/kinfra-src/kinfra-cli/build/install/kinfra-cli/bin" >> "$GITHUB_PATH"
 
       # kinfraはkinfra-parent.ktsのbackendConfigからR2認証情報(bws())を自動解決するため、
       # 従来のようなbws CLIインストール/AWS_ACCESS_KEY_ID手動exportステップは不要。
@@ -112,13 +118,19 @@ jobs:
         if: inputs.module == '.'
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: kinfra plan -input=false -no-color 2>&1 | tee plan_output.txt
+        # pipefail必須: `| tee`の終了コードはteeのものになり、kinfra側の失敗
+        # (command not foundやplanエラー)が握りつぶされてジョブが誤って成功扱いになるため。
+        run: |
+          set -o pipefail
+          kinfra plan -input=false -no-color 2>&1 | tee plan_output.txt
 
       - name: Run kinfra plan (sub-project)
         if: inputs.module != '.'
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: kinfra sub plan "${{ inputs.module }}" -input=false -no-color 2>&1 | tee plan_output.txt
+        run: |
+          set -o pipefail
+          kinfra sub plan "${{ inputs.module }}" -input=false -no-color 2>&1 | tee plan_output.txt
 
       - name: Run kinfra apply (module root)
         if: inputs.command == 'apply' && inputs.module == '.'
