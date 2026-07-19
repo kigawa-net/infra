@@ -1,7 +1,7 @@
 variable "bws_project_id" {
-  description = "Bitwarden Secrets Manager project ID (optional)"
+  description = "Bitwarden Secrets Manager project ID for admin-panel's secrets"
   type        = string
-  default     = null
+  default     = "3f39dcb2-4e04-4c80-bcc4-b3e100e4e27a"
 }
 
 variable "bws_organization_id" {
