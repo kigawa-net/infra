@@ -159,7 +159,9 @@ jobs:
               ? output.slice(0, 60000) + '\n\n...(出力が長いため省略)'
               : output;
             const header = `### Terraform Plan \`${{ matrix.dir }}/${{ matrix.module }}\``;
-            const body = `${header}\n\`\`\`\n${truncated}\n\`\`\``;
+            // "diff" 言語指定にすると、+/-で始まる行がGitHub上で緑/赤にハイライトされる
+            // (planの出力する+/-/~がdiff表記とほぼ一致するため、素の```より読みやすくなる)。
+            const body = `${header}\n\`\`\`diff\n${truncated}\n\`\`\``;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
