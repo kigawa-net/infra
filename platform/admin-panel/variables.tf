@@ -1,9 +1,3 @@
-variable "bws_project_id" {
-  description = "Bitwarden Secrets Manager project ID for admin-panel's secrets"
-  type        = string
-  default     = "a2b57f3d-6e2b-4467-b499-b31e00bfd804"
-}
-
 variable "bws_organization_id" {
   description = "Bitwarden Secrets Manager organization ID (same org used by the k8s BitwardenSecret CRDs)"
   type        = string
