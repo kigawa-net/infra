@@ -78,12 +78,11 @@ jobs:
 
       # kinfraはkinfra-parent.ktsのbackendConfigからR2認証情報(bws())を自動解決するため、
       # 従来のようなbws CLIインストール/AWS_ACCESS_KEY_ID手動exportステップは不要。
-      # ただしplatform/mcp-growiのTF_VAR_keycloak_admin_passwordは、kinfraの
-      # variableMappings(bws())によるtfvars生成がsub plan/sub applyには未対応のため
-      # (kigawa-net/kinfra側の追加対応が必要、フォローアップ課題)、
-      # 従来通りここで直接exportする。
-      - name: Install bws CLI (for platform/mcp-growi TF_VAR only)
-        if: inputs.dir == 'platform'
+      # ただし、hardware/*配下の各モジュール(ssh_key/sudo_password/join_info等)とplatform/
+      # mcp-growiのTF_VAR_keycloak_admin_passwordは、Terraformコード自体が
+      # `data.external`ブロック経由でbws CLIを直接呼んでいるため、
+      # dir問わず(platform/hardware共通)bws CLIのインストールが必要。
+      - name: Install bws CLI
         run: |
           # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
           # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
