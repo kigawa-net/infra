@@ -7,10 +7,22 @@ resource "random_password" "ci_token" {
   }
 }
 
+# Two guessed project IDs both 404'd; turned out the project ID itself
+# (3f39dcb2-4e04-4c80-bcc4-b3e100e4e27a) was right all along, but nothing
+# confirmed the CI machine account could actually see it. Rather than hardcode
+# it a third time, read it off the "github-app-kigawa-net" secret (the App's
+# private key, same one admin-panel's server reads via GITHUB_APP_PRIVATE_KEY)
+# that's known to already live in the right project — if the machine account
+# can't read that secret, this data source fails loudly instead of a cryptic
+# empty-project_id UUID error downstream.
+data "bitwarden-secrets_secret" "github_app_private_key" {
+  id = "97b6eba7-6bd2-418d-9d64-b48a007a097a"
+}
+
 resource "bitwarden-secrets_secret" "ci_token" {
   key        = "admin-panel-github-app-ci-token"
   value      = random_password.ci_token.result
-  project_id = var.bws_project_id
+  project_id = data.bitwarden-secrets_secret.github_app_private_key.project_id
 }
 
 # CI(kigawa-net/kinfra#348 のcomposite action経由)がadmin-panelの
