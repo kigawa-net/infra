@@ -45,6 +45,9 @@ data "external" "join_info" {
 
     if [ -z "$token" ] || [ -z "$hash" ]; then
       echo "join_info: failed to get token/hash from ${var.control_plane_ssh_user}@${var.control_plane_host} (ssh exit $ssh_exit): $cmd" >&2
+      # data "external" はプログラムがexit 0で終了するとstderrを握りつぶすため、
+      # 診断メッセージを実際に表示させるには非ゼロで終了する必要がある
+      exit 1
     fi
 
     printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
