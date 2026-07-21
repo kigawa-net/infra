@@ -133,6 +133,22 @@ module "wireguard" {
   server_allowed_ips = var.wireguard_server_allowed_ips
 }
 
+module "wireguard_ionos" {
+  count  = var.wireguard_ionos_server_public_key != "" ? 1 : 0
+  source = "../modules/wireguard"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  wireguard_interface = var.wireguard_ionos_interface
+  wireguard_address   = var.wireguard_ionos_address
+  server_public_key   = var.wireguard_ionos_server_public_key
+  server_endpoint     = var.wireguard_ionos_server_endpoint
+  server_allowed_ips  = var.wireguard_ionos_server_allowed_ips
+}
+
 module "keepalived" {
   source = "../modules/keepalived"
 
