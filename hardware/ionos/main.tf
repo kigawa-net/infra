@@ -85,7 +85,7 @@ data "external" "k8s1_wireguard_public_key" {
     if [ -z "${var.k8s1_wireguard_ssh_host}" ]; then
       jq -n '{"value": ""}'; exit 0
     fi
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
@@ -107,7 +107,7 @@ data "external" "k8s2_wireguard_public_key" {
     if [ -z "${var.k8s2_wireguard_ssh_host}" ]; then
       jq -n '{"value": ""}'; exit 0
     fi
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
