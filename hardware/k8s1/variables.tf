@@ -39,7 +39,7 @@ variable "cni_manifest_url" {
 variable "control_plane_host" {
   description = "既存control-planeのSSHホスト。空の場合はkubeadm initを実行し、設定されている場合はclusterが存在すればjoinする"
   type        = string
-  default     = "k8s4"
+  default     = "k8s4.kigawa.net"
 }
 
 variable "control_plane_ssh_user" {
