@@ -26,7 +26,7 @@ variable "k8s_version" {
 
 variable "control_plane_host" {
   type    = string
-  default = "k8s1"
+  default = "k8s1.kigawa.net"
 }
 
 variable "control_plane_ssh_user" {
