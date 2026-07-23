@@ -72,7 +72,7 @@ jobs:
             # 1. サブディレクトリ (alice, k8s1, etc.)
             HARDWARE_SUB_MODULES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
               | grep -v "$EXCLUDE_PATTERN" \
-              | grep '^hardware/[^/]\+/' | cut -d'/' -f2 | grep -v '^modules$' | sort -u \
+              | grep '^hardware/[^/]\+/' | cut -d'/' -f2 | grep -vE '^(modules|zones)$' | sort -u \
               | xargs -I {} echo '{"dir": "hardware", "module": "{}"}')
 
             # 2. 直下のファイル (main.tf, variables.tf, etc.)
