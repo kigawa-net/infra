@@ -150,7 +150,10 @@ jobs:
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        # pipefail必須: `| tee`の終了コードはteeのものになり、run.sh plan自体の失敗
+        # (postcondition違反等)が握りつぶされてステップが誤って成功扱いになるため。
         run: |
+          set -o pipefail
           ./${{ matrix.dir }}/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
             2>&1 | tee plan_output.txt
 
