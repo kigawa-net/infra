@@ -15,6 +15,12 @@ data "external" "sudo_password" {
 }
 
 data "external" "join_info" {
+  # デバッグ用: token/ca_cert_hashの抽出に失敗する原因が分からなかったため、
+  # リモートコマンドの2>/dev/nullを外し、SSH/sudo/kubeadmのエラーを
+  # stderr経由でterraformの出力に表示するようにしている
+  # (data "external" の仕様上、stdoutは最終printfのJSONのみである必要があるため、
+  # SSH自体の出力は2>&1でこのスクリプト自身のstderrに逃がし、
+  # 抽出失敗時のみ内容をまとめてstderrに出す)。
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
     sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
@@ -27,13 +33,23 @@ data "external" "join_info" {
       -i "$tmpkey" \
       -o StrictHostKeyChecking=no \
       -o BatchMode=yes \
+      -o ConnectTimeout=10 \
       "${var.control_plane_ssh_user}@${var.control_plane_host}" \
-      "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
+      "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command" 2>&1)
+    ssh_exit=$?
 
     rm -f "$tmpkey"
 
     token=$(printf '%s' "$cmd" | grep -oP '(?<=--token )\S+')
     hash=$(printf '%s' "$cmd"  | grep -oP '(?<=--discovery-token-ca-cert-hash )\S+')
+
+    if [ -z "$token" ] || [ -z "$hash" ]; then
+      echo "join_info: failed to get token/hash from ${var.control_plane_ssh_user}@${var.control_plane_host} (ssh exit $ssh_exit): $cmd" >&2
+      # data "external" はプログラムがexit 0で終了するとstderrを握りつぶすため、
+      # 診断メッセージを実際に表示させるには非ゼロで終了する必要がある
+      exit 1
+    fi
+
     printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
   EOT
   ]
