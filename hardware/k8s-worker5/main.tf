@@ -129,3 +129,73 @@ module "node_exporter" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+# iBGPメッシュ参加用に、既存のプライマリIP(192.168.1.150/24, eno1)を維持したまま
+# セカンダリIP(var.server_ip)をnetplan経由で追加する。既存のaddressesリストを
+# 上書きするとプライマリIPを失いSSH接続自体を失うため、既存ファイルを直接
+# バックアップした上でリストに追記する(新規drop-inファイルにはしない)。
+resource "null_resource" "bgp_static_ip" {
+  triggers = {
+    server_ip = var.server_ip
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -euo pipefail
+
+      IFACE="eno1"
+      EXISTING_IP="192.168.1.150/24"
+      NEW_IP="${var.server_ip}/24"
+
+      if ip -4 addr show "$IFACE" | grep -qF "$${NEW_IP%/*}"; then
+        echo "bgp_static_ip: $NEW_IP already present on $IFACE, skipping"
+        exit 0
+      fi
+
+      NETPLAN_FILE=$(grep -l "$IFACE" /etc/netplan/*.yaml 2>/dev/null | head -1)
+      if [ -z "$NETPLAN_FILE" ]; then
+        echo "bgp_static_ip: could not find netplan file defining $IFACE" >&2
+        exit 1
+      fi
+
+      cp "$NETPLAN_FILE" "$NETPLAN_FILE.bak.$(date +%s)"
+      sed -i "\#- $${EXISTING_IP}#a\\      - $${NEW_IP}" "$NETPLAN_FILE"
+
+      netplan generate
+      netplan apply
+      sleep 2
+
+      ip -4 addr show "$IFACE" | grep -qF "$${NEW_IP%/*}" \
+        || { echo "bgp_static_ip: $NEW_IP not present on $IFACE after netplan apply" >&2; exit 1; }
+    SCRIPT
+    destination = "/tmp/bgp-static-ip.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/bgp-static-ip.sh && rm -f /tmp/bgp-static-ip.sh",
+    ]
+  }
+}
+
+module "bgp" {
+  depends_on = [null_resource.bgp_static_ip]
+  source     = "../modules/bgp-bird"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  bgp_router_id = var.server_ip
+  bgp_local_as  = var.bgp_local_as
+  bgp_peers     = var.bgp_peers
+}

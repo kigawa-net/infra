@@ -54,14 +54,13 @@ variable "cni_manifest_url" {
 }
 
 variable "bgp_local_as" {
-  type    = number
-  default = 64512
+  description = "Inuyama K8s (ローカル) の AS 番号"
+  type        = number
+  default     = 65000
 }
 
 variable "bgp_peers" {
-  type = list(object({
-    ip   = string
-    as   = number
-  }))
-  default = []
+  description = "iBGPピアのIPリスト"
+  type        = list(string)
+  default     = ["10.0.0.103", "10.0.0.120", "10.0.0.140", "10.0.0.40"]
 }

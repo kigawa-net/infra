@@ -59,7 +59,7 @@ variable "bgp_local_as" {
 variable "bgp_peers" {
   description = "iBGPピアのIPリスト"
   type        = list(string)
-  default     = ["10.0.0.103", "10.0.0.120"]
+  default     = ["10.0.0.103", "10.0.0.120", "10.0.0.30", "10.0.0.40"]
 }
 
 variable "kube_vip_address" {
