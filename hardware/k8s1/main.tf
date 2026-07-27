@@ -1,6 +1,6 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +8,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -22,8 +22,8 @@ data "external" "join_info" {
       printf '{"token":"","ca_cert_hash":"","certificate_key":""}'; exit 0
     fi
 
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
