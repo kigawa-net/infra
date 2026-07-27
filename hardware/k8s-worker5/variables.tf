@@ -43,3 +43,15 @@ variable "sudo_password_bitwarden_id" {
   type    = string
   default = "52b44d60-7cab-429f-929a-b4340139b6d8"
 }
+
+variable "bgp_local_as" {
+  description = "Inuyama K8s (ローカル) の AS 番号"
+  type        = number
+  default     = 65000
+}
+
+variable "bgp_peers" {
+  description = "iBGPピアのIPリスト"
+  type        = list(string)
+  default     = ["10.0.0.103", "10.0.0.120", "10.0.0.140", "10.0.0.30"]
+}
