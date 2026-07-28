@@ -9,8 +9,15 @@ variable "ssh_user" {
 }
 
 variable "ssh_key_bitwarden_id" {
-  type    = string
-  default = "0393671f-6ef0-4650-be98-b364013f8644"
+  description = "ionos ホスト自身への接続に使うSSH秘密鍵 (alice/k8s1/k8s2とは別鍵)"
+  type        = string
+  default     = "1ebd34bf-bfb2-445b-b826-b48f006eba0c"
+}
+
+variable "k8s_ssh_key_bitwarden_id" {
+  description = "k8s1/k8s2へSSHして公開鍵を取得する際に使うSSH秘密鍵 (alice/k8s1/k8s2共用鍵)"
+  type        = string
+  default     = "0393671f-6ef0-4650-be98-b364013f8644"
 }
 
 variable "sudo_password_bitwarden_id" {
