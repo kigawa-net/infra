@@ -85,13 +85,31 @@ jobs:
               HARDWARE_ROOT_MODULE=""
             fi
 
-            # hardware/modules が変更された場合は、ひとまず hardware/. を実行対象に含める
-            HARDWARE_MODULES_CHANGES=$(git diff --name-only $DIFF_SPEC -- hardware/modules/ | wc -l)
-            if [ "$HARDWARE_MODULES_CHANGES" -gt 0 ]; then
-              HARDWARE_ROOT_MODULE='{"dir": "hardware", "module": "."}'
-            fi
+            # hardware/modules/<name> が変更された場合、実際に
+            # source = "../modules/<name>" を参照しているモジュールだけを
+            # 実行対象に追加する (hardware/. を含む未使用モジュールを
+            # 誤って巻き込まないようにするため)
+            CHANGED_SHARED_MODULES=$(git diff --name-only $DIFF_SPEC -- hardware/modules/ \
+              | grep -v "$EXCLUDE_PATTERN" \
+              | grep '^hardware/modules/[^/]\+/' | cut -d'/' -f3 | sort -u)
 
-            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}" \
+            HARDWARE_MODULE_CONSUMERS=""
+            for shared_module in $CHANGED_SHARED_MODULES; do
+              CONSUMER_FILES=$(grep -rlE "source[[:space:]]*=[[:space:]]*\"\.\./modules/${shared_module}\"" hardware --include="*.tf" \
+                | grep -v '^hardware/modules/')
+              for f in $CONSUMER_FILES; do
+                rel="${f#hardware/}"
+                if [ "$rel" = "main.tf" ]; then
+                  mod="."
+                else
+                  mod="${rel%%/*}"
+                fi
+                HARDWARE_MODULE_CONSUMERS="${HARDWARE_MODULE_CONSUMERS}\n{\"dir\": \"hardware\", \"module\": \"$mod\"}"
+              done
+            done
+            HARDWARE_MODULE_CONSUMERS=$(echo -e "$HARDWARE_MODULE_CONSUMERS" | grep -v '^$' | sort -u)
+
+            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}\n${HARDWARE_MODULE_CONSUMERS}" \
               | grep -v '^$' | sort -u | jq -sc .)
           fi
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
