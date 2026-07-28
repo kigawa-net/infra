@@ -1,6 +1,6 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +8,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -16,7 +16,7 @@ data "external" "sudo_password" {
 
 data "external" "inuyama_wireguard_private_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_private_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.inuyama_wireguard_private_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -24,7 +24,7 @@ data "external" "inuyama_wireguard_private_key" {
 
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -32,8 +32,8 @@ data "external" "inuyama_wireguard_public_key" {
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -169,8 +169,78 @@ resource "null_resource" "inuyama_wireguard" {
   }
 }
 
+resource "null_resource" "ionos_wireguard" {
+  depends_on = [null_resource.inuyama_wireguard]
+
+  triggers = {
+    host             = var.host
+    interface        = var.ionos_wireguard_interface
+    address          = var.ionos_wireguard_address
+    ionos_address    = "172.31.254.2"
+    ionos_public_key = sha256(var.ionos_wireguard_public_key)
+    ionos_endpoint   = var.ionos_wireguard_endpoint
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -eo pipefail
+      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      umask 077
+      exec > >(tee -a /tmp/ionos-wireguard-setup.log) 2>&1
+
+      case "${var.ionos_wireguard_interface}" in
+        ""|*[!a-zA-Z0-9._-]*)
+          echo "ionos_wireguard_interface contains unsupported characters"
+          exit 1
+          ;;
+      esac
+
+      # wg0 (alice向け) のセットアップで既に /etc/wireguard/inuyama_private.key が
+      # 配置されている前提 (このinuyama鍵をionos向けwg1でも共用する)
+      if [ ! -f /etc/wireguard/inuyama_private.key ]; then
+        echo "/etc/wireguard/inuyama_private.key not found; inuyama_wireguard (wg0) must be applied first"
+        exit 1
+      fi
+      inuyama_private_key=$(cat /etc/wireguard/inuyama_private.key)
+
+      cat > /etc/wireguard/${var.ionos_wireguard_interface}.conf <<WGCONF
+      [Interface]
+      Address = ${var.ionos_wireguard_address}
+      PrivateKey = $inuyama_private_key
+      MTU = ${var.wireguard_mtu}
+
+      [Peer]
+      PublicKey = ${var.ionos_wireguard_public_key}
+      AllowedIPs = 172.31.254.2/32
+      Endpoint = ${var.ionos_wireguard_endpoint}
+      PersistentKeepalive = 25
+      WGCONF
+
+      chmod 600 /etc/wireguard/${var.ionos_wireguard_interface}.conf
+      systemctl enable wg-quick@${var.ionos_wireguard_interface}
+      systemctl restart wg-quick@${var.ionos_wireguard_interface}
+      wg show ${var.ionos_wireguard_interface}
+    SCRIPT
+    destination = "/tmp/ionos-wireguard-setup.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/ionos-wireguard-setup.sh && rm -f /tmp/ionos-wireguard-setup.sh",
+    ]
+  }
+}
+
 module "bgp" {
-  depends_on = [module.control_plane, null_resource.inuyama_wireguard]
+  depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard]
   source     = "../modules/bgp-bird"
 
   host            = var.host
@@ -188,6 +258,14 @@ module "bgp" {
       local_as        = var.inuyama_asn
       neighbor_ip     = var.alice_wireguard_address
       neighbor_as     = var.alice_bgp_as
+      import_prefixes = []
+      export_prefixes = ["10.0.0.0/16"]
+    },
+    {
+      local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = "172.31.254.2"
+      neighbor_as     = var.ionos_bgp_as
       import_prefixes = []
       export_prefixes = ["10.0.0.0/16"]
     }
