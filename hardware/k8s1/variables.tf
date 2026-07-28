@@ -113,7 +113,7 @@ variable "wireguard_address" {
 variable "wireguard_server_public_key" {
   description = "Alice の WireGuard 公開鍵 (cat /etc/wireguard/alice_public.key で取得)"
   type        = string
-  default     = ""
+  default     = "/bsBpHC0xLxdncldAE1Qo7bWTIXgcJm3Vui6sZOtPhs="
 }
 
 variable "wireguard_server_endpoint" {
@@ -126,4 +126,34 @@ variable "wireguard_server_allowed_ips" {
   description = "WireGuard トンネル経由でルーティングする IP レンジ"
   type        = list(string)
   default     = ["172.31.255.0/24"]
+}
+
+variable "wireguard_ionos_interface" {
+  description = "Ionos hub 向け WireGuard インターフェース名"
+  type        = string
+  default     = "wg1"
+}
+
+variable "wireguard_ionos_address" {
+  description = "Ionos hub 向け WireGuard インターフェースのアドレス"
+  type        = string
+  default     = "172.31.254.11/24"
+}
+
+variable "wireguard_ionos_server_public_key" {
+  description = "Ionos の WireGuard 公開鍵 (cat /etc/wireguard/ionos_public.key で取得)"
+  type        = string
+  default     = "OH5QiXaMfpmH8nHVU1Onnfom4BZcq4zx5Ux6R6R4LR0="
+}
+
+variable "wireguard_ionos_server_endpoint" {
+  description = "Ionos の WireGuard エンドポイント"
+  type        = string
+  default     = "74.208.55.86:51820"
+}
+
+variable "wireguard_ionos_server_allowed_ips" {
+  description = "WireGuard トンネル経由でルーティングする IP レンジ (Ionos hub)"
+  type        = list(string)
+  default     = ["172.31.254.0/24"]
 }

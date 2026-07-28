@@ -1,6 +1,6 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +8,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -22,8 +22,8 @@ data "external" "join_info" {
       printf '{"token":"","ca_cert_hash":"","certificate_key":""}'; exit 0
     fi
 
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -137,10 +137,26 @@ module "wireguard" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  wireguard_address    = var.wireguard_address
-  server_public_key    = var.wireguard_server_public_key
-  server_endpoint      = var.wireguard_server_endpoint
-  server_allowed_ips   = var.wireguard_server_allowed_ips
+  wireguard_address  = var.wireguard_address
+  server_public_key  = var.wireguard_server_public_key
+  server_endpoint    = var.wireguard_server_endpoint
+  server_allowed_ips = var.wireguard_server_allowed_ips
+}
+
+module "wireguard_ionos" {
+  count  = var.wireguard_ionos_server_public_key != "" ? 1 : 0
+  source = "../modules/wireguard"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  wireguard_interface = var.wireguard_ionos_interface
+  wireguard_address   = var.wireguard_ionos_address
+  server_public_key   = var.wireguard_ionos_server_public_key
+  server_endpoint     = var.wireguard_ionos_server_endpoint
+  server_allowed_ips  = var.wireguard_ionos_server_allowed_ips
 }
 
 module "keepalived" {

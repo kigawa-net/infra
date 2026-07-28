@@ -5,7 +5,7 @@ resource "null_resource" "wireguard" {
     server_endpoint   = var.server_endpoint
     server_public_key = sha256(var.server_public_key)
     allowed_ips       = join(",", var.server_allowed_ips)
-    setup_version     = "1"
+    setup_version     = "3"
   }
 
   connection {
