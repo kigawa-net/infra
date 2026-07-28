@@ -74,9 +74,9 @@ variable "kube_vip_interface" {
 }
 
 variable "kube_vip_api_server_ip" {
-  description = "kube-vipがリーダー選出で参照するAPIサーバーIP"
+  description = "kube-vipがリーダー選出で参照するAPIサーバーIP (VIP喪失時の自己参照デッドロックを避けるため、kube_vip_addressとは別の到達可能なアドレスにすること)"
   type        = string
-  default     = "10.0.0.100"
+  default     = "192.168.1.104"
 }
 
 variable "dns_vip" {
