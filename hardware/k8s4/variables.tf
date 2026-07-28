@@ -126,6 +126,31 @@ variable "alice_wireguard_endpoint" {
   default = "161.248.62.66:51820"
 }
 
+variable "ionos_wireguard_interface" {
+  type    = string
+  default = "wg1"
+}
+
+variable "ionos_wireguard_address" {
+  type    = string
+  default = "172.31.254.1/30"
+}
+
+variable "ionos_wireguard_public_key" {
+  type    = string
+  default = "OH5QiXaMfpmH8nHVU1Onnfom4BZcq4zx5Ux6R6R4LR0="
+}
+
+variable "ionos_wireguard_endpoint" {
+  type    = string
+  default = "74.208.55.86:51820"
+}
+
+variable "ionos_bgp_as" {
+  type    = number
+  default = 65030
+}
+
 variable "wireguard_listen_port" {
   type    = number
   default = 51820
