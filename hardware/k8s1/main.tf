@@ -182,3 +182,18 @@ module "node_exporter" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+module "dual_stack_network" {
+  source = "../modules/dual-stack-network"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  interface       = var.kube_vip_interface
+  primary_cidr    = "${var.host}/24"
+  primary_gateway = "192.168.1.1"
+  secondary_cidr  = "${var.server_ip}/24"
+  nameservers     = ["192.168.1.1", "10.0.0.1"]
+}
