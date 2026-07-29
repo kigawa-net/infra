@@ -27,7 +27,7 @@ resource "null_resource" "wireguard" {
       apt-get update -y
       apt-get install -y wireguard
 
-      install -d -m 700 /etc/wireguard
+      install -d -m 711 /etc/wireguard
 
       if [ ! -f /etc/wireguard/privatekey ]; then
         wg genkey > /etc/wireguard/privatekey

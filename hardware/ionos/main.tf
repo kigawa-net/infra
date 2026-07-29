@@ -183,7 +183,7 @@ resource "null_resource" "ionos_gateway" {
       apt-get update -y
       apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
 
-      install -d -m 700 /etc/wireguard
+      install -d -m 711 /etc/wireguard
 
       if [ ! -f /etc/wireguard/ionos_private.key ]; then
         wg genkey > /etc/wireguard/ionos_private.key

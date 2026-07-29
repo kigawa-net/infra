@@ -59,6 +59,7 @@ variable "wireguard_peer_allowed_ips" {
   default = [
     "172.31.255.1/32",
     "192.168.1.0/24",
+    "10.0.0.0/24",
   ]
 }
 
@@ -96,7 +97,7 @@ variable "bgp_router_id" {
 variable "inuyama_accepted_prefixes" {
   type = list(string)
   default = [
-    "10.0.0.0/16",
+    "10.0.0.0/24",
   ]
 }
 
