@@ -96,7 +96,7 @@ variable "bgp_router_id" {
 variable "inuyama_accepted_prefixes" {
   type = list(string)
   default = [
-    "192.168.1.0/24",
+    "10.0.0.0/16",
   ]
 }
 
@@ -108,19 +108,19 @@ variable "alice_advertised_prefixes" {
 variable "inuyama_ingress_vip" {
   description = "Inuyama ingress VIP for alice HTTP/HTTPS forwarding. Empty disables those HAProxy frontends."
   type        = string
-  default     = "192.168.1.240"
+  default     = "10.0.0.240"
 }
 
 variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for alice TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
-  default     = "192.168.1.241"
+  default     = "10.0.0.241"
 }
 
 variable "k8s1_wireguard_public_key" {
   description = "k8s1 の WireGuard 公開鍵 (空の場合はピア設定なし)"
   type        = string
-  default     = ""
+  default     = "HZ5NneXNytqEanGjJSLDE5ncHk440O2fXxUmXDyOKDw="
 }
 
 variable "k8s1_wireguard_address" {
@@ -132,7 +132,7 @@ variable "k8s1_wireguard_address" {
 variable "k8s2_wireguard_public_key" {
   description = "k8s2 の WireGuard 公開鍵 (空の場合はピア設定なし)"
   type        = string
-  default     = ""
+  default     = "+PuboGsR5IW7ODJ+h7tKXfaeQeTZyC9dsGJPBKos+iY="
 }
 
 variable "k8s2_wireguard_address" {
