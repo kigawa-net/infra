@@ -38,6 +38,7 @@ resource "null_resource" "control_plane" {
       export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       export DEBIAN_FRONTEND=noninteractive
       export NEEDRESTART_MODE=a
+      export APT_OPTS="-o Dpkg::Options::=--force-confold -o Dpkg::Options::=--force-confdef"
 
       _kubeadm_ran=0
 
@@ -49,20 +50,20 @@ resource "null_resource" "control_plane" {
             rm -f /home/${var.ssh_user}/.kube/config
           fi
           apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
-          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge kubelet kubeadm kubectl 2>/dev/null || true
-          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge containerd 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge $APT_OPTS kubelet kubeadm kubectl 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge $APT_OPTS containerd 2>/dev/null || true
           rm -f /etc/apt/sources.list.d/kubernetes.list
           rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
           rm -f /etc/modules-load.d/k8s.conf
           rm -f /etc/sysctl.d/k8s.conf
-          DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
+          DEBIAN_FRONTEND=noninteractive apt-get autoremove -y $APT_OPTS 2>/dev/null || true
           echo "[cleanup] rollback complete"
         fi
       }
       trap cleanup EXIT
 
       apt-get update -y
-      apt-get install -y kmod
+      apt-get install -y $APT_OPTS kmod
 
       printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
       modprobe overlay || true
@@ -71,18 +72,18 @@ resource "null_resource" "control_plane" {
       printf 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\n' > /etc/sysctl.d/k8s.conf
       sysctl --system
 
-      apt-get install -y containerd
+      apt-get install -y $APT_OPTS containerd
       mkdir -p /etc/containerd
       containerd config default > /etc/containerd/config.toml
       sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
       systemctl enable --now containerd
 
-      apt-get install -y apt-transport-https ca-certificates curl gpg
+      apt-get install -y $APT_OPTS apt-transport-https ca-certificates curl gpg
       mkdir -p /etc/apt/keyrings
       curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
       apt-get update -y
-      apt-get install -y kubelet kubeadm kubectl
+      apt-get install -y $APT_OPTS kubelet kubeadm kubectl
       apt-mark hold kubelet kubeadm kubectl
 
       if [ ! -f /etc/kubernetes/admin.conf ]; then

@@ -12,14 +12,14 @@ locals {
   alice_network_statements = [for prefix in var.alice_advertised_prefixes : "  network ${prefix}"]
 
   k8s_wireguard_peers = concat(
-    var.k8s1_wireguard_public_key != "" ? [{
-      public_key           = var.k8s1_wireguard_public_key
+    data.external.k8s1_wireguard_public_key.result.value != "" ? [{
+      public_key           = data.external.k8s1_wireguard_public_key.result.value
       allowed_ips          = ["${var.k8s1_wireguard_address}/32"]
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
-    var.k8s2_wireguard_public_key != "" ? [{
-      public_key           = var.k8s2_wireguard_public_key
+    data.external.k8s2_wireguard_public_key.result.value != "" ? [{
+      public_key           = data.external.k8s2_wireguard_public_key.result.value
       allowed_ips          = ["${var.k8s2_wireguard_address}/32"]
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
@@ -80,6 +80,50 @@ data "external" "inuyama_wireguard_public_key" {
   ]
 }
 
+data "external" "k8s1_wireguard_public_key" {
+  program = ["bash", "-c", <<-EOT
+    if [ -z "${var.k8s1_wireguard_ssh_host}" ]; then
+      jq -n '{"value": ""}'; exit 0
+    fi
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    tmpkey=$(mktemp)
+    chmod 600 "$tmpkey"
+    printf '%s\n' "$ssh_key" > "$tmpkey"
+    value=$(ssh \
+      -i "$tmpkey" \
+      -o StrictHostKeyChecking=no \
+      -o BatchMode=yes \
+      -o ConnectTimeout=5 \
+      "${var.k8s1_wireguard_ssh_user}@${var.k8s1_wireguard_ssh_host}" \
+      'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
+    rm -f "$tmpkey"
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "k8s2_wireguard_public_key" {
+  program = ["bash", "-c", <<-EOT
+    if [ -z "${var.k8s2_wireguard_ssh_host}" ]; then
+      jq -n '{"value": ""}'; exit 0
+    fi
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    tmpkey=$(mktemp)
+    chmod 600 "$tmpkey"
+    printf '%s\n' "$ssh_key" > "$tmpkey"
+    value=$(ssh \
+      -i "$tmpkey" \
+      -o StrictHostKeyChecking=no \
+      -o BatchMode=yes \
+      -o ConnectTimeout=5 \
+      "${var.k8s2_wireguard_ssh_user}@${var.k8s2_wireguard_ssh_host}" \
+      'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
+    rm -f "$tmpkey"
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
 resource "null_resource" "alice_gateway" {
   triggers = {
     setup_version                  = "2"
@@ -87,8 +131,8 @@ resource "null_resource" "alice_gateway" {
     inuyama_wireguard_publickey_id = var.inuyama_wireguard_public_key_bitwarden_id
     inuyama_wireguard_publickey    = sha256(data.external.inuyama_wireguard_public_key.result.value)
     wireguard_config               = sha256(local.wireguard_config)
-    k8s1_wireguard_public_key      = sha256(var.k8s1_wireguard_public_key)
-    k8s2_wireguard_public_key      = sha256(var.k8s2_wireguard_public_key)
+    k8s1_wireguard_public_key      = sha256(data.external.k8s1_wireguard_public_key.result.value)
+    k8s2_wireguard_public_key      = sha256(data.external.k8s2_wireguard_public_key.result.value)
     frr_config                     = sha256(local.frr_config)
     haproxy_config                 = sha256(local.haproxy_config)
     firewall                       = tostring(var.manage_firewall)

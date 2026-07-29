@@ -22,7 +22,7 @@ Shumokuを採用する理由は、ネットワーク図を `topology.yaml` と�
 
 ## 2. 対象トポロジ
 
-現状のWireGuard endpointは `k8s4` と `alice-01` の1本を正とする。
+`alice-01` を hub とした star 型 WireGuard 構成。BGP は alice ↔ inuyama gateway 間のみ。
 
 ```text
 Internet / Client
@@ -32,34 +32,39 @@ Internet / Client
 alice-01
   - HAProxy
   - FRR / BGP AS65020
-  - WireGuard wg0: 172.31.255.2/30
-   |
-   | WireGuard tunnel
-   | BGP over WireGuard
-   v
-k8s4
-  - WireGuard wg0: 172.31.255.1/30
-  - BIRD / BGP AS65010
-  - Kubernetes control-plane
-   |
-   v
-inuyama Kubernetes / kube-vip LoadBalancer
-  - Ingress VIP: 10.0.0.240
-  - Minecraft backend VIP: 10.0.0.241
+  - WireGuard wg0: 172.31.255.2/24
+   |             |             |
+   |             |             +-- WireGuard tunnel
+   |             |                 k8s2: 172.31.255.12/24
+   |             |                 (WireGuard only, BGP なし)
+   |             +---------------- WireGuard tunnel
+   |                               k8s1: 172.31.255.11/24
+   |                               (WireGuard only, BGP なし)
+   +----------------------------- WireGuard tunnel + BGP over WireGuard
+                                  inuyama gateway: 172.31.255.1
+                                  - FRR / BGP AS65010
+                                  - routes: 192.168.1.0/24 → inuyama LAN
+                                   |
+                                   v
+                                  inuyama Kubernetes / kube-vip LoadBalancer
+                                   - Ingress VIP: 10.0.0.240
+                                   - Minecraft backend VIP: 10.0.0.241
 ```
 
-将来 `k8s1`, `k8s2`, `k8s4` の各control-planeにWireGuard endpointを増やす場合は、`alice-01` を中心としたstar型にする。
+star 型 WireGuard 構成（k8s1/k8s2 追加済み）:
 
 ```text
-          k8s1
-           |
-        wg tunnel
-           |
-k8s2 -- alice-01 -- Internet / Client
-           |
-        wg tunnel
-           |
-          k8s4
+                k8s1 (172.31.255.11)
+                  |
+               wg tunnel
+                  |
+k8s2 (172.31.255.12) -- alice-01 (172.31.255.2) -- Internet / Client
+                  |
+               wg tunnel + BGP
+                  |
+          inuyama gateway (172.31.255.1)
+                  |
+          inuyama K8s クラスタ
 ```
 
 ---
@@ -77,17 +82,21 @@ ShumokuのYAMLは `nodes` と `links` で構成する。現状はOverlay mapとS
 | Node | Site | Role |
 | --- | --- | --- |
 | `internet-client` | external | public client |
-| `alice-01` | alice | public gateway, HAProxy, WireGuard endpoint, FRR/BGP |
-| `k8s4` | inuyama | Kubernetes control-plane / etcd, WireGuard endpoint, BIRD/BGP |
+| `alice-01` | alice | public gateway, HAProxy, WireGuard hub (172.31.255.2/24), FRR/BGP |
+| `inuyama-gateway` | inuyama | WireGuard endpoint (172.31.255.1), FRR/BGP AS65010, routes 192.168.1.0/24 |
+| `k8s1` | inuyama | WireGuard ピア (172.31.255.11), Kubernetes control-plane |
+| `k8s2` | inuyama | WireGuard ピア (172.31.255.12), Kubernetes control-plane |
 | `inuyama-ingress-vip` | inuyama | `10.0.0.240`, HTTP/HTTPS backend VIP |
 | `minecraft-backend-vip` | inuyama | `10.0.0.241`, Minecraft backend VIP |
 
 | Link | 表示 |
 | --- | --- |
 | `internet-to-alice` | Internetからalice公開ポートへの入口 |
-| `alice-k8s4-wireguard` | WireGuard tunnel / BGP peer |
-| `k8s4-to-ingress` | HTTP/HTTPS backend path |
-| `k8s4-to-minecraft` | Minecraft backend path |
+| `alice-inuyama-wireguard` | WireGuard tunnel + BGP peer |
+| `alice-k8s1-wireguard` | WireGuard tunnel (WireGuard only) |
+| `alice-k8s2-wireguard` | WireGuard tunnel (WireGuard only) |
+| `inuyama-to-ingress` | HTTP/HTTPS backend path |
+| `inuyama-to-minecraft` | Minecraft backend path |
 
 生成物のSVG/HTML/PNGはコミットしない。必要なときにShumoku CLIまたはShumoku serverで生成する。
 
@@ -105,23 +114,23 @@ Shumoku serverでライブ表示する場合は、TopologyのSettingsからProme
 | Shumoku node | Prometheus対象 |
 | --- | --- |
 | `alice-01` | `172.31.255.2:9100` or alice scrape label |
-| `k8s4` | `10.0.0.140:9100` or `k8s4` |
+| `inuyama-gateway` | `172.31.255.1:9100` or inuyama scrape label |
+| `k8s1` | `10.0.0.103:9100` |
+| `k8s2` | `10.0.0.120:9100` |
 | `inuyama-ingress-vip` | blackbox target `10.0.0.240:80`, `10.0.0.240:443` |
 | `minecraft-backend-vip` | blackbox target `10.0.0.241:25565` |
 
-現状は `k8s4` の `wg0` node_exporter metricsを使い、WireGuard linkの方向別trafficを表示する。
+WireGuard link の方向別 traffic 表示に使う PromQL 例（alice 側 `wg0`）:
 
 | Direction | PromQL |
 | --- | --- |
-| `alice -> k8s4` bitrate | `sum(rate(node_network_receive_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m])) * 8` |
-| `k8s4 -> alice` bitrate | `sum(rate(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m])) * 8` |
-| `alice -> k8s4` traffic volume | `sum(increase(node_network_receive_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m]))` |
-| `k8s4 -> alice` traffic volume | `sum(increase(node_network_transmit_bytes_total{instance=~"(k8s4|10.0.0.140:9100)", device="wg0"}[5m]))` |
+| alice → inuyama gw bitrate | `sum(rate(node_network_transmit_bytes_total{instance="172.31.255.2:9100", device="wg0"}[5m])) * 8` |
+| inuyama gw → alice bitrate | `sum(rate(node_network_receive_bytes_total{instance="172.31.255.2:9100", device="wg0"}[5m])) * 8` |
+| alice → k8s1 bitrate | `sum(rate(node_network_receive_bytes_total{instance="10.0.0.103:9100", device="wg0"}[5m])) * 8` |
+| k8s1 → alice bitrate | `sum(rate(node_network_transmit_bytes_total{instance="10.0.0.103:9100", device="wg0"}[5m])) * 8` |
 | handshake age | `time() - wireguard_latest_handshake_seconds` |
 | tunnel up/down | `probe_success{job="blackbox-wireguard"}` |
 | RTT | `probe_duration_seconds{job="blackbox-wireguard"}` |
-
-`alice-01` のnode_exporterをscrapeできるようになったら、alice側の `wg0` metricsもShumokuのリンク表示に追加する。
 
 ---
 
@@ -159,15 +168,16 @@ scrape_configs:
     static_configs:
       - targets:
           - 10.0.0.103:9100   # k8s1
-          - 10.0.0.120:9100    # k8s2
+          - 10.0.0.120:9100   # k8s2
           - 10.0.0.140:9100   # k8s4
-          - 172.31.255.2:9100    # alice-01 over WireGuard
+          - 172.31.255.2:9100 # alice-01 (WireGuard 経由)
 
   - job_name: wireguard
     static_configs:
       - targets:
-          - 10.0.0.140:9586   # k8s4
-          - 172.31.255.2:9586    # alice-01
+          - 172.31.255.2:9586  # alice-01
+          - 10.0.0.103:9586    # k8s1
+          - 10.0.0.120:9586    # k8s2
 
   - job_name: blackbox-wireguard
     metrics_path: /probe
@@ -175,8 +185,10 @@ scrape_configs:
       module: [icmp]
     static_configs:
       - targets:
-          - 172.31.255.1         # k8s4 wg0
-          - 172.31.255.2         # alice wg0
+          - 172.31.255.1       # inuyama gateway wg0
+          - 172.31.255.2       # alice wg0
+          - 172.31.255.11      # k8s1 wg0
+          - 172.31.255.12      # k8s2 wg0
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
@@ -225,8 +237,8 @@ scrape_configs:
 
 1. `platform/monitoring/wireguard-map/shumoku-topology.yaml` をShumokuへ登録する。
 2. `node_exporter` で `alice-01`, `k8s1`, `k8s2`, `k8s4` をscrapeする。
-3. `blackbox_exporter` で `172.31.255.1`, `172.31.255.2`, `10.0.0.240:80`, `10.0.0.240:443`, `10.0.0.241:25565` をprobeする。
-4. `wireguard_exporter` を `alice-01` と `k8s4` に入れてhandshake ageを取得する。
+3. `blackbox_exporter` で `172.31.255.1`（inuyama gw）, `172.31.255.2`（alice）, `172.31.255.11`（k8s1）, `172.31.255.12`（k8s2）, `10.0.0.240:80`, `10.0.0.240:443`, `10.0.0.241:25565` をprobeする。
+4. `wireguard_exporter` を `alice-01`, `k8s1`, `k8s2` に入れてhandshake ageを取得する。
 5. Shumoku serverのPrometheus Metrics SourceとNode Mappingでtraffic / RTT / handshakeをリンクへ紐付ける。
 
 ---

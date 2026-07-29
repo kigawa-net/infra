@@ -150,12 +150,14 @@ Internet
 
 ## 5.2 WireGuard Transit
 
-WireGuard用のTransitネットワークは既存LANと重複しないレンジを使う。
+WireGuard用のTransitネットワークは既存LANと重複しないレンジを使う。Alice を hub とした star 型で、inuyama サイトゲートウェイおよび各 k8s ノードが直接ピアとなる。
 
-| Endpoint    | Address           |
-| ----------- | ----------------- |
-| inuyama wg0 | `172.31.255.1/30` |
-| alice wg0   | `172.31.255.2/30` |
+| Endpoint         | WireGuard アドレス  | 備考                         |
+| ---------------- | ------------------- | ---------------------------- |
+| alice wg0 (hub)  | `172.31.255.2/24`   | AllowedIPs 全ピアへ          |
+| inuyama gateway  | `172.31.255.1`      | eBGP 接続、LAN 192.168.1.0/24 |
+| k8s1             | `172.31.255.11`     | WireGuard のみ（BGP なし）   |
+| k8s2             | `172.31.255.12`     | WireGuard のみ（BGP なし）   |
 
 ```text
 WireGuard listen port:
@@ -195,39 +197,72 @@ wg-quick@wg0.service
 * Kubernetes障害時もVPN経路を独立維持できる
 * BGP/HAProxyの起動前提として扱える
 
-## 6.2 inuyama側設定例
+## 6.2 inuyama サイトゲートウェイ側設定例
 
 ```ini
 [Interface]
-Address = 172.31.255.1/30
+Address = 172.31.255.1/24
 ListenPort = 51820
 PrivateKey = <inuyama-private-key>
 MTU = 1420
 
 [Peer]
 PublicKey = <alice-public-key>
-AllowedIPs = 172.31.255.2/32, <alice-prefix>
+AllowedIPs = 172.31.255.2/32
 Endpoint = <alice-public-ip>:51820
 PersistentKeepalive = 25
 ```
 
-## 6.3 alice側設定例
+## 6.3 alice 側設定例
+
+alice は hub として全ピアを列挙する。inuyama gateway との間だけ BGP を張る。
 
 ```ini
 [Interface]
-Address = 172.31.255.2/30
+Address = 172.31.255.2/24
 ListenPort = 51820
 PrivateKey = <alice-private-key>
 MTU = 1420
 
+# inuyama gateway (BGP peer)
 [Peer]
 PublicKey = <inuyama-public-key>
-AllowedIPs = 172.31.255.1/32, 10.0.0.0/24
+AllowedIPs = 172.31.255.1/32, 192.168.1.0/24
 Endpoint = <inuyama-public-ip>:51820
+PersistentKeepalive = 25
+
+# k8s1 (WireGuard only, no BGP)
+[Peer]
+PublicKey = <k8s1-public-key>
+AllowedIPs = 172.31.255.11/32
+PersistentKeepalive = 25
+
+# k8s2 (WireGuard only, no BGP)
+[Peer]
+PublicKey = <k8s2-public-key>
+AllowedIPs = 172.31.255.12/32
 PersistentKeepalive = 25
 ```
 
-## 6.4 systemd
+## 6.4 k8s1 / k8s2 設定例
+
+各 k8s ノードは `hardware/modules/wireguard` モジュールで自動プロビジョニングされる。
+
+```ini
+[Interface]
+Address = 172.31.255.11/24   # k8s2 は 172.31.255.12/24
+PrivateKey = <node-private-key>
+
+[Peer]
+PublicKey = <alice-public-key>
+AllowedIPs = 172.31.255.0/24
+Endpoint = 161.248.62.66:51820
+PersistentKeepalive = 25
+```
+
+鍵はノードの初回 apply 時に自動生成（`/etc/wireguard/privatekey` 600、`publickey` 644）。Alice の apply 時に SSH 経由で公開鍵を自動取得するため、手動での鍵配布は不要。
+
+## 6.5 systemd
 
 ```bash
 sudo systemctl enable --now wg-quick@wg0
@@ -450,6 +485,8 @@ Kubernetes API `6443/tcp` は、aliceから運用上必要な場合のみ許可�
 | 対象 | 表示 |
 | --- | --- |
 | `alice-01` | host up/down, HAProxy, FRR, `wg0` RX/TX |
-| `k8s4` | host up/down, BIRD, `wg0` RX/TX |
+| `k8s1` | host up/down, `wg0` RX/TX (WireGuard ピア) |
+| `k8s2` | host up/down, `wg0` RX/TX (WireGuard ピア) |
+| inuyama gateway | host up/down, BIRD, `wg0` RX/TX, BGP peer |
 | WireGuard tunnel | RTT, handshake age, `probe_success` |
 | backend VIP | `10.0.0.240:80/443`, `10.0.0.241:25565` のTCP probe |
