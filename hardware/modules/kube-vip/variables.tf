@@ -53,3 +53,9 @@ variable "api_server_ip" {
   description = "kube-vipがリーダー選出で参照するAPIサーバーIP。VIP自身を指定するとVIP喪失時に自己参照で復旧不能になるため、HAProxyまたは正常なcontrol-planeを指定する"
   type        = string
 }
+
+variable "enabled" {
+  description = "falseにするとこのノードのkube-vip static podを撤去し、リーダー選出/BGP VIP広報から除外する (ローカル障害時の一時的な緩和策用)"
+  type        = bool
+  default     = true
+}
