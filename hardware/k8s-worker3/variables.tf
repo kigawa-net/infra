@@ -1,6 +1,6 @@
 variable "host" {
   type    = string
-  default = "192.168.1.30"
+  default = "192.168.1.130"
 }
 
 variable "server_ip" {
@@ -64,4 +64,16 @@ variable "bgp_peers" {
     as   = number
   }))
   default = []
+}
+
+variable "image_gc_high_threshold_percent" {
+  description = "kubeletがコンテナイメージの自動GCを開始するディスク使用率のしきい値"
+  type        = number
+  default     = 70
+}
+
+variable "image_gc_low_threshold_percent" {
+  description = "kubeletがコンテナイメージの自動GCを停止するディスク使用率のしきい値"
+  type        = number
+  default     = 60
 }

@@ -1,6 +1,6 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +8,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -16,8 +16,8 @@ data "external" "sudo_password" {
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -153,5 +153,49 @@ resource "null_resource" "worker_node" {
       condition     = length(self.triggers.ca_cert_hash) > 0
       error_message = "join_info did not return a ca_cert_hash"
     }
+  }
+}
+
+resource "null_resource" "kubelet_image_gc" {
+  triggers = {
+    host           = var.host
+    high_threshold = tostring(var.image_gc_high_threshold_percent)
+    low_threshold  = tostring(var.image_gc_low_threshold_percent)
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/usr/bin/env bash
+      set -euo pipefail
+      CONFIG=/var/lib/kubelet/config.yaml
+
+      if grep -q '^imageGCHighThresholdPercent:' "$CONFIG"; then
+        sed -i 's/^imageGCHighThresholdPercent:.*/imageGCHighThresholdPercent: ${var.image_gc_high_threshold_percent}/' "$CONFIG"
+      else
+        echo 'imageGCHighThresholdPercent: ${var.image_gc_high_threshold_percent}' >> "$CONFIG"
+      fi
+
+      if grep -q '^imageGCLowThresholdPercent:' "$CONFIG"; then
+        sed -i 's/^imageGCLowThresholdPercent:.*/imageGCLowThresholdPercent: ${var.image_gc_low_threshold_percent}/' "$CONFIG"
+      else
+        echo 'imageGCLowThresholdPercent: ${var.image_gc_low_threshold_percent}' >> "$CONFIG"
+      fi
+
+      systemctl restart kubelet
+    SCRIPT
+    destination = "/tmp/kubelet-image-gc.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/kubelet-image-gc.sh && rm -f /tmp/kubelet-image-gc.sh",
+    ]
   }
 }
