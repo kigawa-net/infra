@@ -109,6 +109,7 @@ resource "null_resource" "kube_vip" {
     pod_yaml   = local.pod_manifest
     vip        = var.vip_address
     interface  = var.interface
+    enabled    = tostring(var.enabled)
   }
 
   connection {
@@ -128,10 +129,13 @@ resource "null_resource" "kube_vip" {
     destination = "/tmp/kube-vip-pod.yaml"
   }
 
+  # enabled=false でこのノードの static pod を撤去し、kube-vip の
+  # リーダー選出/BGP VIP広報から一時的に除外する (ローカルディスク障害等で
+  # apiserverがクラッシュループしている間の緩和策として使う想定)。
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/kube-vip-rbac.yaml",
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/kube-vip-pod.yaml /etc/kubernetes/manifests/kube-vip.yaml",
+      var.enabled ? "echo '${var.sudo_password}' | sudo -S kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/kube-vip-rbac.yaml" : "true",
+      var.enabled ? "echo '${var.sudo_password}' | sudo -S cp /tmp/kube-vip-pod.yaml /etc/kubernetes/manifests/kube-vip.yaml" : "echo '${var.sudo_password}' | sudo -S rm -f /etc/kubernetes/manifests/kube-vip.yaml",
       "rm -f /tmp/kube-vip-rbac.yaml /tmp/kube-vip-pod.yaml",
     ]
   }

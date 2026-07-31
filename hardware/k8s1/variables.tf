@@ -92,6 +92,12 @@ variable "kube_vip_api_server_ip" {
   default     = "192.168.1.104"
 }
 
+variable "kube_vip_enabled" {
+  description = "falseにするとこのノードのkube-vipを撤去し、リーダー選出/BGP VIP広報から除外する (ローカルディスクI/O障害等でapiserverがクラッシュループしている間の一時的な緩和策用)"
+  type        = bool
+  default     = true
+}
+
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string
