@@ -61,7 +61,7 @@ resource "null_resource" "knot" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S chown -R _knot: /var/lib/knot 2>/dev/null || true",
+      "echo '${var.sudo_password}' | sudo -S chown -R knot:knot /var/lib/knot",
       "echo '${var.sudo_password}' | sudo -S systemctl enable knot",
       "echo '${var.sudo_password}' | sudo -S systemctl restart knot",
       "echo 'Knot configured and started'",
