@@ -22,6 +22,10 @@ resource "null_resource" "knot" {
   triggers = {
     host      = var.host
     knot_conf = local.knot_conf
+    # var.zones changes (e.g. editing hardware/zones/*.zone) previously went undetected:
+    # the provisioners below that actually deploy zone files only run on resource
+    # create/replace, and this trigger set had no reference to zone *content* at all.
+    zones = jsonencode(var.zones)
   }
 
   connection {
