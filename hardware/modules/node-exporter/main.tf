@@ -37,6 +37,10 @@ resource "null_resource" "node_exporter" {
 
   provisioner "remote-exec" {
     inline = [
+      # デバッグ用: Terraformはsudo_passwordがsensitiveなためこのprovisionerの出力を
+      # 常に抑制する。失敗時に本当のエラー内容を確認できるよう、stderrをリモートの
+      # ファイルに退避する(パスワード自体は書き込まれない)。原因判明後に削除予定。
+      "exec 2>>/tmp/node_exporter_debug.log",
       "set -eo pipefail",
       "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "echo '${var.sudo_password}' | sudo -S id",
