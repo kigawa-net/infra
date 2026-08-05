@@ -14,6 +14,30 @@ locals {
     [Install]
     WantedBy=multi-user.target
     UNIT
+
+  # remote-execのinline配列はシバンなしでscriptを転送されるため、SSHのexecがENOEXECで
+  # /bin/sh(dash)にフォールバックしてしまい、bash専用の`pipefail`が構文エラーになる。
+  # wireguard/k8s-control-planeモジュールと同様に、シバン付きスクリプトを転送して
+  # `sudo bash <script>`で明示的にbash実行することでこれを回避する。
+  setup_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    id node_exporter &>/dev/null || useradd --no-create-home --shell /bin/false node_exporter
+
+    cd /tmp
+    curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.node_exporter_version}/node_exporter-${var.node_exporter_version}.linux-amd64.tar.gz | tar xz
+    install -m 755 node_exporter-${var.node_exporter_version}.linux-amd64/node_exporter /usr/local/bin/node_exporter
+    rm -rf node_exporter-${var.node_exporter_version}.linux-amd64
+
+    cp /tmp/node_exporter.service /etc/systemd/system/node_exporter.service
+    rm -f /tmp/node_exporter.service
+
+    systemctl daemon-reload
+    systemctl enable --now node_exporter
+    systemctl restart node_exporter
+    SCRIPT
 }
 
 resource "null_resource" "node_exporter" {
@@ -35,30 +59,14 @@ resource "null_resource" "node_exporter" {
     destination = "/tmp/node_exporter.service"
   }
 
+  provisioner "file" {
+    content     = local.setup_script
+    destination = "/tmp/node_exporter-setup.sh"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      # デバッグ用: Terraformはsudo_passwordがsensitiveなためこのprovisionerの出力を
-      # 常に抑制する。失敗時に本当のエラー内容を確認できるよう、stderrをリモートの
-      # ファイルに退避する(パスワード自体は書き込まれない)。原因判明後に削除予定。
-      "exec 2>>/tmp/node_exporter_debug.log",
-      "set -eo pipefail",
-      "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-      "echo '${var.sudo_password}' | sudo -S id",
-
-      # ユーザー作成（冪等）
-      "echo '${var.sudo_password}' | sudo -S bash -c 'id node_exporter &>/dev/null || useradd --no-create-home --shell /bin/false node_exporter'",
-
-      # バイナリインストール
-      "echo '${var.sudo_password}' | sudo -S bash -c 'cd /tmp && curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.node_exporter_version}/node_exporter-${var.node_exporter_version}.linux-amd64.tar.gz | tar xz && install -m 755 node_exporter-${var.node_exporter_version}.linux-amd64/node_exporter /usr/local/bin/node_exporter && rm -rf node_exporter-${var.node_exporter_version}.linux-amd64'",
-
-      # サービスファイル配置
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/node_exporter.service /etc/systemd/system/node_exporter.service",
-      "rm -f /tmp/node_exporter.service",
-
-      # 有効化・起動
-      "echo '${var.sudo_password}' | sudo -S systemctl daemon-reload",
-      "echo '${var.sudo_password}' | sudo -S systemctl enable --now node_exporter",
-      "echo '${var.sudo_password}' | sudo -S systemctl restart node_exporter",
+      "echo '${var.sudo_password}' | sudo -S bash /tmp/node_exporter-setup.sh && rm -f /tmp/node_exporter-setup.sh",
     ]
   }
 }
