@@ -126,7 +126,7 @@ resource "null_resource" "inuyama_wireguard" {
       apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -f -y
       apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y ca-certificates wireguard
 
-      install -d -m 700 /etc/wireguard
+      install -d -m 711 /etc/wireguard
 
       derived_public_key=$(wg pubkey < /tmp/inuyama-wireguard-private.key)
       configured_public_key="${data.external.inuyama_wireguard_public_key.result.value}"
@@ -259,7 +259,7 @@ module "bgp" {
       neighbor_ip     = var.alice_wireguard_address
       neighbor_as     = var.alice_bgp_as
       import_prefixes = []
-      export_prefixes = ["10.0.0.0/16"]
+      export_prefixes = ["10.0.0.0/24"]
     },
     {
       local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
@@ -267,7 +267,7 @@ module "bgp" {
       neighbor_ip     = "172.31.254.2"
       neighbor_as     = var.ionos_bgp_as
       import_prefixes = []
-      export_prefixes = ["10.0.0.0/16"]
+      export_prefixes = ["10.0.0.0/24"]
     }
   ]
 }

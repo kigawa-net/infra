@@ -58,7 +58,7 @@ locals {
 
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -66,7 +66,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -74,7 +74,7 @@ data "external" "sudo_password" {
 
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -139,7 +139,7 @@ resource "null_resource" "alice_gateway" {
       apt-get update -y
       apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
 
-      install -d -m 700 /etc/wireguard
+      install -d -m 711 /etc/wireguard
 
       rm -f /etc/sysctl.d/99-wireguard-forward.conf
       rm -f /etc/wireguard/server_private.key /etc/wireguard/server_public.key
