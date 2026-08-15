@@ -58,7 +58,7 @@ locals {
 
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -66,7 +66,7 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -74,7 +74,7 @@ data "external" "sudo_password" {
 
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" | jq -r '.value')
+    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
