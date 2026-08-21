@@ -74,9 +74,9 @@ variable "kube_vip_interface" {
 }
 
 variable "kube_vip_api_server_ip" {
-  description = "kube-vipがリーダー選出で参照するAPIサーバーIP (VIP喪失時の自己参照デッドロックを避けるため、kube_vip_addressとは別の到達可能なアドレスにすること)"
+  description = "kube-vipがリーダー選出で参照するAPIサーバーIP (VIP喪失時の自己参照デッドロックを避けるため、kube_vip_addressとは別の到達可能なアドレスにすること)。127.0.0.1(自ノードのローカルAPIサーバー)を指定し、外部LB(旧: host1のhaproxy VM)への単一障害点依存を避ける"
   type        = string
-  default     = "192.168.1.104"
+  default     = "127.0.0.1"
 }
 
 variable "dns_vip" {
