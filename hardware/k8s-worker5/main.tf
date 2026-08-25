@@ -42,6 +42,8 @@ data "external" "join_info" {
 resource "null_resource" "worker_node" {
   triggers = {
     host = var.host
+    # Bump this value to re-run the provisioning script against an already-joined node.
+    provision_script_version = "2"
   }
 
   connection {
@@ -110,6 +112,36 @@ resource "null_resource" "worker_node" {
           --discovery-token-ca-cert-hash ${data.external.join_info.result.ca_cert_hash} \
            || { echo "kubeadm join failed with exit code: $?"; exit 1; }
       fi
+
+      # --- containerd image garbage collection ---
+      # Unused image layers were filling the root disk and tripping kubelet's
+      # disk-pressure eviction threshold. Prune daily via crictl.
+      apt-get install -y cri-tools
+      printf 'runtime-endpoint: unix:///run/containerd/containerd.sock\n' > /etc/crictl.yaml
+
+      cat > /etc/systemd/system/containerd-image-prune.service <<'UNIT'
+[Unit]
+Description=Prune unused containerd images
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/crictl rmi --prune
+UNIT
+
+      cat > /etc/systemd/system/containerd-image-prune.timer <<'UNIT'
+[Unit]
+Description=Daily containerd image prune
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+      systemctl daemon-reload
+      systemctl enable --now containerd-image-prune.timer
     SCRIPT
     destination = "/tmp/k8s-setup.sh"
   }

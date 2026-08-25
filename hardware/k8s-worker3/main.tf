@@ -53,7 +53,7 @@ resource "null_resource" "worker_node" {
   }
 
   provisioner "file" {
-    content = <<-SCRIPT
+    content     = <<-SCRIPT
       #!/usr/bin/env bash
       set -euo pipefail
       exec > >(tee -a /tmp/k8s-setup.log) 2>&1
@@ -124,6 +124,36 @@ resource "null_resource" "worker_node" {
       apt-get install -y nvidia-container-toolkit
       nvidia-ctk runtime configure --runtime=containerd
       systemctl restart containerd
+
+      # --- containerd image garbage collection ---
+      # Unused image layers were filling the root disk and tripping kubelet's
+      # disk-pressure eviction threshold. Prune daily via crictl.
+      apt-get install -y cri-tools
+      printf 'runtime-endpoint: unix:///run/containerd/containerd.sock\n' > /etc/crictl.yaml
+
+      cat > /etc/systemd/system/containerd-image-prune.service <<'UNIT'
+[Unit]
+Description=Prune unused containerd images
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/crictl rmi --prune
+UNIT
+
+      cat > /etc/systemd/system/containerd-image-prune.timer <<'UNIT'
+[Unit]
+Description=Daily containerd image prune
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+      systemctl daemon-reload
+      systemctl enable --now containerd-image-prune.timer
 
       echo "=== k8s-worker3 setup complete. Reboot required to activate NVIDIA driver. ==="
       trap - EXIT
