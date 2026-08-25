@@ -22,6 +22,19 @@ variable "github_app_private_key" {
   sensitive   = true
 }
 
+variable "actions_bypass_repositories" {
+  description = <<-EOT
+    Repositories (subset of var.repositories) where the built-in
+    github-actions bot may bypass the required-pull-request rule on the
+    default branch. Used by CI workflows that need to commit directly to the
+    default branch (e.g. an image-tag bump after building/pushing an image),
+    without weakening the PR requirement for human contributors or for repos
+    that don't need this.
+  EOT
+  type        = list(string)
+  default     = ["admin-panel"]
+}
+
 variable "repositories" {
   description = "kigawa-net org repositories to apply default branch protection to"
   type        = list(string)

@@ -8,6 +8,16 @@ locals {
   branch_protection_repositories = [
     for r in var.repositories : r if !contains(local.branch_protection_unsupported, r)
   ]
+
+  # GraphQL node id of the built-in "github-actions" App (REST id 15368,
+  # https://api.github.com/apps/github-actions). The REST
+  # bypass_pull_request_allowances.apps=["github-actions"] field silently
+  # fails to persist for this app (it's not an installed Marketplace app),
+  # and github_repository_ruleset's bypass_actors rejects it outright
+  # ("must be part of the ruleset source or owner organization"). Only the
+  # classic protection's pull_request_bypassers field, keyed by GraphQL node
+  # id, actually works.
+  github_actions_app_node_id = "MDM6QXBwMTUzNjg="
 }
 
 # Requires a PR before merging to the default branch; approvals are not
@@ -25,6 +35,10 @@ resource "github_branch_protection" "default" {
 
   required_pull_request_reviews {
     required_approving_review_count = 0
+    # admin-panel's CI commits an image-tag bump directly to main after each
+    # merge; let the github-actions bot bypass the PR requirement just for
+    # that push instead of disabling the requirement repo-wide.
+    pull_request_bypassers = contains(var.actions_bypass_repositories, each.value) ? [local.github_actions_app_node_id] : []
   }
 
   enforce_admins = false
