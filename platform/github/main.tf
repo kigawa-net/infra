@@ -10,6 +10,18 @@ locals {
   ]
 }
 
+resource "github_repository" "keruta_compute" {
+  name        = "keruta-compute"
+  description = "Decentralized compute network for the Keruta ecosystem"
+  visibility  = "public"
+
+  has_issues   = true
+  has_projects = true
+  has_wiki     = false
+
+  auto_init = true
+}
+
 # Requires a PR before merging to the default branch; approvals are not
 # required (required_approving_review_count = 0) per team preference.
 #
