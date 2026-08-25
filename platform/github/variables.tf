@@ -30,7 +30,7 @@ variable "repositories" {
     "admin-panel", "kalender", "lp", "dilot", "fonsole", "leafia",
     "linfra", "keruta-executor", "keruta-coder-template", "fonsole-doc",
     "keruta-doc", "keruta-admin", "keruta-api", "keruta-sdk",
-    "keruta-agent", "ktmut", "hakate", "krapition-doc", "fomage",
+    "keruta-agent", "keruta-compute", "ktmut", "hakate", "krapition-doc", "fomage",
     "mc-manifest", "k8s-builders", "kest", "hakoniwa-core-plugin",
     "auth-server", "kweb", ".github", "server-chat", "keimvus",
     "RTPlugin", "config", "keimvus-maven-plugin", "craft-tools",
@@ -69,6 +69,7 @@ variable "default_branches" {
     "keruta-api"            = "main"
     "keruta-sdk"            = "develop"
     "keruta-agent"          = "main"
+    "keruta-compute"        = "main"
     ktmut                   = "main"
     hakate                  = "develop"
     "krapition-doc"         = "main"
