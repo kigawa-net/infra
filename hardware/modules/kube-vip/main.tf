@@ -90,15 +90,18 @@ locals {
         # kube-vipのプロセス自体は生存しているがBGP側のBirdルートが壊れ
         # (`unreachable ${var.vip_address}` になる)VIPに到達できなくなる障害が
         # 実際に発生した。kubeletのデフォルトのプロセス生存確認だけではこれを
-        # 検知できないため、`ip route get`でVIPへの実際の到達性を確認する
-        # (unreachableなら非ゼロ終了し、probe失敗→自動再起動される)。
+        # 検知できない。kube-vipのイメージは`ip`はおろか`which`すら無い最小
+        # イメージのため execプローブは使えず(execなら常に失敗して逆に恒常的
+        # クラッシュループを招く)、hostNetwork:trueを利用してkubelet自身が
+        # ホストのネットワークスタックから直接VIPへHTTPSリクエストする
+        # httpGetプローブでVIPへの実際の到達性を確認する
+        # (httpGetはTLS証明書検証を行わないためVIP自身の証明書でも問題ない)。
         livenessProbe:
-          exec:
-            command:
-            - ip
-            - route
-            - get
-            - ${var.vip_address}
+          httpGet:
+            path: /livez
+            host: ${var.vip_address}
+            port: ${var.k8s_port}
+            scheme: HTTPS
           initialDelaySeconds: 15
           periodSeconds: 15
           timeoutSeconds: 5
