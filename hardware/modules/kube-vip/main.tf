@@ -87,6 +87,25 @@ locals {
             - NET_ADMIN
             - NET_RAW
             - SYS_TIME
+        # kube-vipのプロセス自体は生存しているがBGP側のBirdルートが壊れ
+        # (`unreachable ${var.vip_address}` になる)VIPに到達できなくなる障害が
+        # 実際に発生した。kubeletのデフォルトのプロセス生存確認だけではこれを
+        # 検知できない。kube-vipのイメージは`ip`はおろか`which`すら無い最小
+        # イメージのため execプローブは使えず(execなら常に失敗して逆に恒常的
+        # クラッシュループを招く)、hostNetwork:trueを利用してkubelet自身が
+        # ホストのネットワークスタックから直接VIPへHTTPSリクエストする
+        # httpGetプローブでVIPへの実際の到達性を確認する
+        # (httpGetはTLS証明書検証を行わないためVIP自身の証明書でも問題ない)。
+        livenessProbe:
+          httpGet:
+            path: /livez
+            host: ${var.vip_address}
+            port: ${var.k8s_port}
+            scheme: HTTPS
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
         volumeMounts:
         - mountPath: /etc/kubernetes/admin.conf
           name: kubeconfig
@@ -105,11 +124,11 @@ locals {
 
 resource "null_resource" "kube_vip" {
   triggers = {
-    host       = var.host
-    pod_yaml   = local.pod_manifest
-    vip        = var.vip_address
-    interface  = var.interface
-    enabled    = tostring(var.enabled)
+    host      = var.host
+    pod_yaml  = local.pod_manifest
+    vip       = var.vip_address
+    interface = var.interface
+    enabled   = tostring(var.enabled)
   }
 
   connection {
