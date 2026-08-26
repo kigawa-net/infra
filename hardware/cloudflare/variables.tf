@@ -9,3 +9,9 @@ variable "zone_id" {
   type        = string
   default     = "ac52b110a9b655a56a9738d95bc28591"
 }
+
+variable "account_id" {
+  description = "Cloudflare アカウントID（R2バケット等アカウントスコープのリソース管理に使用）"
+  type        = string
+  default     = "e9f30fd43ef4cc3d46050e34dad5c811"
+}
