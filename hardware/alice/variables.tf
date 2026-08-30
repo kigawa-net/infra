@@ -114,7 +114,7 @@ variable "inuyama_ingress_vip" {
 variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for alice TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
-  default     = "192.168.1.241"
+  default     = "10.0.0.241"
 }
 
 variable "k8s1_wireguard_public_key" {
