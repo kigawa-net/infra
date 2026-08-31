@@ -143,6 +143,7 @@ jobs:
     if: needs.detect-modules.outputs.modules != '[]' && needs.detect-modules.outputs.modules != ''
     runs-on: arc-runner-set-infra
     strategy:
+      fail-fast: false
       max-parallel: 1
       matrix:
         include: ${{ fromJson(needs.detect-modules.outputs.modules) }}
