@@ -112,7 +112,13 @@ resource "null_resource" "knot_resolver" {
       "echo '${var.sudo_password}' | sudo -S bash /tmp/knot-resolver-install.sh",
       "echo '${var.sudo_password}' | sudo -S cp /tmp/kresd.conf /etc/knot-resolver/kresd.conf",
       "echo '${var.sudo_password}' | sudo -S systemctl enable --now kresd@1.service",
-      "echo '${var.sudo_password}' | sudo -S systemctl restart kresd@1.service",
+      # cache.storage は lmdb (ディスク永続化) のため、単純な systemctl restart
+      # だけではキャッシュが消えず、ゾーンを更新してもレコードのTTL(最大24時間)
+      # いっぱい古い応答を返し続けてしまう。stop → キャッシュディレクトリの
+      # 中身を削除 → start の順で確実にフラッシュする。
+      "echo '${var.sudo_password}' | sudo -S systemctl stop kresd@1.service",
+      "echo '${var.sudo_password}' | sudo -S rm -rf /var/cache/knot-resolver/*",
+      "echo '${var.sudo_password}' | sudo -S systemctl start kresd@1.service",
       "echo '${var.sudo_password}' | sudo -S rm -f /tmp/kresd.conf /tmp/knot-resolver-install.sh",
     ]
   }
