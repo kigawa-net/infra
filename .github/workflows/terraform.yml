@@ -109,7 +109,30 @@ jobs:
             done
             HARDWARE_MODULE_CONSUMERS=$(echo -e "$HARDWARE_MODULE_CONSUMERS" | grep -v '^$' | sort -u)
 
-            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}\n${HARDWARE_MODULE_CONSUMERS}" \
+            # hardware/zones/<file> が変更された場合、実際に
+            # file("${path.module}/../zones/<file>") を参照しているモジュールだけを
+            # 実行対象に追加する (hardware/modules/ の consumer 検出と同じパターン)
+            CHANGED_ZONE_FILES=$(git diff --name-only $DIFF_SPEC -- hardware/zones/ \
+              | grep -v "$EXCLUDE_PATTERN" \
+              | grep '^hardware/zones/[^/]\+$' | xargs -r -n1 basename | sort -u)
+
+            HARDWARE_ZONE_CONSUMERS=""
+            for zone_file in $CHANGED_ZONE_FILES; do
+              CONSUMER_FILES=$(grep -rlE "zones/${zone_file}" hardware --include="*.tf" \
+                | grep -v '^hardware/zones/')
+              for f in $CONSUMER_FILES; do
+                rel="${f#hardware/}"
+                if [ "$rel" = "main.tf" ]; then
+                  mod="."
+                else
+                  mod="${rel%%/*}"
+                fi
+                HARDWARE_ZONE_CONSUMERS="${HARDWARE_ZONE_CONSUMERS}\n{\"dir\": \"hardware\", \"module\": \"$mod\"}"
+              done
+            done
+            HARDWARE_ZONE_CONSUMERS=$(echo -e "$HARDWARE_ZONE_CONSUMERS" | grep -v '^$' | sort -u)
+
+            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}\n${HARDWARE_MODULE_CONSUMERS}\n${HARDWARE_ZONE_CONSUMERS}" \
               | grep -v '^$' | sort -u | jq -sc .)
           fi
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
