@@ -391,6 +391,13 @@ resource "null_resource" "alice_gateway_services" {
   }
 }
 
+locals {
+  knot_zones = {
+    "kigawa.net"  = file("${path.module}/../zones/kigawa.net.zone")
+    "onemc.world" = file("${path.module}/../zones/onemc.world.zone")
+  }
+}
+
 module "knot" {
   depends_on = [module.control_plane]
   source     = "../modules/knot"
@@ -400,21 +407,19 @@ module "knot" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  zones = {
-    "kigawa.net"  = file("${path.module}/../zones/kigawa.net.zone")
-    "onemc.world" = file("${path.module}/../zones/onemc.world.zone")
-  }
+  zones = local.knot_zones
 }
 
 module "knot_resolver" {
   depends_on = [module.knot]
   source     = "../modules/knot-resolver"
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key.result.value
-  sudo_password   = data.external.sudo_password.result.value
-  dns_vip         = var.dns_vip
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key      = data.external.ssh_key.result.value
+  sudo_password        = data.external.sudo_password.result.value
+  dns_vip              = var.dns_vip
+  zones_reload_trigger = sha256(join("", values(local.knot_zones)))
 }
 
 module "keepalived" {
