@@ -1,7 +1,7 @@
 $ORIGIN onemc.world.
 $TTL 86400
 onemc.world.     IN      SOA     ns.onemc.world. contact.kigawa.net. (
-                2024031401      ; Serial
+                2026082101      ; Serial
                 10800           ; refresh
                 600             ; retry
                 86400           ; expire
@@ -9,6 +9,6 @@ onemc.world.     IN      SOA     ns.onemc.world. contact.kigawa.net. (
 
 onemc.world.            IN NS           ns.kigawa.net.
 ns.onemc.world.         IN A            10.0.0.103
-onemc.world.            IN A            10.0.0.240
+onemc.world.            IN A            10.0.0.241
 mc.onemc.world.         IN A            10.0.0.241
 build.onemc.world.      IN CNAME        mc.onemc.world.
