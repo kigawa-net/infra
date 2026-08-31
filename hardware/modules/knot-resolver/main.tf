@@ -84,9 +84,10 @@ https://pkg.labs.nic.cz/knot-resolver $${VERSION_CODENAME} main" \
 
 resource "null_resource" "knot_resolver" {
   triggers = {
-    host           = var.host
-    kresd_conf     = local.kresd_conf
-    install_script = sha256(local.install_script)
+    host                 = var.host
+    zones_reload_trigger = var.zones_reload_trigger
+    kresd_conf           = local.kresd_conf
+    install_script       = sha256(local.install_script)
   }
 
   connection {

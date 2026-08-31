@@ -59,3 +59,16 @@ variable "dns_vip" {
   type        = string
   default     = ""
 }
+
+variable "zones_reload_trigger" {
+  description = <<-DESC
+    knot(権威DNS)側のゾーンデータが変わるたびに値が変わるようにする
+    (呼び出し側でゾーンファイルのハッシュ等を渡す)。kresdはゾーンファイル
+    を直接参照せずSTUB/FORWARD経由でknotに問い合わせるだけなので、
+    ゾーン内容自体はこのnull_resourceのtriggersに含まれない。これが
+    無いと、ゾーン更新後もkresdが古い応答をレコードのTTL(最大24時間)
+    いっぱいキャッシュし続けてしまう。
+  DESC
+  type        = string
+  default     = ""
+}
