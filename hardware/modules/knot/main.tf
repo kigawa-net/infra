@@ -33,6 +33,10 @@ resource "null_resource" "knot" {
     host        = var.host
     user        = var.ssh_user
     private_key = var.ssh_private_key
+    # デフォルトの5分だとk8s1(既知の低速ディスク問題)でapt-get等が
+    # 間に合わずremote-execがタイムアウトする(失敗ログが毎回5m46-47秒
+    # で揃っていたことから確認)ため延長する
+    timeout = "20m"
   }
 
   provisioner "remote-exec" {
