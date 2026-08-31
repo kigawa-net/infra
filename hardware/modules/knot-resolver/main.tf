@@ -82,12 +82,36 @@ https://pkg.labs.nic.cz/knot-resolver $${VERSION_CODENAME} main" \
   SCRIPT
 }
 
+locals {
+  # sudo_password(sensitive)を埋め込む前の、素のコマンド本体だけを保持する。
+  # provisioner "remote-exec" の inline を直接編集しても null_resource の
+  # triggers には反映されず再実行がスキップされてしまう(実際に発生した不具合:
+  # systemctl restart → stop/キャッシュ削除/start に変更したのに、triggersに
+  # 変更を検知する項目が無かったためTerraformが差分なしと判断し、一度も
+  # 実行されなかった)。このリストをハッシュ化してtriggersに含めることで、
+  # 手順を変更するたびに確実に再実行させる。
+  remote_exec_steps = [
+    "bash /tmp/knot-resolver-install.sh",
+    "cp /tmp/kresd.conf /etc/knot-resolver/kresd.conf",
+    "systemctl enable --now kresd@1.service",
+    # cache.storage は lmdb (ディスク永続化) のため、単純な systemctl restart
+    # だけではキャッシュが消えず、ゾーンを更新してもレコードのTTL(最大24時間)
+    # いっぱい古い応答を返し続けてしまう。stop → キャッシュディレクトリの
+    # 中身を削除 → start の順で確実にフラッシュする。
+    "systemctl stop kresd@1.service",
+    "rm -rf /var/cache/knot-resolver/*",
+    "systemctl start kresd@1.service",
+    "rm -f /tmp/kresd.conf /tmp/knot-resolver-install.sh",
+  ]
+}
+
 resource "null_resource" "knot_resolver" {
   triggers = {
     host                 = var.host
     zones_reload_trigger = var.zones_reload_trigger
     kresd_conf           = local.kresd_conf
     install_script       = sha256(local.install_script)
+    remote_exec_steps    = sha256(join("\n", local.remote_exec_steps))
   }
 
   connection {
@@ -108,18 +132,6 @@ resource "null_resource" "knot_resolver" {
   }
 
   provisioner "remote-exec" {
-    inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/knot-resolver-install.sh",
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/kresd.conf /etc/knot-resolver/kresd.conf",
-      "echo '${var.sudo_password}' | sudo -S systemctl enable --now kresd@1.service",
-      # cache.storage は lmdb (ディスク永続化) のため、単純な systemctl restart
-      # だけではキャッシュが消えず、ゾーンを更新してもレコードのTTL(最大24時間)
-      # いっぱい古い応答を返し続けてしまう。stop → キャッシュディレクトリの
-      # 中身を削除 → start の順で確実にフラッシュする。
-      "echo '${var.sudo_password}' | sudo -S systemctl stop kresd@1.service",
-      "echo '${var.sudo_password}' | sudo -S rm -rf /var/cache/knot-resolver/*",
-      "echo '${var.sudo_password}' | sudo -S systemctl start kresd@1.service",
-      "echo '${var.sudo_password}' | sudo -S rm -f /tmp/kresd.conf /tmp/knot-resolver-install.sh",
-    ]
+    inline = [for step in local.remote_exec_steps : "echo '${var.sudo_password}' | sudo -S ${step}"]
   }
 }
