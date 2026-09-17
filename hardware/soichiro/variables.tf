@@ -9,13 +9,37 @@ variable "ssh_user" {
   default = "kigawa"
 }
 
-variable "ssh_private_key_bitwarden_id" {
-  description = "soichiro への SSH 秘密鍵の Bitwarden Secret ID (事前に bws でsoichiro用の鍵を登録しておくこと)"
+variable "ssh_private_key_path" {
+  description = "soichiro への SSH 秘密鍵のローカルファイルパス (soichiroはBitwardenを使わず、ローカルの鍵ファイルを直接読み込む)"
   type    = string
-  default = "" # TODO: Bitwardenにsoichiro用SSH鍵を登録し、そのSecret IDを設定する
+  default = "" # TODO: 例 "~/.ssh/soichiro" のように、soichiro用秘密鍵のパスを設定する
 }
 
-variable "sudo_password_bitwarden_id" {
+variable "sudo_password" {
+  description = "soichiro の sudo パスワード (soichiroはBitwardenを使わず、変数で直接渡す。TF_VAR_sudo_password環境変数または非コミットのtfvarsで指定すること)"
+  type      = string
+  sensitive = true
+  default   = "" # TODO: soichiro自身のsudoパスワードを設定する(コミットしないこと)
+}
+
+variable "control_plane_host" {
+  type    = string
+  default = "k8s1"
+}
+
+variable "control_plane_ssh_user" {
+  type    = string
+  default = "kigawa"
+}
+
+variable "control_plane_ssh_key_bitwarden_id" {
+  description = "既存クラスタのcontrol-plane(k8s1)へのSSH鍵。こちらはsoichiro自身の資格情報ではなく、joinトークンを発行するための既存クラスタ側の資格情報のため、引き続きBitwardenを使用する"
+  type    = string
+  default = "0393671f-6ef0-4650-be98-b364013f8644"
+}
+
+variable "control_plane_sudo_password_bitwarden_id" {
+  description = "既存クラスタのcontrol-plane(k8s1)のsudoパスワード。soichiro自身の資格情報ではなく、joinトークン発行のためのcontrol-plane側の資格情報のため、引き続きBitwardenを使用する"
   type    = string
   default = "52b44d60-7cab-429f-929a-b4340139b6d8"
 }
@@ -30,21 +54,6 @@ variable "k8s_version" {
   description = "Kubernetes minor version (e.g. 1.29)"
   type        = string
   default     = "1.29"
-}
-
-variable "control_plane_host" {
-  type    = string
-  default = "k8s1"
-}
-
-variable "control_plane_ssh_user" {
-  type    = string
-  default = "kigawa"
-}
-
-variable "control_plane_ssh_key_bitwarden_id" {
-  type    = string
-  default = "0393671f-6ef0-4650-be98-b364013f8644"
 }
 
 variable "wireguard_address" {
