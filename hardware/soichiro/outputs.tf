@@ -1,5 +1,5 @@
-output "node_ip" {
-  value = var.host
+output "ssh_hostname" {
+  value = var.ssh_hostname
 }
 
 output "wireguard_address" {

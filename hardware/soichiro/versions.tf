@@ -2,9 +2,9 @@ terraform {
   required_version = ">= 1.6"
 
   backend "s3" {
-    bucket   = "infra"
-    key      = "hardware/soichiro/terraform.tfstate"
-    region   = "auto"
+    bucket = "infra"
+    key    = "hardware/soichiro/terraform.tfstate"
+    region = "auto"
     endpoints = {
       s3 = "https://e9f30fd43ef4cc3d46050e34dad5c811.r2.cloudflarestorage.com"
     }
@@ -22,6 +22,10 @@ terraform {
     }
     external = {
       source  = "hashicorp/external"
+      version = "~> 2.0"
+    }
+    local = {
+      source  = "hashicorp/local"
       version = "~> 2.0"
     }
   }

@@ -1,6 +1,9 @@
-locals {
-  ssh_private_key = file(var.ssh_private_key_path)
-}
+# soichiro は Cloudflare Tunnel (cloudflared access ssh) 経由でのみSSH到達可能なため、
+# 他ノードのようなTerraformネイティブSSH(connection block)は使えない
+# (Goで実装されたTerraformのSSH通信機構は ~/.ssh/config の ProxyCommand を解釈しない)。
+# そのため、この module だけ ../modules/wireguard / ../modules/node-exporter を使わず、
+# ローカルの ssh/scp バイナリを local-exec から呼び出す方式にしている。
+# 実行環境(terraform applyを実行するマシン)に cloudflared がインストールされている必要がある。
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
@@ -27,109 +30,126 @@ data "external" "join_info" {
   ]
 }
 
-module "wireguard" {
-  source = "../modules/wireguard"
+locals {
+  setup_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    set -x
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    export DEBIAN_FRONTEND=noninteractive
+    exec > >(tee -a /tmp/soichiro-setup.log) 2>&1
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = local.ssh_private_key
-  sudo_password   = var.sudo_password
+    apt-get update -y
+    apt-get install -y wireguard kmod ca-certificates curl gpg apt-transport-https
 
-  wireguard_address  = var.wireguard_address
-  server_public_key  = var.wireguard_server_public_key
-  server_endpoint    = var.wireguard_server_endpoint
-  server_allowed_ips = var.wireguard_server_allowed_ips
+    # --- WireGuard client setup (modules/wireguardと同等の内容をこのnodeにインライン化) ---
+    install -d -m 700 /etc/wireguard
+
+    if [ ! -f /etc/wireguard/privatekey ]; then
+      wg genkey > /etc/wireguard/privatekey
+      wg pubkey < /etc/wireguard/privatekey > /etc/wireguard/publickey
+    fi
+    chmod 600 /etc/wireguard/privatekey
+    wg_private_key=$(cat /etc/wireguard/privatekey)
+
+    cat > /etc/wireguard/wg0.conf <<WG_EOF
+    [Interface]
+    Address = ${var.wireguard_address}
+    PrivateKey = $wg_private_key
+
+    [Peer]
+    PublicKey = ${var.wireguard_server_public_key}
+    AllowedIPs = ${join(", ", var.wireguard_server_allowed_ips)}
+    Endpoint = ${var.wireguard_server_endpoint}
+    PersistentKeepalive = 25
+    WG_EOF
+    chmod 600 /etc/wireguard/wg0.conf
+
+    systemctl enable wg-quick@wg0
+    systemctl restart wg-quick@wg0
+
+    echo "=== WireGuard public key (alice側のsoichiro_wireguard_public_keyに設定すること) ==="
+    cat /etc/wireguard/publickey
+
+    # --- kubelet/kubeadm/containerd + join (k8s-worker5と同等) ---
+    swapoff -a
+    sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
+
+    printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
+    modprobe overlay || true
+    modprobe br_netfilter || true
+
+    printf 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\n' > /etc/sysctl.d/k8s.conf
+    sysctl --system
+
+    apt-get install -y containerd
+    mkdir -p /etc/containerd
+    containerd config default > /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    systemctl enable --now containerd
+
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+    apt-get update -y
+    apt-get install -y kubelet kubeadm kubectl
+    apt-mark hold kubelet kubeadm kubectl
+
+    if [ ! -f /etc/kubernetes/kubelet.conf ]; then
+      kubeadm join ${var.k8s_endpoint}:6443 \
+        --token ${data.external.join_info.result.token} \
+        --discovery-token-ca-cert-hash ${data.external.join_info.result.ca_cert_hash} \
+         || { echo "kubeadm join failed with exit code: $?"; exit 1; }
+    fi
+
+    # --- node_exporter (modules/node-exporterと同等の内容をこのnodeにインライン化) ---
+    id node_exporter &>/dev/null || useradd --no-create-home --shell /bin/false node_exporter
+
+    cd /tmp
+    curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.node_exporter_version}/node_exporter-${var.node_exporter_version}.linux-amd64.tar.gz | tar xz
+    install -m 755 node_exporter-${var.node_exporter_version}.linux-amd64/node_exporter /usr/local/bin/node_exporter
+    rm -rf node_exporter-${var.node_exporter_version}.linux-amd64
+
+    cat > /etc/systemd/system/node_exporter.service <<NE_EOF
+    [Unit]
+    Description=Prometheus Node Exporter
+    After=network.target
+
+    [Service]
+    User=node_exporter
+    Group=node_exporter
+    Type=simple
+    ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+    Restart=on-failure
+
+    [Install]
+    WantedBy=multi-user.target
+    NE_EOF
+
+    systemctl daemon-reload
+    systemctl enable --now node_exporter
+    systemctl restart node_exporter
+  SCRIPT
 }
 
-resource "null_resource" "worker_node" {
-  depends_on = [module.wireguard]
+resource "local_file" "setup_script" {
+  filename        = "${path.module}/.generated/soichiro-setup.sh"
+  content         = local.setup_script
+  file_permission = "0600"
+}
+
+resource "null_resource" "soichiro_setup" {
+  depends_on = [local_file.setup_script, data.external.join_info]
 
   triggers = {
-    host = var.host
+    script_hash = sha256(local.setup_script)
   }
 
-  connection {
-    type        = "ssh"
-    host        = var.host
-    user        = var.ssh_user
-    private_key = local.ssh_private_key
-  }
-
-  provisioner "file" {
-    content     = <<-SCRIPT
-      #!/bin/bash
+  provisioner "local-exec" {
+    command = <<-EOT
       set -eo pipefail
-      set -x
-      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      exec > >(tee -a /tmp/k8s-setup.log)
-      exec 2>&1
-
-      cleanup() {
-        if [ $? -ne 0 ]; then
-          echo "[cleanup] setup failed, rolling back..."
-          kubeadm reset -f 2>/dev/null || true
-          apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
-          apt-get remove -y --purge kubelet kubeadm kubectl 2>/dev/null || true
-          apt-get remove -y --purge containerd 2>/dev/null || true
-          rm -f /etc/apt/sources.list.d/kubernetes.list
-          rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-          rm -f /etc/modules-load.d/k8s.conf
-          rm -f /etc/sysctl.d/k8s.conf
-          apt-get autoremove -y 2>/dev/null || true
-          echo "[cleanup] rollback complete"
-        fi
-      }
-      trap cleanup EXIT
-
-      swapoff -a
-      sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
-
-      apt-get update -y
-      apt-get install -y kmod
-
-      printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
-      modprobe overlay || true
-      modprobe br_netfilter || true
-
-      printf 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\n' > /etc/sysctl.d/k8s.conf
-      sysctl --system
-
-      apt-get install -y containerd
-      mkdir -p /etc/containerd
-      containerd config default > /etc/containerd/config.toml
-      sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-      systemctl enable --now containerd
-
-      apt-get install -y apt-transport-https ca-certificates curl gpg
-      mkdir -p /etc/apt/keyrings
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
-      apt-get update -y
-      apt-get install -y kubelet kubeadm kubectl
-      apt-mark hold kubelet kubeadm kubectl
-
-      if [ ! -f /etc/kubernetes/kubelet.conf ]; then
-        kubeadm join ${var.k8s_endpoint}:6443 \
-          --token ${data.external.join_info.result.token} \
-          --discovery-token-ca-cert-hash ${data.external.join_info.result.ca_cert_hash} \
-           || { echo "kubeadm join failed with exit code: $?"; exit 1; }
-      fi
-    SCRIPT
-    destination = "/tmp/k8s-setup.sh"
+      scp -i "${var.ssh_private_key_path}" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
+      ssh -i "${var.ssh_private_key_path}" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${var.ssh_user}@${var.ssh_hostname}" "echo '${var.sudo_password}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
+    EOT
   }
-
-  provisioner "remote-exec" {
-    inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
-    ]
-  }
-}
-
-module "node_exporter" {
-  source = "../modules/node-exporter"
-
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = local.ssh_private_key
-  sudo_password   = var.sudo_password
 }

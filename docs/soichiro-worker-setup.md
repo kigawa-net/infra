@@ -3,6 +3,14 @@
 ## 1. 前提条件
 
 - soichiro に Ubuntu(k8s-worker5 等と同系統のバージョン)がインストール済みで、SSHで到達可能であること
+- **soichiro は Cloudflare Tunnel (`cloudflared access ssh`) 経由でのみSSH到達可能**(直接IPには到達できない)。実際のSSH設定は以下の通り:
+  ```
+  Host soichiro-oneserver
+    HostName ssh.soichiro0520.com
+    User kigawa
+    ProxyCommand cloudflared access ssh --hostname %h
+  ```
+  Terraformのネイティブ`connection`ブロック(Go実装のSSHクライアント)は `~/.ssh/config` の `ProxyCommand` を解釈できないため、`hardware/soichiro/` モジュールは他ノードと異なり、ローカルの `ssh`/`scp` コマンド(実行環境のOpenSSH)を `local-exec` から呼び出す方式にしている。**`terraform apply` を実行するマシンに `cloudflared` がインストールされている必要がある。**
 - **soichiro自身の資格情報(SSH秘密鍵・sudoパスワード)はBitwardenを使わない。** 他ノードと異なり、ローカルファイル/ローカル変数で直接指定する
   - SSH秘密鍵は手元のファイルパスをそのまま使う(例: `~/.ssh/soichiro`)
   - sudoパスワードは `TF_VAR_sudo_password` 環境変数、またはコミットしない `.auto.tfvars`(`.gitignore`済みであること)経由で渡す。値そのものをリポジトリにコミットしないこと
@@ -12,7 +20,7 @@
 
 `hardware/soichiro/variables.tf` の TODO 箇所を実際の値に置き換える:
 
-- `host`: soichiro への直接SSH到達アドレス(パブリックIPまたは現在のLAN上のIP。WireGuardのトンネルアドレスではない)
+- `ssh_hostname`: デフォルトの `ssh.soichiro0520.com` のままでよい(変更不要)
 - `ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(例: `~/.ssh/soichiro`)
 - `sudo_password`: soichiro自身のsudoパスワード。`variables.tf` のdefaultには入れず、`TF_VAR_sudo_password=... ./hardware/run.sh soichiro apply` のように環境変数で渡すこと
 
