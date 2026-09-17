@@ -1,23 +1,11 @@
-data "external" "ssh_key" {
-  program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_private_key_bitwarden_id}" --color no | jq -r '.value')
-    jq -n --arg value "$value" '{"value": $value}'
-  EOT
-  ]
-}
-
-data "external" "sudo_password" {
-  program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
-    jq -n --arg value "$value" '{"value": $value}'
-  EOT
-  ]
+locals {
+  ssh_private_key = file(var.ssh_private_key_path)
 }
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.control_plane_ssh_key_bitwarden_id}" --color no | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.control_plane_sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -44,8 +32,8 @@ module "wireguard" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key.result.value
-  sudo_password   = data.external.sudo_password.result.value
+  ssh_private_key = local.ssh_private_key
+  sudo_password   = var.sudo_password
 
   wireguard_address  = var.wireguard_address
   server_public_key  = var.wireguard_server_public_key
@@ -64,7 +52,7 @@ resource "null_resource" "worker_node" {
     type        = "ssh"
     host        = var.host
     user        = var.ssh_user
-    private_key = data.external.ssh_key.result.value
+    private_key = local.ssh_private_key
   }
 
   provisioner "file" {
@@ -132,7 +120,7 @@ resource "null_resource" "worker_node" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
+      "echo '${var.sudo_password}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
     ]
   }
 }
@@ -142,6 +130,6 @@ module "node_exporter" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key.result.value
-  sudo_password   = data.external.sudo_password.result.value
+  ssh_private_key = local.ssh_private_key
+  sudo_password   = var.sudo_password
 }
