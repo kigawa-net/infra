@@ -11,9 +11,23 @@ export AWS_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY
 export TF_VAR_keycloak_admin_password
 export TF_VAR_github_app_private_key
+export TF_VAR_bws_project_id
+export TF_VAR_google_idp_client_id
+export TF_VAR_google_idp_client_secret
+export TF_VAR_microsoft_idp_client_id
+export TF_VAR_microsoft_idp_client_secret
 AWS_ACCESS_KEY_ID=$(bws -c no secret get eb5eb0e8-2a4a-4398-a756-b37000d87d64 | jq -r '.value')
 AWS_SECRET_ACCESS_KEY=$(bws -c no secret get c39086cc-e112-40eb-b19f-b37000d89090 | jq -r '.value')
 TF_VAR_keycloak_admin_password=$(bws -c no secret get e38ac3a1-1988-44a4-8421-b47000d79995 | jq -r '.value')
+# platform/kalender用。TODO: 下記5つのBWSシークレットUUIDを、Google Cloud Console /
+# Azure Portalで新規作成した「シークレット付き」OAuthクライアントの値と、それらを格納する
+# BitwardenプロジェクトIDに差し替えること(kigawa-net/kalender#57のStage A対応、詳細はPR参照)。
+# 未設定のままだと platform/kalender の terraform plan/apply はCIで失敗する。
+TF_VAR_bws_project_id=$(bws -c no secret get REPLACE_WITH_BWS_PROJECT_ID_SECRET_UUID | jq -r '.value // empty') || true
+TF_VAR_google_idp_client_id=$(bws -c no secret get REPLACE_WITH_GOOGLE_IDP_CLIENT_ID_UUID | jq -r '.value // empty') || true
+TF_VAR_google_idp_client_secret=$(bws -c no secret get REPLACE_WITH_GOOGLE_IDP_CLIENT_SECRET_UUID | jq -r '.value // empty') || true
+TF_VAR_microsoft_idp_client_id=$(bws -c no secret get REPLACE_WITH_MICROSOFT_IDP_CLIENT_ID_UUID | jq -r '.value // empty') || true
+TF_VAR_microsoft_idp_client_secret=$(bws -c no secret get REPLACE_WITH_MICROSOFT_IDP_CLIENT_SECRET_UUID | jq -r '.value // empty') || true
 # kigawa-net GitHub App (app_id 4316503) の秘密鍵。admin-panelサーバーが使っているのと
 # 同じBWS secret(kigawa-net-private-key)を再利用し、platform/admin-panelのgithub
 # providerをApp認証させる(PATは発行しない)。Appに"Secrets"(organization, write)
