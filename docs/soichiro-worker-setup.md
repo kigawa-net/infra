@@ -1,4 +1,4 @@
-# soichiro を WireGuard 経由で Kubernetes worker に追加する手順
+# soichiro reagion を WireGuard 経由で Kubernetes worker に追加する手順
 
 ## 1. 前提条件
 
