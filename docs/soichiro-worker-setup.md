@@ -1,22 +1,20 @@
-# soichiro reagion を WireGuard 経由で Kubernetes worker に追加する手順
+# soichiro を WireGuard 経由で Kubernetes worker に追加する手順
 
 ## 1. 前提条件
 
 - soichiro に Ubuntu(k8s-worker5 等と同系統のバージョン)がインストール済みで、SSHで到達可能であること
-- soichiro 用の SSH 鍵を Bitwarden Secrets Manager に登録すること:
-
-```bash
-bws secret create <SSH秘密鍵の内容> soichiro-ssh-key <project-id>
-```
-
-  登録後に発行される Secret ID を `hardware/soichiro/variables.tf` の `ssh_private_key_bitwarden_id` に設定する。
+- **soichiro自身の資格情報(SSH秘密鍵・sudoパスワード)はBitwardenを使わない。** 他ノードと異なり、ローカルファイル/ローカル変数で直接指定する
+  - SSH秘密鍵は手元のファイルパスをそのまま使う(例: `~/.ssh/soichiro`)
+  - sudoパスワードは `TF_VAR_sudo_password` 環境変数、またはコミットしない `.auto.tfvars`(`.gitignore`済みであること)経由で渡す。値そのものをリポジトリにコミットしないこと
+  - なお、既存クラスタのcontrol-plane(k8s1)へのSSH/sudoは、joinトークン発行のために引き続きBitwardenを使用する(`control_plane_ssh_key_bitwarden_id` / `control_plane_sudo_password_bitwarden_id`、変更不要)
 
 ## 2. Terraform 変数を埋める
 
 `hardware/soichiro/variables.tf` の TODO 箇所を実際の値に置き換える:
 
 - `host`: soichiro への直接SSH到達アドレス(パブリックIPまたは現在のLAN上のIP。WireGuardのトンネルアドレスではない)
-- `ssh_private_key_bitwarden_id`: 手順1で登録したSecret ID
+- `ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(例: `~/.ssh/soichiro`)
+- `sudo_password`: soichiro自身のsudoパスワード。`variables.tf` のdefaultには入れず、`TF_VAR_sudo_password=... ./hardware/run.sh soichiro apply` のように環境変数で渡すこと
 
 ## 3. 適用順序
 
