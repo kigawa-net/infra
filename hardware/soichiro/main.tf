@@ -4,11 +4,29 @@
 # そのため、この module だけ ../modules/wireguard / ../modules/node-exporter を使わず、
 # ローカルの ssh/scp バイナリを local-exec から呼び出す方式にしている。
 # 実行環境(terraform applyを実行するマシン)に cloudflared がインストールされている必要がある。
+# SSH鍵・sudoパスワードは他ホスト(k8s1/k8s2/alice/ionos)と共通のため、
+# 通常通りBitwardenから取得する。
+
+data "external" "ssh_key" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "sudo_password" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.control_plane_ssh_key_bitwarden_id}" --color no | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.control_plane_sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -148,8 +166,12 @@ resource "null_resource" "soichiro_setup" {
   provisioner "local-exec" {
     command = <<-EOT
       set -eo pipefail
-      scp -i "${var.ssh_private_key_path}" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
-      ssh -i "${var.ssh_private_key_path}" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${var.ssh_user}@${var.ssh_hostname}" "echo '${var.sudo_password}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
+      tmpkey=$(mktemp)
+      chmod 600 "$tmpkey"
+      printf '%s\n' "${data.external.ssh_key.result.value}" > "$tmpkey"
+      scp -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
+      ssh -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${var.ssh_user}@${var.ssh_hostname}" "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
+      rm -f "$tmpkey"
     EOT
   }
 }

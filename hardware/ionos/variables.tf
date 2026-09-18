@@ -178,12 +178,6 @@ variable "soichiro_ssh_user" {
   default = "kigawa"
 }
 
-variable "soichiro_ssh_private_key_path" {
-  description = "soichiro への SSH 秘密鍵のローカルファイルパス。soichiroはBitwardenを使わないため、hardware/soichiroと同じ鍵をローカルファイルから読む。空の場合はpeer設定なし"
-  type        = string
-  default     = "" # TODO: soichiro用秘密鍵のパスを設定する
-}
-
 variable "manage_firewall" {
   type    = bool
   default = true

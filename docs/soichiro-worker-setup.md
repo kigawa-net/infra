@@ -12,22 +12,11 @@
   ```
   Terraformのネイティブ`connection`ブロック(Go実装のSSHクライアント)は `~/.ssh/config` の `ProxyCommand` を解釈できないため、`hardware/soichiro/` モジュールと `hardware/ionos/` モジュールのsoichiro向け公開鍵取得処理は、ローカルの `ssh`/`scp` コマンド(実行環境のOpenSSH)を使う方式にしている。**`terraform apply` を実行するマシンに `cloudflared` がインストールされている必要がある。**
 - **WireGuardのハブは `alice` ではなく `ionos` を使う。** alice(`161.248.62.66`)は廃止済みのため、恒久的なゲートウェイである `hardware/ionos`(`74.208.55.86`)に接続する。
-- **soichiro自身の資格情報(SSH秘密鍵・sudoパスワード)はBitwardenを使わない。** 他ノードと異なり、ローカルファイル/ローカル変数で直接指定する
-  - SSH秘密鍵は手元のファイルパスをそのまま使う(例: `~/.ssh/soichiro`)
-  - sudoパスワードは `TF_VAR_sudo_password` 環境変数、またはコミットしない `.auto.tfvars`(`.gitignore`済みであること)経由で渡す。値そのものをリポジトリにコミットしないこと
-  - なお、既存クラスタのcontrol-plane(k8s1)へのSSH/sudoは、joinトークン発行のために引き続きBitwardenを使用する(`control_plane_ssh_key_bitwarden_id` / `control_plane_sudo_password_bitwarden_id`、変更不要)
+- **soichiroのSSH秘密鍵・sudoパスワードは他ホスト(k8s1/k8s2/alice/ionos)と共通**であり、既存のBitwarden secret(`0393671f-6ef0-4650-be98-b364013f8644` / `52b44d60-7cab-429f-929a-b4340139b6d8`)をそのまま使う。新規登録は不要。
 
-## 2. Terraform 変数を埋める
+## 2. Terraform 変数を確認する
 
-`hardware/soichiro/variables.tf` の TODO 箇所を実際の値に置き換える:
-
-- `ssh_hostname`: デフォルトの `ssh.soichiro0520.com` のままでよい(変更不要)
-- `ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(例: `~/.ssh/soichiro`)
-- `sudo_password`: soichiro自身のsudoパスワード。`variables.tf` のdefaultには入れず、`TF_VAR_sudo_password=... ./hardware/run.sh soichiro apply` のように環境変数で渡すこと
-
-`hardware/ionos/variables.tf` の TODO 箇所も同様に埋める:
-
-- `soichiro_ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(手順1と同じファイル)
+`hardware/soichiro/variables.tf` は基本的にデフォルト値のままで動作する(SSH鍵・sudoパスワードとも既存のBitwarden secretを再利用するため)。`ssh_hostname` もデフォルトの `ssh.soichiro0520.com` のままでよい。
 
 ## 3. 適用順序
 
@@ -39,7 +28,7 @@ ionos側のsoichiro公開鍵取得は `data "external" "soichiro_wireguard_publi
    ```
    この時点ではionos側にsoichiroのpeer設定がまだ無いため、`kubeadm join` はAPIサーバーに到達できず失敗する可能性が高い。失敗した場合は一旦無視して次に進む。
 
-2. **ionos側を適用**する。`soichiro_ssh_private_key_path` が設定されていれば、ionosがSSH経由でsoichiroの公開鍵を自動取得してpeerとして登録する:
+2. **ionos側を適用**する。ionosがSSH経由でsoichiroの公開鍵を自動取得してpeerとして登録する:
    ```bash
    ./hardware/run.sh ionos apply
    ```
