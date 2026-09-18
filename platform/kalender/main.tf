@@ -112,7 +112,9 @@ resource "azuread_application_password" "kalender_keycloak_broker" {
 # Microsoft専用リソースが無いため、汎用の keycloak_oidc_identity_provider を使う。
 # authorization_url/token_urlは汎用OIDCリソースでは必須(provider_id="microsoft"だけでは
 # 自動補完されない、terraform validateで確認済み)。既存のWeb版実装(MicrosoftAuthControllerWeb.kt)
-# と同じマルチテナント"common"エンドポイントを使う。
+# と同じマルチテナント"common"エンドポイントを使う(エンドユーザーのサインイン先テナントを
+# 限定しないためのOAuth認可エンドポイントのエイリアスであり、var.azuread_tenant_id
+# (Terraformプロバイダ自身の認証先テナント)とは無関係)。
 resource "keycloak_oidc_identity_provider" "microsoft" {
   realm       = var.keycloak_realm
   alias       = "microsoft"

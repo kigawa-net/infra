@@ -54,7 +54,8 @@ provider "bitwarden-secrets" {
 }
 
 provider "azuread" {
-  client_id     = var.azuread_terraform_client_id
-  client_secret = var.azuread_terraform_client_secret
-  tenant_id     = var.azuread_tenant_id
+  client_id                   = var.azuread_terraform_client_id
+  tenant_id                   = var.azuread_tenant_id
+  client_certificate          = var.azuread_terraform_client_certificate
+  client_certificate_password = var.azuread_terraform_client_certificate_password
 }
