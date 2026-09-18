@@ -24,6 +24,12 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    var.soichiro_wireguard_public_key != "" ? [{
+      public_key           = var.soichiro_wireguard_public_key
+      allowed_ips          = ["${var.soichiro_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {

@@ -2,3 +2,4 @@
 /**/.terraform.lock.hcl
 /.output.txt
 /**/.bw-provider-state
+/hardware/soichiro/.generated/
