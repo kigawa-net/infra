@@ -24,6 +24,12 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    data.external.soichiro_wireguard_public_key.result.value != "" ? [{
+      public_key           = data.external.soichiro_wireguard_public_key.result.value
+      allowed_ips          = ["${var.soichiro_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {
@@ -124,6 +130,27 @@ data "external" "k8s2_wireguard_public_key" {
   ]
 }
 
+# soichiro はBitwardenを使わず、Cloudflare Tunnel (cloudflared access ssh) 経由でのみ
+# SSH到達可能なため、k8s1/k8s2と異なりローカルの秘密鍵ファイルとProxyCommandを使う。
+# terraform applyを実行するマシンにcloudflaredが必要 (hardware/soichiro と同様)。
+data "external" "soichiro_wireguard_public_key" {
+  program = ["bash", "-c", <<-EOT
+    if [ -z "${var.soichiro_ssh_private_key_path}" ]; then
+      jq -n '{"value": ""}'; exit 0
+    fi
+    value=$(ssh \
+      -i "${var.soichiro_ssh_private_key_path}" \
+      -o StrictHostKeyChecking=accept-new \
+      -o BatchMode=yes \
+      -o ConnectTimeout=5 \
+      -o "ProxyCommand=cloudflared access ssh --hostname %h" \
+      "${var.soichiro_ssh_user}@${var.soichiro_ssh_hostname}" \
+      'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
 resource "null_resource" "ionos_gateway" {
   triggers = {
     setup_version                  = "1"
@@ -133,6 +160,7 @@ resource "null_resource" "ionos_gateway" {
     wireguard_config               = sha256(local.wireguard_config)
     k8s1_wireguard_public_key      = sha256(data.external.k8s1_wireguard_public_key.result.value)
     k8s2_wireguard_public_key      = sha256(data.external.k8s2_wireguard_public_key.result.value)
+    soichiro_wireguard_public_key  = sha256(data.external.soichiro_wireguard_public_key.result.value)
     frr_config                     = sha256(local.frr_config)
     haproxy_config                 = sha256(local.haproxy_config)
     firewall                       = tostring(var.manage_firewall)

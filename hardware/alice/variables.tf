@@ -101,9 +101,8 @@ variable "inuyama_accepted_prefixes" {
 }
 
 variable "alice_advertised_prefixes" {
-  description = "aliceがBGPでinuyama(k8s4)へ広告するprefix。WireGuardピア(k8s1/k8s2/soichiro等)のトンネルサブネットへの復路を確保するため172.31.255.0/24を含める"
-  type        = list(string)
-  default     = ["172.31.255.0/24"]
+  type    = list(string)
+  default = []
 }
 
 variable "inuyama_ingress_vip" {
@@ -140,18 +139,6 @@ variable "k8s2_wireguard_address" {
   description = "k8s2 の WireGuard IP (AllowedIPs)"
   type        = string
   default     = "172.31.255.12"
-}
-
-variable "soichiro_wireguard_public_key" {
-  description = "soichiro (WireGuard経由worker) の WireGuard 公開鍵 (空の場合はピア設定なし)"
-  type        = string
-  default     = ""
-}
-
-variable "soichiro_wireguard_address" {
-  description = "soichiro の WireGuard IP (AllowedIPs)"
-  type        = string
-  default     = "172.31.255.13"
 }
 
 variable "manage_firewall" {

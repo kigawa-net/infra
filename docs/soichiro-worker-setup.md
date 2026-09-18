@@ -10,7 +10,8 @@
     User kigawa
     ProxyCommand cloudflared access ssh --hostname %h
   ```
-  Terraformのネイティブ`connection`ブロック(Go実装のSSHクライアント)は `~/.ssh/config` の `ProxyCommand` を解釈できないため、`hardware/soichiro/` モジュールは他ノードと異なり、ローカルの `ssh`/`scp` コマンド(実行環境のOpenSSH)を `local-exec` から呼び出す方式にしている。**`terraform apply` を実行するマシンに `cloudflared` がインストールされている必要がある。**
+  Terraformのネイティブ`connection`ブロック(Go実装のSSHクライアント)は `~/.ssh/config` の `ProxyCommand` を解釈できないため、`hardware/soichiro/` モジュールと `hardware/ionos/` モジュールのsoichiro向け公開鍵取得処理は、ローカルの `ssh`/`scp` コマンド(実行環境のOpenSSH)を使う方式にしている。**`terraform apply` を実行するマシンに `cloudflared` がインストールされている必要がある。**
+- **WireGuardのハブは `alice` ではなく `ionos` を使う。** alice(`161.248.62.66`)は廃止済みのため、恒久的なゲートウェイである `hardware/ionos`(`74.208.55.86`)に接続する。
 - **soichiro自身の資格情報(SSH秘密鍵・sudoパスワード)はBitwardenを使わない。** 他ノードと異なり、ローカルファイル/ローカル変数で直接指定する
   - SSH秘密鍵は手元のファイルパスをそのまま使う(例: `~/.ssh/soichiro`)
   - sudoパスワードは `TF_VAR_sudo_password` 環境変数、またはコミットしない `.auto.tfvars`(`.gitignore`済みであること)経由で渡す。値そのものをリポジトリにコミットしないこと
@@ -24,39 +25,37 @@
 - `ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(例: `~/.ssh/soichiro`)
 - `sudo_password`: soichiro自身のsudoパスワード。`variables.tf` のdefaultには入れず、`TF_VAR_sudo_password=... ./hardware/run.sh soichiro apply` のように環境変数で渡すこと
 
+`hardware/ionos/variables.tf` の TODO 箇所も同様に埋める:
+
+- `soichiro_ssh_private_key_path`: soichiro用SSH秘密鍵のローカルファイルパス(手順1と同じファイル)
+
 ## 3. 適用順序
 
-WireGuardのピア関係は双方向に鍵を登録し合う必要があるため、以下の順序で進める。
+ionos側のsoichiro公開鍵取得は `data "external" "soichiro_wireguard_public_key"` がSSH経由で自動取得するため、alice方式(手動でのコピペ往復)と異なり手動での鍵交換は不要。
 
 1. **soichiro側を先に適用**してWireGuardクライアントとkubelet等の前提パッケージをセットアップする:
    ```bash
    ./hardware/run.sh soichiro apply
    ```
-   この時点では `wireguard_server_public_key` はalice側の既存の公開鍵のままでよい(alice→soichiro方向は最初から疎通する必要はない)。ただし `kubeadm join` はAPIサーバーに到達できないため失敗する可能性が高い。失敗した場合は一旦無視して次に進む。
+   この時点ではionos側にsoichiroのpeer設定がまだ無いため、`kubeadm join` はAPIサーバーに到達できず失敗する可能性が高い。失敗した場合は一旦無視して次に進む。
 
-2. soichiro にSSHし、生成された公開鍵を確認する:
+2. **ionos側を適用**する。`soichiro_ssh_private_key_path` が設定されていれば、ionosがSSH経由でsoichiroの公開鍵を自動取得してpeerとして登録する:
    ```bash
-   ssh <soichiroのhost> cat /etc/wireguard/publickey
+   ./hardware/run.sh ionos apply
    ```
 
-3. **alice側の変数を更新**する。`hardware/alice/variables.tf` の `soichiro_wireguard_public_key` に手順2で取得した公開鍵を設定し、適用する:
-   ```bash
-   ./hardware/run.sh alice apply
-   ```
-   これでaliceがsoichiroをWireGuardピアとして認識する。
-
-4. **soichiro側を再適用**してkubeadm joinを完了させる:
+3. **soichiro側を再適用**してkubeadm joinを完了させる:
    ```bash
    ./hardware/run.sh soichiro apply
    ```
 
-## 4. ルーティング設計(BGP方式で解決済み)
+## 4. ルーティング設計(BGP方式)
 
-現在のWireGuardピア設定は、k8s1/k8s2の既存ピアと同様に `AllowedIPs` がトンネルサブネット(`172.31.255.0/24`)のみになっており、これだけではsoichiroからクラスタ側への復路(戻りの経路)は確保されない。alice⇔k8s4間は既存のBGP(FRR/BIRD, AS65020/AS65010)でinuyama(クラスタ)側のルートをやり取りしているため、この復路をBGPで解決した:
+現在のWireGuardピア設定は、k8s1/k8s2の既存ピアと同様に `AllowedIPs` がトンネルサブネット(`172.31.254.0/24`)のみになっており、これだけではsoichiroからクラスタ側への復路(戻りの経路)は確保されない。ionos⇔k8s4間は既存のBGP(FRR/BIRD)でinuyama(クラスタ)側のルートをやり取りしているため、この復路をBGPで解決した:
 
-- **alice側**: `hardware/alice/variables.tf` の `alice_advertised_prefixes` に `172.31.255.0/24` を追加した。alice自身のWireGuardインターフェース(`wg0`, `172.31.255.2/24`)の直結ルートとして、FRRの `network 172.31.255.0/24` ステートメント経由でinuyama(k8s4)へBGP広告される(`ALICE-OUT` prefix-list、`hardware/alice/templates/frr.conf.tpl`)。
-- **k8s4側**: `hardware/k8s4/main.tf` の `module.bgp` の `external_bgp_peers`(alice向けpeerエントリ)の `import_prefixes` を `["172.31.255.0/24"]` に変更した。BIRD(`hardware/modules/bgp-bird`)がこのprefixをalice経由で受理し、`protocol kernel { import all; }` によりkernelのルーティングテーブルにインストールされる。
-- k8s4は `bgp_peers`(内部BGPメッシュ、`import all; export all;`)経由でk8s1/k8s2ともこのルートを共有するため、control-planeいずれがAPIサーバーVIPを保持していても、soichiro(`172.31.255.13`)への復路が確保される。
+- **ionos側**: `hardware/ionos/variables.tf` の `ionos_advertised_prefixes` に `172.31.254.0/24` を追加した。ionos自身のWireGuardインターフェース(`wg0`, `172.31.254.2/24`)の直結ルートとして、FRRの `network 172.31.254.0/24` ステートメント経由でinuyama(k8s4)へBGP広告される(`IONOS-OUT` prefix-list、`hardware/ionos/templates/frr.conf.tpl`)。
+- **k8s4側**: `hardware/k8s4/main.tf` の `module.bgp` の `external_bgp_peers`(ionos向けpeerエントリ)の `import_prefixes` を `["172.31.254.0/24"]` に変更した。BIRD(`hardware/modules/bgp-bird`)がこのprefixをionos経由で受理し、`protocol kernel { import all; }` によりkernelのルーティングテーブルにインストールされる。
+- k8s4は `bgp_peers`(内部BGPメッシュ、`import all; export all;`)経由でk8s1/k8s2ともこのルートを共有するため、control-planeいずれがAPIサーバーVIPを保持していても、soichiro(`172.31.254.13`)への復路が確保される。
 
 **注意**: この経路は「control-planeノード(k8s1/k8s2/k8s4)からsoichiroへ」到達するためのものであり、192.168.1.0/24 LAN上の他の任意のホスト(worker4等)からsoichiroへの到達性までは保証しない。`kubeadm join`/kubeletのAPIサーバー通信という当面の要件には十分だが、Pod networking(CNI)がLAN全体の経路情報に依存する構成の場合は別途検証が必要。
 

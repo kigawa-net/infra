@@ -108,8 +108,9 @@ variable "inuyama_accepted_prefixes" {
 }
 
 variable "ionos_advertised_prefixes" {
-  type    = list(string)
-  default = []
+  description = "ionosがBGPでinuyama(k8s4)へ広告するprefix。WireGuardピア(k8s1/k8s2/soichiro等)のトンネルサブネットへの復路を確保するため172.31.254.0/24を含める"
+  type        = list(string)
+  default     = ["172.31.254.0/24"]
 }
 
 variable "inuyama_ingress_vip" {
@@ -158,6 +159,29 @@ variable "k8s2_wireguard_ssh_user" {
   description = "k8s2 への SSH ユーザー"
   type        = string
   default     = "kigawa"
+}
+
+variable "soichiro_wireguard_address" {
+  description = "soichiro の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.254.13"
+}
+
+variable "soichiro_ssh_hostname" {
+  description = "soichiro への到達ホスト名 (Cloudflare Tunnel経由)。空の場合はpeer設定なし"
+  type        = string
+  default     = "ssh.soichiro0520.com"
+}
+
+variable "soichiro_ssh_user" {
+  type    = string
+  default = "kigawa"
+}
+
+variable "soichiro_ssh_private_key_path" {
+  description = "soichiro への SSH 秘密鍵のローカルファイルパス。soichiroはBitwardenを使わないため、hardware/soichiroと同じ鍵をローカルファイルから読む。空の場合はpeer設定なし"
+  type        = string
+  default     = "" # TODO: soichiro用秘密鍵のパスを設定する
 }
 
 variable "manage_firewall" {
