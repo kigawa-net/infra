@@ -130,22 +130,28 @@ data "external" "k8s2_wireguard_public_key" {
   ]
 }
 
-# soichiro はBitwardenを使わず、Cloudflare Tunnel (cloudflared access ssh) 経由でのみ
-# SSH到達可能なため、k8s1/k8s2と異なりローカルの秘密鍵ファイルとProxyCommandを使う。
+# soichiroはCloudflare Tunnel (cloudflared access ssh) 経由でのみSSH到達可能なため、
+# k8s1/k8s2と異なりProxyCommandを使う。SSH鍵自体は他ホストと共通のため、
+# k8s_ssh_key_bitwarden_idをそのまま使う(Bitwardenから取得)。
 # terraform applyを実行するマシンにcloudflaredが必要 (hardware/soichiro と同様)。
 data "external" "soichiro_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    if [ -z "${var.soichiro_ssh_private_key_path}" ]; then
+    if [ -z "${var.soichiro_ssh_hostname}" ]; then
       jq -n '{"value": ""}'; exit 0
     fi
+    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    tmpkey=$(mktemp)
+    chmod 600 "$tmpkey"
+    printf '%s\n' "$ssh_key" > "$tmpkey"
     value=$(ssh \
-      -i "${var.soichiro_ssh_private_key_path}" \
+      -i "$tmpkey" \
       -o StrictHostKeyChecking=accept-new \
       -o BatchMode=yes \
       -o ConnectTimeout=5 \
       -o "ProxyCommand=cloudflared access ssh --hostname %h" \
       "${var.soichiro_ssh_user}@${var.soichiro_ssh_hostname}" \
       'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
+    rm -f "$tmpkey"
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
