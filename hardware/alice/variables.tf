@@ -141,18 +141,6 @@ variable "k8s2_wireguard_address" {
   default     = "172.31.255.12"
 }
 
-variable "soichiro_wireguard_public_key" {
-  description = "soichiro (WireGuard経由worker) の WireGuard 公開鍵 (空の場合はピア設定なし)"
-  type        = string
-  default     = ""
-}
-
-variable "soichiro_wireguard_address" {
-  description = "soichiro の WireGuard IP (AllowedIPs)"
-  type        = string
-  default     = "172.31.255.13"
-}
-
 variable "manage_firewall" {
   type    = bool
   default = true

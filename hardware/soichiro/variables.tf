@@ -57,27 +57,27 @@ variable "k8s_version" {
 }
 
 variable "wireguard_address" {
-  description = "soichiro 側 WireGuard インターフェースのアドレス (alice の soichiro_wireguard_address と対になる /24 CIDR表記)"
+  description = "soichiro 側 WireGuard インターフェースのアドレス (ionos の soichiro_wireguard_address と対になる /24 CIDR表記)"
   type        = string
-  default     = "172.31.255.13/24"
+  default     = "172.31.254.13/24"
 }
 
 variable "wireguard_server_public_key" {
-  description = "Alice の WireGuard 公開鍵 (cat /etc/wireguard/alice_public.key で取得)"
+  description = "ionos の WireGuard 公開鍵。aliceは廃止されたため、hardware/ionosを恒久的なゲートウェイとして使う(hardware/k8s1等の wireguard_ionos_server_public_key と同一値)"
   type        = string
-  default     = "/bsBpHC0xLxdncldAE1Qo7bWTIXgcJm3Vui6sZOtPhs="
+  default     = "OH5QiXaMfpmH8nHVU1Onnfom4BZcq4zx5Ux6R6R4LR0="
 }
 
 variable "wireguard_server_endpoint" {
-  description = "Alice の WireGuard エンドポイント"
+  description = "ionos の WireGuard エンドポイント"
   type        = string
-  default     = "161.248.62.66:51820"
+  default     = "74.208.55.86:51820"
 }
 
 variable "wireguard_server_allowed_ips" {
-  description = "WireGuardトンネル経由でルーティングするIPレンジ。クラスタLAN(10.0.0.0/24)へのBGPルート伝播が別途構成されるまでは、暫定的にトンネルサブネットのみを指定している点に注意 (setup doc参照)"
+  description = "WireGuardトンネル経由でルーティングするIPレンジ。BGP(hardware/ionos の ionos_advertised_prefixes と hardware/k8s4 の import_prefixes)でクラスタ側への復路を確保している"
   type        = list(string)
-  default     = ["172.31.255.0/24"]
+  default     = ["172.31.254.0/24"]
 }
 
 variable "node_exporter_version" {
