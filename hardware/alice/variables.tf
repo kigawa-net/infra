@@ -101,8 +101,9 @@ variable "inuyama_accepted_prefixes" {
 }
 
 variable "alice_advertised_prefixes" {
-  type    = list(string)
-  default = []
+  description = "aliceがBGPでinuyama(k8s4)へ広告するprefix。WireGuardピア(k8s1/k8s2/soichiro等)のトンネルサブネットへの復路を確保するため172.31.255.0/24を含める"
+  type        = list(string)
+  default     = ["172.31.255.0/24"]
 }
 
 variable "inuyama_ingress_vip" {

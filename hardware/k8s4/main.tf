@@ -258,7 +258,7 @@ module "bgp" {
       local_as        = var.inuyama_asn
       neighbor_ip     = var.alice_wireguard_address
       neighbor_as     = var.alice_bgp_as
-      import_prefixes = []
+      import_prefixes = ["172.31.255.0/24"] # alice配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路
       export_prefixes = ["10.0.0.0/16"]
     },
     {

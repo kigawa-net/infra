@@ -50,16 +50,15 @@ WireGuardのピア関係は双方向に鍵を登録し合う必要があるた�
    ./hardware/run.sh soichiro apply
    ```
 
-## 4. 重要な注意点(未解決の設計課題)
+## 4. ルーティング設計(BGP方式で解決済み)
 
-現在のWireGuardピア設定は、k8s1/k8s2の既存ピアと同様に `AllowedIPs` がトンネルサブネット(`172.31.255.0/24`)のみになっており、**これだけではsoichiroからクラスタLAN(`10.0.0.0/24`、APIサーバーVIP `10.0.0.100:6443` を含む)への実際の経路は確保されない**。
+現在のWireGuardピア設定は、k8s1/k8s2の既存ピアと同様に `AllowedIPs` がトンネルサブネット(`172.31.255.0/24`)のみになっており、これだけではsoichiroからクラスタ側への復路(戻りの経路)は確保されない。alice⇔k8s4間は既存のBGP(FRR/BIRD, AS65020/AS65010)でinuyama(クラスタ)側のルートをやり取りしているため、この復路をBGPで解決した:
 
-alice⇔k8s4間は既存のBGP(FRR/BIRD, AS65020/AS65010)でinuyama(クラスタ)側のルートをやり取りしているため、soichiroの経路をクラスタに伝播するには、次のいずれかの追加作業が必要:
+- **alice側**: `hardware/alice/variables.tf` の `alice_advertised_prefixes` に `172.31.255.0/24` を追加した。alice自身のWireGuardインターフェース(`wg0`, `172.31.255.2/24`)の直結ルートとして、FRRの `network 172.31.255.0/24` ステートメント経由でinuyama(k8s4)へBGP広告される(`ALICE-OUT` prefix-list、`hardware/alice/templates/frr.conf.tpl`)。
+- **k8s4側**: `hardware/k8s4/main.tf` の `module.bgp` の `external_bgp_peers`(alice向けpeerエントリ)の `import_prefixes` を `["172.31.255.0/24"]` に変更した。BIRD(`hardware/modules/bgp-bird`)がこのprefixをalice経由で受理し、`protocol kernel { import all; }` によりkernelのルーティングテーブルにインストールされる。
+- k8s4は `bgp_peers`(内部BGPメッシュ、`import all; export all;`)経由でk8s1/k8s2ともこのルートを共有するため、control-planeいずれがAPIサーバーVIPを保持していても、soichiro(`172.31.255.13`)への復路が確保される。
 
-- **(a) alice の FRR 設定を拡張する**: `hardware/alice/templates/frr.conf.tpl` にsoichiro向けのネットワークステートメント/redistributeを追加してBGP経由で経路広告する
-- **(b) k8s4側に静的ルートを追加する**: `172.31.255.0/24 via <aliceのinuyama向けWireGuard IP>` をk8s4に追加する
-
-**このドキュメントではどちらの方式にするかを決め打ちしていない。** 実際に適用する前に現在のFRR/BIRD設定(`hardware/alice/templates/frr.conf.tpl` とk8s4上のBIRD設定)を確認し、ネットワーク設計者の判断を仰ぐこと。ここを解決しないと、soichiroはWireGuardトンネル自体は確立できても `kubeadm join` がAPIサーバーに到達できず失敗し続ける可能性が高い。
+**注意**: この経路は「control-planeノード(k8s1/k8s2/k8s4)からsoichiroへ」到達するためのものであり、192.168.1.0/24 LAN上の他の任意のホスト(worker4等)からsoichiroへの到達性までは保証しない。`kubeadm join`/kubeletのAPIサーバー通信という当面の要件には十分だが、Pod networking(CNI)がLAN全体の経路情報に依存する構成の場合は別途検証が必要。
 
 ## 5. 動作確認
 
