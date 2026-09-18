@@ -43,18 +43,35 @@ variable "google_idp_client_secret" {
   sensitive   = true
 }
 
-variable "microsoft_idp_client_id" {
+variable "azuread_tenant_id" {
+  description = "kalenderのMicrosoft Entraアプリ登録が所属するテナントID"
+  type        = string
+  default     = "common" # 既存のMSAL/Web実装がマルチテナント"common"を使っているため合わせる
+}
+
+variable "azuread_terraform_client_id" {
   description = <<-EOT
-    KeycloakがMicrosoftへブローカーするための「Web」プラットフォームのアプリケーション(クライアント)ID。
-    Azure Portalで、既存のkalenderアプリ登録に「Web」プラットフォームを追加して作成すること
-    (既存の「シングルページアプリケーション」プラットフォームはシークレットを持たないため流用不可)。
-    リダイレクトURIに https://user.kigawa.net/realms/kigawa-net/broker/microsoft/endpoint を追加。
+    このTerraform自身がMicrosoft Entraアプリ登録を操作するための、専用サービスプリンシパルの
+    アプリケーション(クライアント)ID。Azure Portalで「Terraform automation」等の名前で
+    Application.ReadWrite.All権限(アプリケーション権限、管理者の同意が必要)を持つ
+    アプリ登録を一度だけ手動作成し、そのIDをrun.sh経由でBWSから注入すること。
   EOT
   type        = string
 }
 
-variable "microsoft_idp_client_secret" {
-  description = "上記MicrosoftクライアントのシークレットVALUE(run.shがBWSから注入)"
+variable "azuread_terraform_client_secret" {
+  description = "上記Terraform自動化用サービスプリンシパルのクライアントシークレット(run.shがBWSから注入)"
   type        = string
   sensitive   = true
+}
+
+variable "microsoft_kalender_app_client_id" {
+  description = <<-EOT
+    kalenderが既に使っているMicrosoft Entraアプリ登録のアプリケーション(クライアント)ID。
+    Keycloak側のMicrosoft IdPブローカー用クライアントID・シークレットはこのアプリ登録に
+    "Web"プラットフォームを追加してTerraformが生成するため、Google IdPと異なり
+    別途Bitwardenへ手動保存する必要はない。
+  EOT
+  type        = string
+  default     = "3b5392c1-34fe-447b-a09f-ae8144d7564a"
 }

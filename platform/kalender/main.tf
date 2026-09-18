@@ -72,6 +72,42 @@ resource "keycloak_oidc_google_identity_provider" "google" {
   first_broker_login_flow_alias = "first broker login"
 }
 
+# 既存のkalender用Microsoft Entra(Azure AD)アプリ登録をclient_idから検索する。
+# Object IDが分からなくても terraform import なしで既存アプリを参照できる。
+data "azuread_application" "kalender" {
+  client_id = var.microsoft_kalender_app_client_id
+}
+
+# Web版kalenderがAzure ADへ直接PKCEログインする際のリダイレクトURI。
+# 現在発生している "invalid_request: redirect_uri" エラーの直接的な修正になる。
+resource "azuread_application_redirect_uris" "kalender_spa" {
+  application_id = data.azuread_application.kalender.id
+  type           = "SPA"
+
+  redirect_uris = [
+    "https://kalender-62z.pages.dev/",
+  ]
+}
+
+# Keycloakがブローカーとして使うための"Web"(confidential)プラットフォーム。
+# SPAプラットフォームと同じアプリ登録に追加する(Azure ADは1アプリに複数プラットフォームを
+# 併存できる。別アプリに分けても良いが、権限定義を共有できるこちらを採用)。
+resource "azuread_application_redirect_uris" "kalender_web" {
+  application_id = data.azuread_application.kalender.id
+  type           = "Web"
+
+  redirect_uris = [
+    "https://user.kigawa.net/realms/kigawa-net/broker/microsoft/endpoint",
+  ]
+}
+
+# Keycloakのbrokerクライアントシークレット。Google IdPと異なりこちらはTerraformが
+# 生成するため、Bitwardenへの手動保存は不要。
+resource "azuread_application_password" "kalender_keycloak_broker" {
+  application_id = data.azuread_application.kalender.id
+  display_name   = "kigawa-net-keycloak-broker"
+}
+
 # Microsoft (Azure AD) Identity Provider。mrparkers/keycloakプロバイダに
 # Microsoft専用リソースが無いため、汎用の keycloak_oidc_identity_provider を使う。
 # authorization_url/token_urlは汎用OIDCリソースでは必須(provider_id="microsoft"だけでは
@@ -85,8 +121,8 @@ resource "keycloak_oidc_identity_provider" "microsoft" {
   authorization_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
   token_url         = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 
-  client_id     = var.microsoft_idp_client_id
-  client_secret = var.microsoft_idp_client_secret
+  client_id     = var.microsoft_kalender_app_client_id
+  client_secret = azuread_application_password.kalender_keycloak_broker.value
 
   default_scopes = "openid email profile Calendars.ReadWrite offline_access"
 

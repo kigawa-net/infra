@@ -29,6 +29,13 @@ terraform {
       source  = "bitwarden/bitwarden-secrets"
       version = "~> 1.0"
     }
+    # 既存のMicrosoft Entra(Azure AD)アプリ登録のリダイレクトURI/シークレットを管理する。
+    # この組織のTerraformでAzureを扱うのは初めてのため、事前にTerraform自動化用の
+    # サービスプリンシパル(Application.ReadWrite.All権限)をAzure側で1回だけ手動作成する必要がある。
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -44,4 +51,10 @@ provider "bitwarden-secrets" {
   api_url         = "https://api.bitwarden.com"
   identity_url    = "https://identity.bitwarden.com"
   organization_id = var.bws_organization_id
+}
+
+provider "azuread" {
+  client_id     = var.azuread_terraform_client_id
+  client_secret = var.azuread_terraform_client_secret
+  tenant_id     = var.azuread_tenant_id
 }
