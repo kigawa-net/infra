@@ -80,3 +80,27 @@ resource "github_actions_secret" "argocd_api_token" {
   secret_name = "ARGOCD_API_TOKEN"
   value       = argocd_account_token.rpgcore_pr_ci.jwt
 }
+
+# velocity-pr-discovery(dev.onemc.worldに接続後、/serverコマンドでPRプレビュー
+# 環境へ移動するためのVelocityプラグイン)のCIがharbor.kigawa.netにイメージを
+# pushできるよう、既存のHarborクレデンシャル(BWS: harbor-user/harbor-pass)を
+# Actions secretとして配布する。
+data "bitwarden-secrets_secret" "harbor_user" {
+  id = "929d361e-e599-4b58-b173-b3e201004d0a"
+}
+
+data "bitwarden-secrets_secret" "harbor_pass" {
+  id = "13c66d3b-7eb6-4c37-b466-b3e2010057b1"
+}
+
+resource "github_actions_secret" "velocity_pr_discovery_harbor_username" {
+  repository  = "velocity-pr-discovery"
+  secret_name = "HARBOR_USERNAME"
+  value       = data.bitwarden-secrets_secret.harbor_user.value
+}
+
+resource "github_actions_secret" "velocity_pr_discovery_harbor_password" {
+  repository  = "velocity-pr-discovery"
+  secret_name = "HARBOR_PASSWORD"
+  value       = data.bitwarden-secrets_secret.harbor_pass.value
+}
