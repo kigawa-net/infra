@@ -171,6 +171,9 @@ jobs:
       # soichiro は Cloudflare Tunnel 経由でのみSSH到達可能なため、
       # hardware/soichiro (soichiro自身へのlocal-exec) と hardware/ionos
       # (soichiroの公開鍵取得) の両方がterraform実行環境にcloudflaredを要求する。
+      # soichiro自身のSSH鍵/sudoパスワードは他ノードと共通のBitwarden secretを
+      # 使う(hardware/soichiro/variables.tf参照)ため、既存のBWS_ACCESS_TOKENで
+      # 足り、追加のsecrets登録は不要。
       - name: cloudflared をインストール (soichiro/ionos用)
         if: matrix.module == 'soichiro' || matrix.module == 'ionos'
         run: |
@@ -178,27 +181,6 @@ jobs:
           chmod +x cloudflared
           sudo mv cloudflared /usr/local/bin/
           cloudflared --version
-
-      # soichiro自身の資格情報はBitwardenを使わないため(hardware/soichiro/variables.tf
-      # 参照)、GitHub Actions secretsからSSH秘密鍵をファイルに書き出し、
-      # sudoパスワードはマスクしてジョブ環境変数に載せる。TF_VAR_*はTerraformが
-      # 対応する変数を持たないモジュール実行時は無視されるだけなので、
-      # このステップ自体はsoichiro/ionos以外の実行には影響しない。
-      - name: soichiroの資格情報を配置 (soichiro/ionos用)
-        if: matrix.module == 'soichiro' || matrix.module == 'ionos'
-        env:
-          SOICHIRO_SSH_PRIVATE_KEY: ${{ secrets.SOICHIRO_SSH_PRIVATE_KEY }}
-          SOICHIRO_SUDO_PASSWORD: ${{ secrets.SOICHIRO_SUDO_PASSWORD }}
-        run: |
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$SOICHIRO_SSH_PRIVATE_KEY" > "$HOME/.ssh/soichiro"
-          chmod 600 "$HOME/.ssh/soichiro"
-          echo "::add-mask::$SOICHIRO_SUDO_PASSWORD"
-          {
-            echo "TF_VAR_ssh_private_key_path=$HOME/.ssh/soichiro"
-            echo "TF_VAR_soichiro_ssh_private_key_path=$HOME/.ssh/soichiro"
-            echo "TF_VAR_sudo_password=$SOICHIRO_SUDO_PASSWORD"
-          } >> "$GITHUB_ENV"
 
       - uses: hashicorp/setup-terraform@v3
         with:
