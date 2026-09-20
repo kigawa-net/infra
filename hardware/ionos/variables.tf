@@ -178,6 +178,18 @@ variable "soichiro_ssh_user" {
   default = "kigawa"
 }
 
+variable "cf_access_client_id_bitwarden_id" {
+  description = "soichiroのCloudflare Access Service Token Client ID (hardware/soichiroと同じ値)。ssh.soichiro0520.comはCloudflare Accessで保護されており、非対話SSH(公開鍵取得)にはService Auth用のポリシーとこのTokenが必要"
+  type        = string
+  default     = "6a97e2f5-1add-477d-a464-b4cb00102bbf"
+}
+
+variable "cf_access_client_secret_bitwarden_id" {
+  description = "soichiroのCloudflare Access Service Token Client Secret (hardware/soichiroと同じ値)"
+  type        = string
+  default     = "944c9557-01db-4c84-988b-b4cb00103314"
+}
+
 variable "manage_firewall" {
   type    = bool
   default = true

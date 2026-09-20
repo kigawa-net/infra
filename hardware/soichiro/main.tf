@@ -23,6 +23,24 @@ data "external" "sudo_password" {
   ]
 }
 
+# ssh.soichiro0520.com は Cloudflare Access で保護されており、非対話SSH(terraform実行)には
+# Service Token(Action=Service Auth のポリシーに登録済み)が必要。
+data "external" "cf_access_client_id" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.cf_access_client_id_bitwarden_id}" --color no | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "cf_access_client_secret" {
+  program = ["bash", "-c", <<-EOT
+    value=$(bws secret get "${var.cf_access_client_secret_bitwarden_id}" --color no | jq -r '.value')
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.control_plane_ssh_key_bitwarden_id}" --color no | jq -r '.value')
@@ -169,8 +187,8 @@ resource "null_resource" "soichiro_setup" {
       tmpkey=$(mktemp)
       chmod 600 "$tmpkey"
       printf '%s\n' "${data.external.ssh_key.result.value}" > "$tmpkey"
-      scp -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
-      ssh -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h" "${var.ssh_user}@${var.ssh_hostname}" "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
+      scp -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h --id ${data.external.cf_access_client_id.result.value} --secret ${data.external.cf_access_client_secret.result.value}" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
+      ssh -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h --id ${data.external.cf_access_client_id.result.value} --secret ${data.external.cf_access_client_secret.result.value}" "${var.ssh_user}@${var.ssh_hostname}" "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
       rm -f "$tmpkey"
     EOT
   }
