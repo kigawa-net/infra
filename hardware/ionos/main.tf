@@ -140,6 +140,8 @@ data "external" "soichiro_wireguard_public_key" {
       jq -n '{"value": ""}'; exit 0
     fi
     ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    cf_access_client_id=$(bws secret get "${var.cf_access_client_id_bitwarden_id}" --color no | jq -r '.value')
+    cf_access_client_secret=$(bws secret get "${var.cf_access_client_secret_bitwarden_id}" --color no | jq -r '.value')
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
@@ -148,7 +150,7 @@ data "external" "soichiro_wireguard_public_key" {
       -o StrictHostKeyChecking=accept-new \
       -o BatchMode=yes \
       -o ConnectTimeout=5 \
-      -o "ProxyCommand=cloudflared access ssh --hostname %h" \
+      -o "ProxyCommand=cloudflared access ssh --hostname %h --id $cf_access_client_id --secret $cf_access_client_secret" \
       "${var.soichiro_ssh_user}@${var.soichiro_ssh_hostname}" \
       'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
     rm -f "$tmpkey"

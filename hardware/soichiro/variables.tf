@@ -21,6 +21,18 @@ variable "sudo_password_bitwarden_id" {
   default     = "52b44d60-7cab-429f-929a-b4340139b6d8"
 }
 
+variable "cf_access_client_id_bitwarden_id" {
+  description = "soichiroのCloudflare Access Service Token Client ID。ssh.soichiro0520.comはCloudflare Accessで保護されており、非対話SSH(terraform実行)にはService Auth用のポリシーとこのTokenが必要"
+  type        = string
+  default     = "6a97e2f5-1add-477d-a464-b4cb00102bbf"
+}
+
+variable "cf_access_client_secret_bitwarden_id" {
+  description = "soichiroのCloudflare Access Service Token Client Secret"
+  type        = string
+  default     = "944c9557-01db-4c84-988b-b4cb00103314"
+}
+
 variable "control_plane_host" {
   type    = string
   default = "k8s1"
