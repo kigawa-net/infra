@@ -49,20 +49,22 @@ variable "azuread_tenant_id" {
     AzureADテナントの実テナントID(GUID)。kalenderの既存MSAL/Web実装がエンドユーザーの
     サインインに使っているマルチテナントエンドポイント"common"とは別物(あちらはOAuth認可
     エンドポイントのエイリアスであり、azureadプロバイダ自体の認証には使えない)。
-    Azure Portal右上のテナント概要、または `az account show` で確認できる。
+    クライアントID/テナントIDは機密情報ではないためデフォルト値としてコード管理する。
   EOT
   type        = string
+  default     = "8f95fe14-719d-4d3e-bb86-1aed5bafd1d9"
 }
 
 variable "azuread_terraform_client_id" {
   description = <<-EOT
-    このTerraform自身がMicrosoft Entraアプリ登録を操作するための、専用サービスプリンシパルの
-    アプリケーション(クライアント)ID。Azure Portalで「Terraform automation」等の名前で
-    Application.ReadWrite.All権限(アプリケーション権限、管理者の同意が必要)を持つ
-    アプリ登録を一度だけ手動作成し、そのIDをrun.sh経由でBWSから注入すること。
+    このTerraform自身がMicrosoft Entraアプリ登録を操作するための、専用サービスプリンシパル
+    "kalender-terraform-automation"のアプリケーション(クライアント)ID。
+    Application.ReadWrite.All権限(アプリケーション権限、管理者の同意済み)を持つ。
     認証はクライアントシークレットではなく証明書(client_certificate)を使う。
+    クライアントID/テナントIDは機密情報ではないためデフォルト値としてコード管理する。
   EOT
   type        = string
+  default     = "e4bf9241-cae9-41e6-9784-6b37e5d467eb"
 }
 
 variable "azuread_terraform_client_certificate" {
