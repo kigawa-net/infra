@@ -11,19 +11,15 @@ export AWS_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY
 export TF_VAR_keycloak_admin_password
 export TF_VAR_github_app_private_key
-export TF_VAR_google_idp_client_id
 export TF_VAR_google_idp_client_secret
 export TF_VAR_azuread_terraform_client_certificate
 export TF_VAR_azuread_terraform_client_certificate_password
 AWS_ACCESS_KEY_ID=$(bws -c no secret get eb5eb0e8-2a4a-4398-a756-b37000d87d64 | jq -r '.value')
 AWS_SECRET_ACCESS_KEY=$(bws -c no secret get c39086cc-e112-40eb-b19f-b37000d89090 | jq -r '.value')
 TF_VAR_keycloak_admin_password=$(bws -c no secret get e38ac3a1-1988-44a4-8421-b47000d79995 | jq -r '.value')
-# platform/kalender用。TODO: 下記のGoogle IdP用BWSシークレットUUIDを実際の値に差し替えること
-# (kigawa-net/kalender#57のStage A対応、詳細はPR参照)。Microsoftと違いGoogleには
-# azuread相当のTerraformプロバイダが無いため、引き続きBWSへの手動保存が必要。
-# 未設定のままだと platform/kalender の terraform plan/apply はCIで失敗する。
-TF_VAR_google_idp_client_id=$(bws -c no secret get REPLACE_WITH_GOOGLE_IDP_CLIENT_ID_UUID | jq -r '.value // empty') || true
-TF_VAR_google_idp_client_secret=$(bws -c no secret get REPLACE_WITH_GOOGLE_IDP_CLIENT_SECRET_UUID | jq -r '.value // empty') || true
+# kalenderのGoogle IdPブローカー用クライアントシークレット。client_idはvariables.tfに
+# デフォルト値としてコード管理済み(機密情報ではないため)。
+TF_VAR_google_idp_client_secret=$(bws -c no secret get 24b9574a-4d71-440a-94e5-b4cb0034af8c | jq -r '.value // empty') || true
 # kalender-terraform-automation サービスプリンシパルの認証用証明書(PFX/Base64)とそのパスワード。
 # client_id/tenant_idはvariables.tfにデフォルト値としてコード管理済み(機密情報ではないため)。
 TF_VAR_azuread_terraform_client_certificate=$(bws -c no secret get 2e7def30-bdd2-4e94-8afc-b4cb002f433a | jq -r '.value // empty') || true

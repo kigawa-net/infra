@@ -35,12 +35,13 @@ variable "bws_project_id" {
 
 variable "google_idp_client_id" {
   description = <<-EOT
-    KeycloakがGoogleへブローカーするための「ウェブアプリケーション」タイプのOAuthクライアントID。
-    Google Cloud Consoleで新規作成すること(既存のkalenderアプリが直接使っているSPA向けクライアントは
-    流用不可。シークレットを持つ「ウェブアプリケーション」タイプが必要)。
-    承認済みのリダイレクトURIに https://user.kigawa.net/realms/kigawa-net/broker/google/endpoint を追加。
+    KeycloakがGoogleへブローカーするための「ウェブアプリケーション」タイプのOAuthクライアントID
+    (kalender-web)。承認済みのリダイレクトURIに
+    https://user.kigawa.net/realms/kigawa-net/broker/google/endpoint を追加済み。
+    クライアントIDは機密情報ではないためデフォルト値としてコード管理する。
   EOT
   type        = string
+  default     = "441586545378-br8bjafc1b1bgsis0r9s4d3a02ij9ec0.apps.googleusercontent.com"
 }
 
 variable "google_idp_client_secret" {
