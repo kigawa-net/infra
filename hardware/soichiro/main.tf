@@ -181,14 +181,29 @@ resource "null_resource" "soichiro_setup" {
     script_hash = sha256(local.setup_script)
   }
 
+  # Terraformはlocal-exec実行時に展開後のcommand全体を"Executing: [...]"として
+  # そのままログに出力するため、秘密情報をcommand文字列に直接埋め込まない。
+  # environmentブロック経由(実行時のシェル環境変数)で渡し、command自体には
+  # 変数名しか現れないようにしている。また、GitHub Actionsランナーの
+  # /bin/shはdashでset -o pipefailを解釈できないため、interpreterでbashを明示する。
   provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      SSH_KEY_CONTENT         = data.external.ssh_key.result.value
+      SUDO_PASSWORD           = data.external.sudo_password.result.value
+      CF_ACCESS_CLIENT_ID     = data.external.cf_access_client_id.result.value
+      CF_ACCESS_CLIENT_SECRET = data.external.cf_access_client_secret.result.value
+      SETUP_SCRIPT_PATH       = local_file.setup_script.filename
+      SSH_TARGET              = "${var.ssh_user}@${var.ssh_hostname}"
+    }
     command = <<-EOT
       set -eo pipefail
       tmpkey=$(mktemp)
       chmod 600 "$tmpkey"
-      printf '%s\n' "${data.external.ssh_key.result.value}" > "$tmpkey"
-      scp -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h --id ${data.external.cf_access_client_id.result.value} --secret ${data.external.cf_access_client_secret.result.value}" "${local_file.setup_script.filename}" "${var.ssh_user}@${var.ssh_hostname}:/tmp/soichiro-setup.sh"
-      ssh -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=cloudflared access ssh --hostname %h --id ${data.external.cf_access_client_id.result.value} --secret ${data.external.cf_access_client_secret.result.value}" "${var.ssh_user}@${var.ssh_hostname}" "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
+      printf '%s\n' "$SSH_KEY_CONTENT" > "$tmpkey"
+      proxy_cmd="cloudflared access ssh --hostname %h --id $CF_ACCESS_CLIENT_ID --secret $CF_ACCESS_CLIENT_SECRET"
+      scp -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=$proxy_cmd" "$SETUP_SCRIPT_PATH" "$SSH_TARGET:/tmp/soichiro-setup.sh"
+      ssh -i "$tmpkey" -o StrictHostKeyChecking=accept-new -o "ProxyCommand=$proxy_cmd" "$SSH_TARGET" "echo '$SUDO_PASSWORD' | sudo -S bash /tmp/soichiro-setup.sh && rm -f /tmp/soichiro-setup.sh"
       rm -f "$tmpkey"
     EOT
   }
