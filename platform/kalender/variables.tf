@@ -23,8 +23,14 @@ variable "bws_organization_id" {
 }
 
 variable "bws_project_id" {
-  description = "kalenderのシークレットを格納するBitwarden Secrets ManagerのプロジェクトID"
+  description = <<-EOT
+    kalenderのシークレットを格納するBitwarden Secrets ManagerのプロジェクトID。
+    他モジュール(admin-panel等)と同じ"infra"プロジェクトを流用する
+    (`bws project list`で確認済み、このBWS組織にはプロジェクトが1つしか存在しない)。
+    プロジェクトIDは機密情報ではないためデフォルト値としてコード管理する。
+  EOT
   type        = string
+  default     = "3f39dcb2-4e04-4c80-bcc4-b3e100e4e27a"
 }
 
 variable "google_idp_client_id" {
