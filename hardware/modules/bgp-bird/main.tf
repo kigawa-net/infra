@@ -3,7 +3,7 @@ locals {
 
   peer_blocks = join("\n\n", [
     for idx, peer_ip in var.bgp_peers :
-    "protocol bgp peer${idx} {\n  local ${var.bgp_router_id} as ${var.bgp_local_as};\n  neighbor ${peer_ip} as ${var.bgp_local_as};\n  ipv4 {\n    import all;\n    export all;\n  };\n}"
+    "protocol bgp peer${idx} {\n  local ${var.bgp_router_id} as ${var.bgp_local_as};\n  neighbor ${peer_ip} as ${var.bgp_local_as};\n  ipv4 {\n    import all;\n    export filter {\n      # ionos自身のWireGuardハブアドレス(172.31.254.2/32)は各ノードが\n      # 自分自身のkernel-connected経路で直接解決すべきローカルなnext-hop\n      # 解決用ルートであり、他ノードへ再広告するとより優先されてしまい、\n      # 本来の直結経路より劣ったパス経由でルーティングされてしまう\n      # (WireGuardの送信元スプーフィング防止で応答が破棄される原因になった)。\n      if net = 172.31.254.2/32 then reject;\n      accept;\n    };\n  };\n}"
   ])
 
   external_peer_blocks = join("\n\n", [
