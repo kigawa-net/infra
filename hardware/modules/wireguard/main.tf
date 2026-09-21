@@ -6,7 +6,7 @@ locals {
   # (壊れたスクリプトがエラーにならず「成功」してしまう)。
   # そのため事前に1つの文字列としてレンダリングし、単純な${}展開のみで
   # ヒアドキュメントに埋め込む。
-  postup_lines = join("\n", [for ip in var.server_allowed_ips : "      PostUp = ip route replace ${ip} dev %i scope link"])
+  postup_lines = join("\n", [for ip in var.server_allowed_ips : "PostUp = ip route replace ${ip} dev %i scope link"])
 }
 
 resource "null_resource" "wireguard" {
@@ -16,7 +16,7 @@ resource "null_resource" "wireguard" {
     server_endpoint   = var.server_endpoint
     server_public_key = sha256(var.server_public_key)
     allowed_ips       = join(",", var.server_allowed_ips)
-    setup_version     = "6"
+    setup_version     = "7"
   }
 
   connection {
@@ -60,7 +60,7 @@ resource "null_resource" "wireguard" {
       [Interface]
       Address = ${var.wireguard_address}
       PrivateKey = $private_key
-${local.postup_lines}
+      ${local.postup_lines}
 
       [Peer]
       PublicKey = ${var.server_public_key}
