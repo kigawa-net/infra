@@ -14,6 +14,9 @@ net.listen('127.0.0.1', 853, { kind = 'tls' })
 %{~if var.dns_vip != ""}
 net.listen('${var.dns_vip}', 53, { kind = 'dns' })
 %{~endif}
+%{~if var.additional_listen_address != ""}
+net.listen('${var.additional_listen_address}', 53, { kind = 'dns' })
+%{~endif}
 
 modules = { 'policy' }
 

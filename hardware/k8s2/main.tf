@@ -115,12 +115,13 @@ module "knot_resolver" {
   depends_on = [module.knot]
   source     = "../modules/knot-resolver"
 
-  host                 = var.host
-  ssh_user             = var.ssh_user
-  ssh_private_key      = data.external.ssh_key.result.value
-  sudo_password        = data.external.sudo_password.result.value
-  dns_vip              = var.dns_vip
-  zones_reload_trigger = sha256(join("", values(local.knot_zones)))
+  host                      = var.host
+  ssh_user                  = var.ssh_user
+  ssh_private_key           = data.external.ssh_key.result.value
+  sudo_password             = data.external.sudo_password.result.value
+  dns_vip                   = var.dns_vip
+  additional_listen_address = var.server_ip
+  zones_reload_trigger      = sha256(join("", values(local.knot_zones)))
 }
 
 module "wireguard" {

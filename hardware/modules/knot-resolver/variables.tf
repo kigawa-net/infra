@@ -60,6 +60,12 @@ variable "dns_vip" {
   default     = ""
 }
 
+variable "additional_listen_address" {
+  description = "hostに加えて追加でlistenするIPアドレス(例: 10.0.0.0/24移行後の新IP)。空の場合は追加しない"
+  type        = string
+  default     = ""
+}
+
 variable "zones_reload_trigger" {
   description = <<-DESC
     knot(権威DNS)側のゾーンデータが変わるたびに値が変わるようにする
