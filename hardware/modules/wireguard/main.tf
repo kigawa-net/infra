@@ -16,7 +16,7 @@ resource "null_resource" "wireguard" {
     server_endpoint   = var.server_endpoint
     server_public_key = sha256(var.server_public_key)
     allowed_ips       = join(",", var.server_allowed_ips)
-    setup_version     = "5"
+    setup_version     = "6"
   }
 
   connection {
@@ -35,8 +35,16 @@ resource "null_resource" "wireguard" {
       umask 077
       exec > >(tee -a /tmp/wireguard-setup.log) 2>&1
 
-      apt-get update -y
-      apt-get install -y wireguard
+      # 同一ホストに対してこのモジュールが複数回呼び出される場合(k8s1のalice向け
+      # module.wireguardとionos向けmodule.wireguard_ionosなど)、terraformは
+      # 独立したリソースとして並列にapplyするため、同時にapt-getが実行され
+      # dpkgロックの競合(exit code 100)でどちらかが失敗することがある。
+      # 専用のロックファイルでapt-get呼び出し自体を直列化する
+      # (apt自身が使う/var/lib/apt/lists/lockを外側からもflockすると、
+      # apt-get内部のロック取得と二重にロックしようとしてデッドロックするため
+      # 別のロックファイルを使う)。
+      flock /tmp/wireguard-module-apt.lock -c "apt-get update -y"
+      flock /tmp/wireguard-module-apt.lock -c "apt-get install -y wireguard"
 
       install -d -m 700 /etc/wireguard
 
