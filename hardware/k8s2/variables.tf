@@ -122,9 +122,9 @@ variable "wireguard_ionos_interface" {
 }
 
 variable "wireguard_ionos_address" {
-  description = "Ionos hub 向け WireGuard インターフェースのアドレス"
+  description = "Ionos hub 向け WireGuard インターフェースのアドレス。/24ではなく/32にすることで、172.31.254.0/24宛のkernel-connected経路が自動生成されるのを防ぐ(ionos以外の宛先はBGP経由(k8s4/inuyama)で正しくルーティングされるべきだが、/24だとこのkernel経路がBGP経路より優先されてしまい、ionosの暗号ルーティング(AllowedIPs)チェックで送信元不一致により無言破棄されていた)"
   type        = string
-  default     = "172.31.254.12/24"
+  default     = "172.31.254.12/32"
 }
 
 variable "wireguard_ionos_server_public_key" {
@@ -140,7 +140,7 @@ variable "wireguard_ionos_server_endpoint" {
 }
 
 variable "wireguard_ionos_server_allowed_ips" {
-  description = "WireGuard トンネル経由でルーティングする IP レンジ (Ionos hub)"
+  description = "WireGuard トンネル経由でルーティングする IP レンジ (Ionos hub)。ionos自身の/32のみにする(172.31.254.0/24全体にすると、soichiro等の他ピア宛のトラフィックも直接このトンネル経由で送ろうとしてしまい、ionos側のAllowedIPsチェック(送信元スプーフィング防止)で破棄される。他ピア宛はBGP経由(k8s4/inuyama)で正しくルーティングされる)"
   type        = list(string)
-  default     = ["172.31.254.0/24"]
+  default     = ["172.31.254.2/32"]
 }
