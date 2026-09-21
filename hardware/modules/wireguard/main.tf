@@ -5,7 +5,7 @@ resource "null_resource" "wireguard" {
     server_endpoint   = var.server_endpoint
     server_public_key = sha256(var.server_public_key)
     allowed_ips       = join(",", var.server_allowed_ips)
-    setup_version     = "3"
+    setup_version     = "4"
   }
 
   connection {
@@ -41,6 +41,9 @@ resource "null_resource" "wireguard" {
       [Interface]
       Address = ${var.wireguard_address}
       PrivateKey = $private_key
+%{ for ip in var.server_allowed_ips ~}
+      PostUp = ip route replace ${ip} dev %i scope link
+%{ endfor ~}
 
       [Peer]
       PublicKey = ${var.server_public_key}
