@@ -30,6 +30,15 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    # OneServerMC/infra の GitHub Actions(ubuntu-latest)が hardware/soichiro の
+    # terraform apply 時に k8s1 へ到達する(kubeadm join token取得)ための静的ピア。
+    # ephemeralなrunnerでSSH公開鍵を都度取得できないため、事前生成した固定鍵を使う。
+    [{
+      public_key           = var.ci_runner_wireguard_public_key
+      allowed_ips          = ["${var.ci_runner_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }],
   )
 
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {
