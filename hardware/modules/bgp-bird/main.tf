@@ -24,12 +24,28 @@ protocol direct {
 
 protocol kernel {
   ipv4 {
-    export all;
+    export filter {
+      # 172.31.254.2/32(ionos自身)はBIRDのnext-hop解決専用のstatic route
+      # (下記protocol static ionos_nexthop_helper)であり、カーネルの
+      # ルーティングテーブルへはエクスポートしない。エクスポートすると
+      # より詳細な/32ルートとして一般のIPトラフィックの転送先にも使われて
+      # しまい、k8s4経由の正しい中継パス(BGP学習した/30・/24)より優先
+      # されて応答パケットが送信元スプーフィング防止で破棄される問題が起きる。
+      if net = 172.31.254.2/32 then reject;
+      accept;
+    };
     import all;
   };
   learn;
   persist;
 }
+%{~ if var.ionos_nexthop_helper_interface != "" }
+
+protocol static ionos_nexthop_helper {
+  ipv4;
+  route 172.31.254.2/32 via "${var.ionos_nexthop_helper_interface}";
+}
+%{~ endif }
 
 ${local.peer_blocks}
 %{~ if length(var.advertised_vips) > 0 }
