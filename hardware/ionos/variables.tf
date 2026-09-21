@@ -190,6 +190,18 @@ variable "cf_access_client_secret_bitwarden_id" {
   default     = "944c9557-01db-4c84-988b-b4cb00103314"
 }
 
+variable "ci_runner_wireguard_public_key" {
+  description = "OneServerMC/infraのGitHub Actions(ubuntu-latest)から一時的にWireGuard接続するためのピア公開鍵。k8s1/k8s2/soichiroと異なりSSHで到達できない(ephemeralなrunner)ため、事前に生成した固定鍵を使う静的ピア設定にしている。秘密鍵はBitwarden(ci-runner-wireguard-private-key)で管理"
+  type        = string
+  default     = "y9njnYgjixQ/hmu5gXl5/iMFhhOCvhjPn6GMAAgYBmg="
+}
+
+variable "ci_runner_wireguard_address" {
+  description = "CI runner の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.254.20"
+}
+
 variable "manage_firewall" {
   type    = bool
   default = true
