@@ -72,10 +72,11 @@ module "bgp" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  bgp_router_id   = var.server_ip
-  bgp_local_as    = var.bgp_local_as
-  bgp_peers       = var.bgp_peers
-  advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
+  bgp_router_id                  = var.server_ip
+  bgp_local_as                   = var.bgp_local_as
+  bgp_peers                      = var.bgp_peers
+  advertised_vips                = var.dns_vip != "" ? [var.dns_vip] : []
+  ionos_nexthop_helper_interface = var.wireguard_ionos_interface
 }
 
 module "kube_vip" {

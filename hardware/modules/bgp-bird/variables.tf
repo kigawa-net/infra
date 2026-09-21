@@ -50,6 +50,12 @@ variable "advertised_vips" {
   default     = []
 }
 
+variable "ionos_nexthop_helper_interface" {
+  description = "ionos自身(172.31.254.2)へのWireGuardインターフェース名を指定すると、BIRDのnext-hop解決専用のstatic routeを追加する(カーネルのルーティングテーブルへはエクスポートしない)。k8s1/k8s2のように172.31.254.2への直結ルートがカーネルに存在しないノードでのみ設定する(k8s4のように/30アドレッシングで自然にカバーされている場合は空文字列のままでよい)。カーネルへエクスポートしてしまうと、より詳細な/32ルートとして一般のIPトラフィックの転送先にも使われてしまい、k8s4経由の正しい中継パスより優先されて応答パケットが送信元スプーフィング防止で破棄される問題が起きる"
+  type        = string
+  default     = ""
+}
+
 variable "external_bgp_peers" {
   description = "eBGP peers with explicit prefix filters. Used for site-to-site peers outside the Inuyama iBGP mesh."
   type = list(object({
