@@ -287,6 +287,11 @@ resource "null_resource" "ionos_gateway" {
         ufw allow ${var.wireguard_listen_port}/udp
         ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 179 proto tcp
         ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 9100 proto tcp
+        # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
+        # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
+        # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
+        # 暗黙にブロックされていた。wg0インターフェース間の転送を明示的に許可する。
+        ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
         ufw deny 179/tcp
         ufw deny 6443/tcp
         ufw deny 2379:2380/tcp
