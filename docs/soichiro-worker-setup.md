@@ -1,5 +1,7 @@
 # soichiro を WireGuard 経由で Kubernetes worker に追加する手順
 
+**注意**: `hardware/soichiro` モジュール本体は [OneServerMC/infra](https://github.com/OneServerMC/infra) へ移設済み(soichiroは物理的にOneServerMCのノードのため)。`hardware/ionos`(soichiroのWireGuardゲートウェイ)はこのリポジトリに残っているため、本手順のionos関連の記述は引き続き有効。以下の`./hardware/run.sh soichiro ...`は移設後は`OneServerMC/infra`側の`./hardware/soichiro/run.sh ...`に読み替えること。
+
 ## 1. 前提条件
 
 - soichiro に Ubuntu(k8s-worker5 等と同系統のバージョン)がインストール済みで、SSHで到達可能であること

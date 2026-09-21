@@ -168,14 +168,11 @@ jobs:
           sudo mv bws /usr/local/bin/
           bws --version
 
-      # soichiro は Cloudflare Tunnel 経由でのみSSH到達可能なため、
-      # hardware/soichiro (soichiro自身へのlocal-exec) と hardware/ionos
-      # (soichiroの公開鍵取得) の両方がterraform実行環境にcloudflaredを要求する。
-      # soichiro自身のSSH鍵/sudoパスワードは他ノードと共通のBitwarden secretを
-      # 使う(hardware/soichiro/variables.tf参照)ため、既存のBWS_ACCESS_TOKENで
-      # 足り、追加のsecrets登録は不要。
-      - name: cloudflared をインストール (soichiro/ionos用)
-        if: matrix.module == 'soichiro' || matrix.module == 'ionos'
+      # ionos は soichiro(OneServerMC/infraへ移設済み)のWireGuardゲートウェイであり、
+      # soichiroの公開鍵取得にCloudflare Tunnel経由のSSHを要求するため
+      # terraform実行環境にcloudflaredが必要。
+      - name: cloudflared をインストール (ionos用)
+        if: matrix.module == 'ionos'
         run: |
           curl -Lo cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
           chmod +x cloudflared
