@@ -185,7 +185,7 @@ data "external" "soichiro_wireguard_public_key" {
 
 resource "null_resource" "ionos_gateway" {
   triggers = {
-    setup_version                  = "1"
+    setup_version                  = "2"
     host                           = var.host
     inuyama_wireguard_publickey_id = var.inuyama_wireguard_public_key_bitwarden_id
     inuyama_wireguard_publickey    = sha256(data.external.inuyama_wireguard_public_key.result.value)
