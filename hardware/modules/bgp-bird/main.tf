@@ -3,7 +3,7 @@ locals {
 
   peer_blocks = join("\n\n", [
     for idx, peer_ip in var.bgp_peers :
-    "protocol bgp peer${idx} {\n  local ${var.bgp_router_id} as ${var.bgp_local_as};\n  neighbor ${peer_ip} as ${var.bgp_local_as};\n  ipv4 {\n    import all;\n    export filter {\n      # ionos自身のWireGuardハブアドレス(172.31.254.2/32)は各ノードが\n      # 自分自身のkernel-connected経路で直接解決すべきローカルなnext-hop\n      # 解決用ルートであり、他ノードへ再広告するとより優先されてしまい、\n      # 本来の直結経路より劣ったパス経由でルーティングされてしまう\n      # (WireGuardの送信元スプーフィング防止で応答が破棄される原因になった)。\n      if net = 172.31.254.2/32 then reject;\n      accept;\n    };\n  };\n}"
+    "protocol bgp peer${idx} {\n  local ${var.bgp_router_id} as ${var.bgp_local_as};\n  neighbor ${peer_ip} as ${var.bgp_local_as};\n  ipv4 {\n    import all;\n    export filter {\n      # ionos自身のWireGuardハブアドレス(172.31.254.2/32)は各ノードが\n      # 自分自身のkernel-connected経路で直接解決すべきローカルなnext-hop\n      # 解決用ルートであり、他ノードへ再広告するとより優先されてしまい、\n      # 本来の直結経路より劣ったパス経由でルーティングされてしまう\n      # (WireGuardの送信元スプーフィング防止で応答が破棄される原因になった)。\n      if net = 172.31.254.2/32 then reject;\n      # next-hop-self: eBGP由来のルート(例: k8s4がionosから学習した\n      # 172.31.254.0/24)をiBGPでそのまま転送すると、next-hopがeBGP\n      # ピアの生アドレス(172.31.254.2)のままになり、受信側ノードが\n      # それを自分自身のローカルなionos向けwg1トンネル経由で再帰的に\n      # 解決しようとしてしまう。しかしそのトンネルのAllowedIPsは\n      # ionos自身(172.31.254.2/32)にしか対応しておらず、soichiro等の\n      # 他ピア宛パケットはWireGuard自体に拒否される。next-hopを常に\n      # 自ノードの実IPへ書き換えることで、受信側は実ネットワーク\n      # (BGPピアリングに使っている実IP)経由で正しく経路解決できる。\n      bgp_next_hop = ${var.bgp_router_id};\n      accept;\n    };\n  };\n}"
   ])
 
   external_peer_blocks = join("\n\n", [
@@ -39,24 +39,24 @@ protocol kernel {
   learn;
   persist;
 }
-%{~ if var.ionos_nexthop_helper_interface != "" }
+%{~if var.ionos_nexthop_helper_interface != ""}
 
 protocol static ionos_nexthop_helper {
   ipv4;
   route 172.31.254.2/32 via "${var.ionos_nexthop_helper_interface}";
 }
-%{~ endif }
+%{~endif}
 
 ${local.peer_blocks}
-%{~ if length(var.advertised_vips) > 0 }
+%{~if length(var.advertised_vips) > 0}
 
 protocol static local_vips {
   ipv4;
-%{~ for vip in var.advertised_vips }
+%{~for vip in var.advertised_vips}
   route ${vip}/32 blackhole;
-%{~ endfor }
+%{~endfor}
 }
-%{~ endif }
+%{~endif}
 
 ${local.external_peer_blocks}
 
@@ -152,9 +152,9 @@ resource "null_resource" "bird" {
   provisioner "file" {
     content     = <<-SCRIPT
       #!/bin/bash
-      %{~ for vip in var.advertised_vips }
+      %{~for vip in var.advertised_vips}
       ip addr add ${vip}/32 dev lo 2>/dev/null || true
-      %{~ endfor }
+      %{~endfor}
       SCRIPT
     destination = "/tmp/local-vip-setup.sh"
   }
