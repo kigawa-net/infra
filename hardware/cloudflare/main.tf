@@ -10,6 +10,17 @@ provider "cloudflare" {
   api_token = data.external.api_token.result.value
 }
 
+resource "cloudflare_zone_settings_override" "kigawa_net" {
+  zone_id = var.zone_id
+
+  settings {
+    ssl              = "full"
+    min_tls_version  = "1.0"
+    always_use_https = "on"
+    tls_1_3          = "on"
+  }
+}
+
 # --- A records ---
 
 resource "cloudflare_record" "base" {
