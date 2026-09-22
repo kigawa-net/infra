@@ -179,6 +179,7 @@ resource "null_resource" "ionos_wireguard" {
     ionos_address    = "172.31.254.2"
     ionos_public_key = sha256(var.ionos_wireguard_public_key)
     ionos_endpoint   = var.ionos_wireguard_endpoint
+    allowed_ips      = join(",", var.ionos_wireguard_allowed_ips)
   }
 
   connection {
@@ -219,7 +220,7 @@ resource "null_resource" "ionos_wireguard" {
 
       [Peer]
       PublicKey = ${var.ionos_wireguard_public_key}
-      AllowedIPs = 172.31.254.2/32
+      AllowedIPs = ${join(", ", var.ionos_wireguard_allowed_ips)}
       Endpoint = ${var.ionos_wireguard_endpoint}
       PersistentKeepalive = 25
       WGCONF

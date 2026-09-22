@@ -146,6 +146,12 @@ variable "ionos_wireguard_endpoint" {
   default = "74.208.55.86:51820"
 }
 
+variable "ionos_wireguard_allowed_ips" {
+  description = "k8s4(inuyama)のionos向けwg1トンネルのAllowedIPs。k8s4はeBGPでionosから172.31.254.0/24全体をインポートし(module.bgpのimport_prefixes参照)、soichiro等の他ピア宛トラフィックをこの1本のトンネル経由で中継するゲートウェイ役を担うため、ionos自身の/32だけでなく172.31.254.0/24全体を含める必要がある(/32のみだと、ionosが中継したsoichiro等からの受信パケットの送信元検証やk8s4からsoichiro等への送信がWireGuard自体に拒否される)"
+  type        = list(string)
+  default     = ["172.31.254.0/24"]
+}
+
 variable "ionos_bgp_as" {
   type    = number
   default = 65030
