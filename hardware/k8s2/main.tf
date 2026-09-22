@@ -77,6 +77,20 @@ module "bgp" {
   bgp_peers                      = var.bgp_peers
   advertised_vips                = var.dns_vip != "" ? [var.dns_vip] : []
   ionos_nexthop_helper_interface = var.wireguard_ionos_interface
+
+  # k8s4(inuyama)の冗長化として、k8s2もionosと直接eBGPを張る2本目の
+  # ゲートウェイにする(issue #116)。k8s4が落ちてもこのセッション経由で
+  # ionos<->クラスタLANの経路を維持できる。
+  external_bgp_peers = [
+    {
+      local_ip        = trimsuffix(var.wireguard_ionos_address, "/32")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = "172.31.254.2"
+      neighbor_as     = var.ionos_bgp_as
+      import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/soichiro等)への復路
+      export_prefixes = ["10.0.0.0/16"]
+    }
+  ]
 }
 
 module "kube_vip" {

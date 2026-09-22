@@ -18,9 +18,12 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    # k8s2はinuyama(k8s4)の冗長化として2本目のeBGPゲートウェイも兼ねるため、
+    # 自身の/32だけでなく10.0.0.0/24(クラスタLAN)への中継も許可する
+    # (inuyamaピアと同じ広いAllowedIPs)。
     data.external.k8s2_wireguard_public_key.result.value != "" ? [{
       public_key           = data.external.k8s2_wireguard_public_key.result.value
-      allowed_ips          = ["${var.k8s2_wireguard_address}/32"]
+      allowed_ips          = ["${var.k8s2_wireguard_address}/32", "10.0.0.0/24"]
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
@@ -41,6 +44,19 @@ locals {
     }],
   )
 
+  # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
+  # 同じAS(inuyama_asn)で2本目のeBGPセッションを張り、冗長化する。
+  gateway_bgp_peers = concat(
+    [{
+      wg_address = var.inuyama_wireguard_address
+      asn        = var.inuyama_asn
+    }],
+    data.external.k8s2_wireguard_public_key.result.value != "" ? [{
+      wg_address = var.k8s2_wireguard_address
+      asn        = var.inuyama_asn
+    }] : [],
+  )
+
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {
     address     = var.wireguard_address
     listen_port = var.wireguard_listen_port
@@ -57,8 +73,7 @@ locals {
     hostname                 = var.hostname
     ionos_asn                = var.ionos_asn
     bgp_router_id            = var.bgp_router_id
-    inuyama_wg_address       = var.inuyama_wireguard_address
-    inuyama_asn              = var.inuyama_asn
+    gateway_bgp_peers        = local.gateway_bgp_peers
     wireguard_interface      = var.wireguard_interface
     inuyama_prefix_list      = join("\n", local.inuyama_prefix_list_rules)
     ionos_prefix_list        = join("\n", local.ionos_prefix_list_rules)

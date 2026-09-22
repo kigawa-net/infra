@@ -5,14 +5,18 @@ service integrated-vtysh-config
 !
 router bgp ${ionos_asn}
  bgp router-id ${bgp_router_id}
- neighbor ${inuyama_wg_address} remote-as ${inuyama_asn}
- neighbor ${inuyama_wg_address} update-source ${wireguard_interface}
+%{ for peer in gateway_bgp_peers ~}
+ neighbor ${peer.wg_address} remote-as ${peer.asn}
+ neighbor ${peer.wg_address} update-source ${wireguard_interface}
+%{ endfor ~}
  !
  address-family ipv4 unicast
-  neighbor ${inuyama_wg_address} activate
-  neighbor ${inuyama_wg_address} soft-reconfiguration inbound
-  neighbor ${inuyama_wg_address} prefix-list INUYAMA-IN in
-  neighbor ${inuyama_wg_address} prefix-list IONOS-OUT out
+%{ for peer in gateway_bgp_peers ~}
+  neighbor ${peer.wg_address} activate
+  neighbor ${peer.wg_address} soft-reconfiguration inbound
+  neighbor ${peer.wg_address} prefix-list INUYAMA-IN in
+  neighbor ${peer.wg_address} prefix-list IONOS-OUT out
+%{ endfor ~}
 %{ if ionos_network_statements != "" ~}
 ${ionos_network_statements}
 %{ endif ~}

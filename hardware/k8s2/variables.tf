@@ -140,7 +140,19 @@ variable "wireguard_ionos_server_endpoint" {
 }
 
 variable "wireguard_ionos_server_allowed_ips" {
-  description = "WireGuard トンネル経由でルーティングする IP レンジ (Ionos hub)。ionos自身の/32のみにする(172.31.254.0/24全体にすると、soichiro等の他ピア宛のトラフィックも直接このトンネル経由で送ろうとしてしまい、ionos側のAllowedIPsチェック(送信元スプーフィング防止)で破棄される。他ピア宛はBGP経由(k8s4/inuyama)で正しくルーティングされる)"
+  description = "WireGuard トンネル経由でルーティングする IP レンジ (Ionos hub)。k8s2はk8s4(inuyama)の冗長化として2本目のeBGPゲートウェイを兼ねるため、ionos自身の/32だけでなく172.31.254.0/24全体を含める(k8s4のionos_wireguard_allowed_ipsと同じ理由: soichiro等の他ピア宛トラフィックをこのトンネル経由で中継できるようにする)"
   type        = list(string)
-  default     = ["172.31.254.2/32"]
+  default     = ["172.31.254.0/24"]
+}
+
+variable "ionos_bgp_as" {
+  description = "ionosのAS番号(eBGP用)"
+  type        = number
+  default     = 65030
+}
+
+variable "inuyama_asn" {
+  description = "k8s2がionosとのeBGPで名乗るAS番号。k8s4(inuyama)の冗長ゲートウェイとして同じASN(65010)を再利用する(同一顧客ASからの複数eBGPセッションはマルチホーミングの一般的な構成)"
+  type        = number
+  default     = 65010
 }
