@@ -300,8 +300,15 @@ resource "null_resource" "ionos_gateway" {
         ufw allow 443/tcp
         ufw allow 25565/tcp
         ufw allow ${var.wireguard_listen_port}/udp
-        ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 179 proto tcp
-        ufw allow in on ${var.wireguard_interface} from ${var.inuyama_wireguard_address} to any port 9100 proto tcp
+        # eBGPゲートウェイ(inuyama/k8s4、および冗長化用のk8s2)からの
+        # BGP(179)・node-exporter(9100)接続を許可する。k8s2用のルールが
+        # 無いと、k8s2からのBGP接続(TCP SYN)がUFWのdefault-denyで
+        # 暗黙にドロップされ、external0セッションがIdleのまま進まない
+        # 問題が起きる。
+        %{ for peer in local.gateway_bgp_peers ~}
+        ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 179 proto tcp
+        ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 9100 proto tcp
+        %{ endfor ~}
         # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
         # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
         # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
