@@ -84,6 +84,115 @@ locals {
     inuyama_ingress_vip   = var.inuyama_ingress_vip
     minecraft_backend_vip = var.minecraft_backend_vip
   })
+
+  # このスクリプト自体の内容をtriggersでハッシュ追跡できるよう、
+  # provisioner内に直接書かず独立したlocalとして定義する
+  # (直接書くと内容を変更してもtriggersが変化せず再適用されない)。
+  setup_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    umask 077
+    exec > >(tee -a /tmp/ionos-gateway-setup.log) 2>&1
+
+    case "${var.wireguard_interface}" in
+      ""|*[!a-zA-Z0-9._-]*)
+        echo "wireguard_interface contains unsupported characters"
+        exit 1
+        ;;
+    esac
+
+    haproxy_enabled="${local.haproxy_enabled}"
+    manage_firewall="${var.manage_firewall}"
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
+
+    install -d -m 700 /etc/wireguard
+
+    if [ ! -f /etc/wireguard/ionos_private.key ]; then
+      wg genkey > /etc/wireguard/ionos_private.key
+      wg pubkey < /etc/wireguard/ionos_private.key > /etc/wireguard/ionos_public.key
+    fi
+
+    chmod 600 /etc/wireguard/ionos_private.key
+    ionos_private_key=$(cat /etc/wireguard/ionos_private.key)
+
+    sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" /tmp/ionos-wg0.conf.tpl > /etc/wireguard/${var.wireguard_interface}.conf
+    chmod 600 /etc/wireguard/${var.wireguard_interface}.conf
+
+    cat > /etc/sysctl.d/99-ionos-gateway.conf <<SYSCTL
+    net.ipv4.ip_forward = 1
+    SYSCTL
+    sysctl --system
+
+    install -d -m 755 /etc/systemd/system/frr.service.d
+    cat > /etc/systemd/system/frr.service.d/ionos-gateway.conf <<UNIT
+    [Unit]
+    After=network-online.target wg-quick@${var.wireguard_interface}.service
+    Wants=network-online.target wg-quick@${var.wireguard_interface}.service
+    UNIT
+
+    install -d -m 755 /etc/systemd/system/haproxy.service.d
+    cat > /etc/systemd/system/haproxy.service.d/ionos-gateway.conf <<UNIT
+    [Unit]
+    After=network-online.target wg-quick@${var.wireguard_interface}.service
+    Wants=network-online.target wg-quick@${var.wireguard_interface}.service
+    UNIT
+
+    systemctl daemon-reload
+    systemctl enable wg-quick@${var.wireguard_interface}
+    systemctl restart wg-quick@${var.wireguard_interface}
+
+    install -m 640 -o frr -g frr /tmp/ionos-frr.conf /etc/frr/frr.conf
+    sed -i 's/^zebra=.*/zebra=yes/' /etc/frr/daemons
+    sed -i 's/^bgpd=.*/bgpd=yes/' /etc/frr/daemons
+    systemctl enable frr
+    systemctl restart frr
+
+    install -m 644 /tmp/ionos-haproxy.cfg /etc/haproxy/haproxy.cfg
+    if [ "$haproxy_enabled" = "true" ]; then
+      haproxy -c -f /etc/haproxy/haproxy.cfg
+      systemctl enable haproxy
+      systemctl restart haproxy
+    else
+      systemctl disable --now haproxy || true
+    fi
+
+    if [ "$manage_firewall" = "true" ]; then
+      ufw allow ${var.firewall_ssh_port}/tcp
+      ufw allow 80/tcp
+      ufw allow 443/tcp
+      ufw allow 25565/tcp
+      ufw allow ${var.wireguard_listen_port}/udp
+      # eBGPゲートウェイ(inuyama/k8s4、および冗長化用のk8s2)からの
+      # BGP(179)・node-exporter(9100)接続を許可する。k8s2用のルールが
+      # 無いと、k8s2からのBGP接続(TCP SYN)がUFWのdefault-denyで
+      # 暗黙にドロップされ、external0セッションがIdleのまま進まない
+      # 問題が起きる。
+      %{ for peer in local.gateway_bgp_peers ~}
+      ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 179 proto tcp
+      ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 9100 proto tcp
+      %{ endfor ~}
+      # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
+      # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
+      # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
+      # 暗黙にブロックされていた。wg0インターフェース間の転送を明示的に許可する。
+      ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
+      ufw deny 179/tcp
+      ufw deny 6443/tcp
+      ufw deny 2379:2380/tcp
+      ufw deny 10250/tcp
+      ufw --force enable
+    fi
+
+    systemctl enable prometheus-node-exporter
+    systemctl restart prometheus-node-exporter
+
+    wg show ${var.wireguard_interface}
+    vtysh -c 'show bgp summary' || true
+  SCRIPT
 }
 
 data "external" "ssh_key" {
@@ -185,7 +294,7 @@ data "external" "soichiro_wireguard_public_key" {
 
 resource "null_resource" "ionos_gateway" {
   triggers = {
-    setup_version                  = "2"
+    setup_version                  = "3"
     host                           = var.host
     inuyama_wireguard_publickey_id = var.inuyama_wireguard_public_key_bitwarden_id
     inuyama_wireguard_publickey    = sha256(data.external.inuyama_wireguard_public_key.result.value)
@@ -195,6 +304,7 @@ resource "null_resource" "ionos_gateway" {
     soichiro_wireguard_public_key  = sha256(data.external.soichiro_wireguard_public_key.result.value)
     frr_config                     = sha256(local.frr_config)
     haproxy_config                 = sha256(local.haproxy_config)
+    setup_script                   = sha256(local.setup_script)
     firewall                       = tostring(var.manage_firewall)
     haproxy_enabled                = tostring(local.haproxy_enabled)
   }
@@ -222,111 +332,7 @@ resource "null_resource" "ionos_gateway" {
   }
 
   provisioner "file" {
-    content     = <<-SCRIPT
-      #!/bin/bash
-      set -eo pipefail
-      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      umask 077
-      exec > >(tee -a /tmp/ionos-gateway-setup.log) 2>&1
-
-      case "${var.wireguard_interface}" in
-        ""|*[!a-zA-Z0-9._-]*)
-          echo "wireguard_interface contains unsupported characters"
-          exit 1
-          ;;
-      esac
-
-      haproxy_enabled="${local.haproxy_enabled}"
-      manage_firewall="${var.manage_firewall}"
-
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update -y
-      apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
-
-      install -d -m 700 /etc/wireguard
-
-      if [ ! -f /etc/wireguard/ionos_private.key ]; then
-        wg genkey > /etc/wireguard/ionos_private.key
-        wg pubkey < /etc/wireguard/ionos_private.key > /etc/wireguard/ionos_public.key
-      fi
-
-      chmod 600 /etc/wireguard/ionos_private.key
-      ionos_private_key=$(cat /etc/wireguard/ionos_private.key)
-
-      sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" /tmp/ionos-wg0.conf.tpl > /etc/wireguard/${var.wireguard_interface}.conf
-      chmod 600 /etc/wireguard/${var.wireguard_interface}.conf
-
-      cat > /etc/sysctl.d/99-ionos-gateway.conf <<SYSCTL
-      net.ipv4.ip_forward = 1
-      SYSCTL
-      sysctl --system
-
-      install -d -m 755 /etc/systemd/system/frr.service.d
-      cat > /etc/systemd/system/frr.service.d/ionos-gateway.conf <<UNIT
-      [Unit]
-      After=network-online.target wg-quick@${var.wireguard_interface}.service
-      Wants=network-online.target wg-quick@${var.wireguard_interface}.service
-      UNIT
-
-      install -d -m 755 /etc/systemd/system/haproxy.service.d
-      cat > /etc/systemd/system/haproxy.service.d/ionos-gateway.conf <<UNIT
-      [Unit]
-      After=network-online.target wg-quick@${var.wireguard_interface}.service
-      Wants=network-online.target wg-quick@${var.wireguard_interface}.service
-      UNIT
-
-      systemctl daemon-reload
-      systemctl enable wg-quick@${var.wireguard_interface}
-      systemctl restart wg-quick@${var.wireguard_interface}
-
-      install -m 640 -o frr -g frr /tmp/ionos-frr.conf /etc/frr/frr.conf
-      sed -i 's/^zebra=.*/zebra=yes/' /etc/frr/daemons
-      sed -i 's/^bgpd=.*/bgpd=yes/' /etc/frr/daemons
-      systemctl enable frr
-      systemctl restart frr
-
-      install -m 644 /tmp/ionos-haproxy.cfg /etc/haproxy/haproxy.cfg
-      if [ "$haproxy_enabled" = "true" ]; then
-        haproxy -c -f /etc/haproxy/haproxy.cfg
-        systemctl enable haproxy
-        systemctl restart haproxy
-      else
-        systemctl disable --now haproxy || true
-      fi
-
-      if [ "$manage_firewall" = "true" ]; then
-        ufw allow ${var.firewall_ssh_port}/tcp
-        ufw allow 80/tcp
-        ufw allow 443/tcp
-        ufw allow 25565/tcp
-        ufw allow ${var.wireguard_listen_port}/udp
-        # eBGPゲートウェイ(inuyama/k8s4、および冗長化用のk8s2)からの
-        # BGP(179)・node-exporter(9100)接続を許可する。k8s2用のルールが
-        # 無いと、k8s2からのBGP接続(TCP SYN)がUFWのdefault-denyで
-        # 暗黙にドロップされ、external0セッションがIdleのまま進まない
-        # 問題が起きる。
-        %{ for peer in local.gateway_bgp_peers ~}
-        ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 179 proto tcp
-        ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 9100 proto tcp
-        %{ endfor ~}
-        # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
-        # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
-        # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
-        # 暗黙にブロックされていた。wg0インターフェース間の転送を明示的に許可する。
-        ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
-        ufw deny 179/tcp
-        ufw deny 6443/tcp
-        ufw deny 2379:2380/tcp
-        ufw deny 10250/tcp
-        ufw --force enable
-      fi
-
-      systemctl enable prometheus-node-exporter
-      systemctl restart prometheus-node-exporter
-
-      wg show ${var.wireguard_interface}
-      vtysh -c 'show bgp summary' || true
-    SCRIPT
+    content     = local.setup_script
     destination = "/tmp/ionos-gateway-setup.sh"
   }
 
