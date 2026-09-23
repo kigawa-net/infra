@@ -149,7 +149,7 @@ jobs:
           # トンネル経由では到達できないため、引き続きarc-runner-set-infra
           # (自己ホストランナー、自宅LANに直接接続)を使う。
           GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos"
-          MODULES=$(echo "$MODULES" | jq --arg gh "$GITHUB_HOSTED_MODULES" '
+          MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
           ')
