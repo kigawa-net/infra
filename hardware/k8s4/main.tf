@@ -66,7 +66,7 @@ data "external" "join_info" {
 module "control_plane" {
   source = "../modules/k8s-control-plane"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -83,7 +83,7 @@ resource "null_resource" "inuyama_wireguard" {
   depends_on = [module.control_plane]
 
   triggers = {
-    host                  = var.host
+    host                  = var.server_ip
     interface             = var.inuyama_wireguard_interface
     address               = var.inuyama_wireguard_address
     listen_port           = tostring(var.wireguard_listen_port)
@@ -96,7 +96,7 @@ resource "null_resource" "inuyama_wireguard" {
 
   connection {
     type        = "ssh"
-    host        = var.host
+    host        = var.server_ip
     user        = var.ssh_user
     private_key = data.external.ssh_key.result.value
   }
@@ -173,7 +173,7 @@ resource "null_resource" "ionos_wireguard" {
   depends_on = [null_resource.inuyama_wireguard]
 
   triggers = {
-    host             = var.host
+    host             = var.server_ip
     interface        = var.ionos_wireguard_interface
     address          = var.ionos_wireguard_address
     ionos_address    = "172.31.254.2"
@@ -184,7 +184,7 @@ resource "null_resource" "ionos_wireguard" {
 
   connection {
     type        = "ssh"
-    host        = var.host
+    host        = var.server_ip
     user        = var.ssh_user
     private_key = data.external.ssh_key.result.value
   }
@@ -244,7 +244,7 @@ module "bgp" {
   depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard]
   source     = "../modules/bgp-bird"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -277,7 +277,7 @@ module "kube_vip" {
   depends_on = [module.control_plane]
   source     = "../modules/kube-vip"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -291,7 +291,7 @@ resource "null_resource" "alice_gateway_services" {
   depends_on = [module.control_plane]
 
   triggers = {
-    host                   = var.host
+    host                   = var.server_ip
     metallb_namespace      = var.alice_metallb_namespace
     metallb_pool_name      = var.alice_metallb_pool_name
     metallb_base_range     = var.alice_metallb_base_range
@@ -302,7 +302,7 @@ resource "null_resource" "alice_gateway_services" {
 
   connection {
     type        = "ssh"
-    host        = var.host
+    host        = var.server_ip
     user        = var.ssh_user
     private_key = data.external.ssh_key.result.value
   }
@@ -403,7 +403,7 @@ module "knot" {
   depends_on = [module.control_plane]
   source     = "../modules/knot"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -415,7 +415,7 @@ module "knot_resolver" {
   depends_on = [module.knot]
   source     = "../modules/knot-resolver"
 
-  host                      = var.host
+  host                      = var.server_ip
   ssh_user                  = var.ssh_user
   ssh_private_key           = data.external.ssh_key.result.value
   sudo_password             = data.external.sudo_password.result.value
@@ -427,7 +427,7 @@ module "knot_resolver" {
 module "keepalived" {
   source = "../modules/keepalived"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -442,7 +442,7 @@ module "keepalived" {
 module "node_exporter" {
   source = "../modules/node-exporter"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -451,7 +451,7 @@ module "node_exporter" {
 module "dual_stack_network" {
   source = "../modules/dual-stack-network"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value

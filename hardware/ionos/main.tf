@@ -42,6 +42,15 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }],
+    # kigawa-net/infra自身のGitHub Actions(ubuntu-latest)が terraform apply
+    # 実行時にk8s1/k8s2/k8s4等(プライベートIP)へ到達するための静的ピア。
+    # OneServerMC/infra用のci_runner_wireguard_*とは別の専用ピア。
+    [{
+      public_key           = var.kigawa_infra_ci_runner_wireguard_public_key
+      allowed_ips          = ["${var.kigawa_infra_ci_runner_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }],
   )
 
   # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
@@ -171,10 +180,10 @@ locals {
       # 無いと、k8s2からのBGP接続(TCP SYN)がUFWのdefault-denyで
       # 暗黙にドロップされ、external0セッションがIdleのまま進まない
       # 問題が起きる。
-      %{ for peer in local.gateway_bgp_peers ~}
+      %{for peer in local.gateway_bgp_peers~}
       ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 179 proto tcp
       ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 9100 proto tcp
-      %{ endfor ~}
+      %{endfor~}
       # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
       # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
       # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと

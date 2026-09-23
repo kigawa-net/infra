@@ -50,7 +50,7 @@ data "external" "join_info" {
 module "control_plane" {
   source = "../modules/k8s-control-plane"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -67,7 +67,7 @@ module "bgp" {
   depends_on = [module.control_plane]
   source     = "../modules/bgp-bird"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -97,7 +97,7 @@ module "kube_vip" {
   depends_on = [module.control_plane]
   source     = "../modules/kube-vip"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -118,7 +118,7 @@ module "knot" {
   depends_on = [module.control_plane]
   source     = "../modules/knot"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -130,7 +130,7 @@ module "knot_resolver" {
   depends_on = [module.knot]
   source     = "../modules/knot-resolver"
 
-  host                      = var.host
+  host                      = var.server_ip
   ssh_user                  = var.ssh_user
   ssh_private_key           = data.external.ssh_key.result.value
   sudo_password             = data.external.sudo_password.result.value
@@ -143,7 +143,7 @@ module "wireguard" {
   count  = var.wireguard_server_public_key != "" ? 1 : 0
   source = "../modules/wireguard"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -158,7 +158,7 @@ module "wireguard_ionos" {
   count  = var.wireguard_ionos_server_public_key != "" ? 1 : 0
   source = "../modules/wireguard"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -174,7 +174,7 @@ module "wireguard_ionos" {
 module "keepalived" {
   source = "../modules/keepalived"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -189,7 +189,7 @@ module "keepalived" {
 module "node_exporter" {
   source = "../modules/node-exporter"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -198,7 +198,7 @@ module "node_exporter" {
 module "dual_stack_network" {
   source = "../modules/dual-stack-network"
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value

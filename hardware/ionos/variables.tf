@@ -202,6 +202,18 @@ variable "ci_runner_wireguard_address" {
   default     = "172.31.254.20"
 }
 
+variable "kigawa_infra_ci_runner_wireguard_public_key" {
+  description = "kigawa-net/infra自身のGitHub Actions(ubuntu-latest)から一時的にWireGuard接続するためのピア公開鍵。OneServerMC/infraのci_runner_wireguard_*とは別の専用ピア(同じピアを共用すると、両CIが同時実行された場合に接続元IPの奪い合いで不安定になるため)。秘密鍵はBitwarden(kigawa-infra-ci-runner-wireguard-private-key)で管理"
+  type        = string
+  default     = "4uw9voBKTEC7OSwQkd/RjqyLG+W+/fuwu2xeIUR4GRo="
+}
+
+variable "kigawa_infra_ci_runner_wireguard_address" {
+  description = "kigawa-net/infra CI runner の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.254.21"
+}
+
 variable "manage_firewall" {
   type    = bool
   default = true
