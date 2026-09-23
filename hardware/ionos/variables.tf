@@ -132,9 +132,9 @@ variable "k8s1_wireguard_address" {
 }
 
 variable "k8s1_wireguard_ssh_host" {
-  description = "k8s1 の SSH ホスト (空の場合はピア設定なし)"
+  description = "k8s1 の SSH ホスト (空の場合はピア設定なし)。terraform applyがubuntu-latest(GitHub-hosted)上で実行される場合、専用WireGuardピア経由で到達できるのは10.0.0.0/24(クラスタLAN)のみで192.168.1.x(自宅LAN)には到達できないため、クラスタLANアドレスを使う"
   type        = string
-  default     = "192.168.1.103"
+  default     = "10.0.0.103"
 }
 
 variable "k8s1_wireguard_ssh_user" {
@@ -150,9 +150,9 @@ variable "k8s2_wireguard_address" {
 }
 
 variable "k8s2_wireguard_ssh_host" {
-  description = "k8s2 の SSH ホスト (空の場合はピア設定なし)"
+  description = "k8s2 の SSH ホスト (空の場合はピア設定なし)。terraform applyがubuntu-latest(GitHub-hosted)上で実行される場合、専用WireGuardピア経由で到達できるのは10.0.0.0/24(クラスタLAN)のみで192.168.1.x(自宅LAN)には到達できないため、クラスタLANアドレスを使う"
   type        = string
-  default     = "192.168.1.20"
+  default     = "10.0.0.120"
 }
 
 variable "k8s2_wireguard_ssh_user" {
