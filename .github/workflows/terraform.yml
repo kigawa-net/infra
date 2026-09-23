@@ -169,6 +169,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       max-parallel: 1
+      # 2026-09-23のインシデントで、k8s1のapply失敗によりk8s2/k8s4がfail-fastで
+      # キャンセルされ、後続ノードの独立した成否が見えなくなった(k8s2は
+      # 実際には成功する可能性があった)。1ノードの障害が他ノードの復旧作業を
+      # 妨げないよう、各モジュールを最後まで実行させる。
+      fail-fast: false
       matrix:
         include: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:

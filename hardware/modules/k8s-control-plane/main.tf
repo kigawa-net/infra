@@ -5,12 +5,36 @@ locals {
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     export DEBIAN_FRONTEND=noninteractive
     export NEEDRESTART_MODE=a
+    exec > >(tee -a /tmp/k8s-control-plane-setup.log) 2>&1
 
     _kubeadm_ran=0
 
+    # 2026-09-23のインシデント: 既にkubeadm join/init済みのノード(admin.confが
+    # 既存)に対してこのスクリプトを再実行した際、途中のapt-get等が失敗すると
+    # cleanup()が発動し、まだ新規joinを一度もしていないのに(_kubeadm_ran=0の
+    # ままでも)kubelet/kubeadm/kubectl/containerdをpurgeしてしまい、正常に
+    # 稼働していたcontrol-planeノードのkubeletが消えてNotReadyになった
+    # (k8s4・k8s2の両方で発生)。スクリプト開始時点で既にadmin.confが存在した
+    # かどうかを記録し、「既存ノードの再調整」の場合はcleanup()でのpurgeを
+    # スキップする(真にゼロから新規joinを試みて失敗した場合のみロールバック
+    # する、という本来の意図に限定する)。
+    _preexisting_node=0
+    if [ -f /etc/kubernetes/admin.conf ]; then
+      _preexisting_node=1
+    fi
+
     cleanup() {
       if [ $? -ne 0 ]; then
-        echo "[cleanup] setup failed, rolling back..."
+        echo "[cleanup] setup failed"
+        if [ "$_preexisting_node" = "1" ]; then
+          echo "[cleanup] this node was already joined before this run; skipping package purge/kubeadm reset to avoid taking down a working control-plane node"
+          if [ "$_kubeadm_ran" = "1" ]; then
+            kubeadm reset -f 2>/dev/null || true
+            rm -f /home/${var.ssh_user}/.kube/config
+          fi
+          return
+        fi
+        echo "[cleanup] fresh install failed, rolling back..."
         if [ "$_kubeadm_ran" = "1" ]; then
           kubeadm reset -f 2>/dev/null || true
           rm -f /home/${var.ssh_user}/.kube/config
