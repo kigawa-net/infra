@@ -34,7 +34,13 @@ on:
 
 jobs:
   detect-modules:
-    runs-on: arc-runner-set-infra
+    # git diff/jqのみで内部ネットワークへの到達性が不要なため、
+    # arc-runner-set-infra(worker1/4/5のメモリ逼迫でPendingになりがち、
+    # issue #100)ではなくGitHub-hostedランナーを使う。
+    # terraformジョブ自体はk8s1/k8s2/k8s4等プライベートIPへのSSHが
+    # 必要なため、引き続きarc-runner-set-infra(内部ネットワーク到達可能)
+    # のままにする。
+    runs-on: ubuntu-latest
     outputs:
       modules: ${{ steps.detect.outputs.modules }}
     steps:
