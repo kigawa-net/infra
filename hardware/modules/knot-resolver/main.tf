@@ -147,6 +147,26 @@ resource "null_resource" "knot_resolver" {
     remote_exec_steps    = sha256(join("\n", local.remote_exec_steps))
   }
 
+  # 2026-09-23のインシデント: additional_listen_addressにhostと同じ値が渡され、
+  # kresd.confでnet.listen()が同一アドレスに対して二重に呼ばれ、kresdが
+  # "Address already in use" で起動不能になりクラスタDNS全体が停止した。
+  # host/dns_vip/additional_listen_addressが互いに重複していないかをplan/apply
+  # 時点で検知し、同じ設定ミスが再発してもここで止まるようにする。
+  lifecycle {
+    precondition {
+      condition     = var.additional_listen_address == "" || var.additional_listen_address != var.host
+      error_message = "additional_listen_address must differ from host, otherwise kresd tries to net.listen() the same address twice and fails to start."
+    }
+    precondition {
+      condition     = var.dns_vip == "" || var.dns_vip != var.host
+      error_message = "dns_vip must differ from host, otherwise kresd tries to net.listen() the same address twice and fails to start."
+    }
+    precondition {
+      condition     = var.dns_vip == "" || var.additional_listen_address == "" || var.dns_vip != var.additional_listen_address
+      error_message = "dns_vip must differ from additional_listen_address, otherwise kresd tries to net.listen() the same address twice and fails to start."
+    }
+  }
+
   connection {
     type        = "ssh"
     host        = var.host
