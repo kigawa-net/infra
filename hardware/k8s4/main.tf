@@ -240,9 +240,9 @@ resource "null_resource" "ionos_wireguard" {
       # 共有moduleを使わない独自実装のため、同じ修正がこれまで未適用だった)。
       # k8s4自身の172.31.254.0/30(自身のアドレス帯)はkernelルートとして
       # 別途維持されるため、172.31.254.2への到達性には影響しない。
-      %{ for cidr in var.ionos_wireguard_allowed_ips ~}
+      %{for cidr in var.ionos_wireguard_allowed_ips~}
       ip route del ${cidr} dev ${var.ionos_wireguard_interface} 2>/dev/null || true
-      %{ endfor ~}
+      %{endfor~}
 
       wg show ${var.ionos_wireguard_interface}
     SCRIPT
@@ -436,7 +436,7 @@ module "knot_resolver" {
   ssh_private_key           = data.external.ssh_key.result.value
   sudo_password             = data.external.sudo_password.result.value
   dns_vip                   = var.dns_vip
-  additional_listen_address = var.server_ip
+  additional_listen_address = var.host
   zones_reload_trigger      = sha256(join("", values(local.knot_zones)))
 }
 

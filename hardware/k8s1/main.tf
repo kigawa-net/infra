@@ -132,7 +132,7 @@ module "knot_resolver" {
   ssh_private_key           = data.external.ssh_key.result.value
   sudo_password             = data.external.sudo_password.result.value
   dns_vip                   = var.dns_vip
-  additional_listen_address = var.server_ip
+  additional_listen_address = var.host
   zones_reload_trigger      = sha256(join("", values(local.knot_zones)))
 }
 
