@@ -28,7 +28,24 @@ locals {
     }
     trap cleanup EXIT
 
+    # 同一ホスト上の他モジュール(wireguard/keepalived/knot等)のapt-getとの
+    # 並列実行やOSのunattended-upgradesとの競合でdpkgロックが取れず失敗することが
+    # あるため、ロックが空くまで待ってからapt-getを呼ぶ(hardware/modules/wireguardと同じ対応)。
+    wait_for_dpkg_lock() {
+      for i in $(seq 1 60); do
+        if ! fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; then
+          return 0
+        fi
+        echo "dpkg lock is held by another process, waiting... ($i/60)"
+        sleep 5
+      done
+      echo "timed out waiting for dpkg lock" >&2
+      return 1
+    }
+
+    wait_for_dpkg_lock
     apt-get update -y
+    wait_for_dpkg_lock
     apt-get install -y kmod
 
     printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
@@ -38,17 +55,21 @@ locals {
     printf 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\n' > /etc/sysctl.d/k8s.conf
     sysctl --system
 
+    wait_for_dpkg_lock
     apt-get install -y containerd
     mkdir -p /etc/containerd
     containerd config default > /etc/containerd/config.toml
     sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
     systemctl enable --now containerd
 
+    wait_for_dpkg_lock
     apt-get install -y apt-transport-https ca-certificates curl gpg
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${var.k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+    wait_for_dpkg_lock
     apt-get update -y
+    wait_for_dpkg_lock
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
     systemctl enable --now kubelet
