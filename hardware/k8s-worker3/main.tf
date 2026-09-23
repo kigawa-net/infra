@@ -53,7 +53,7 @@ resource "null_resource" "worker_node" {
   }
 
   provisioner "file" {
-    content = <<-SCRIPT
+    content     = <<-SCRIPT
       #!/usr/bin/env bash
       set -euo pipefail
       exec > >(tee -a /tmp/k8s-setup.log) 2>&1
@@ -198,4 +198,14 @@ resource "null_resource" "kubelet_image_gc" {
       "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/kubelet-image-gc.sh && rm -f /tmp/kubelet-image-gc.sh",
     ]
   }
+}
+
+module "cluster_route" {
+  source = "../modules/cluster-route"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  gateways        = ["192.168.1.103", "192.168.1.20", "192.168.1.120"]
 }

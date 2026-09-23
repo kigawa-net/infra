@@ -129,3 +129,13 @@ module "node_exporter" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+module "cluster_route" {
+  source = "../modules/cluster-route"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  gateways        = ["192.168.1.103", "192.168.1.20", "192.168.1.120"]
+}
