@@ -26,7 +26,7 @@ resource "null_resource" "knot" {
     # the provisioners below that actually deploy zone files only run on resource
     # create/replace, and this trigger set had no reference to zone *content* at all.
     zones          = jsonencode(var.zones)
-    script_version = "2"
+    script_version = "3"
   }
 
   connection {
@@ -42,10 +42,12 @@ resource "null_resource" "knot" {
 
   # 同一ホスト上の他モジュール(control_plane/wireguard/keepalived等)のapt-getとの
   # 並列実行やOSのunattended-upgradesとの競合でdpkgロックが取れず失敗することが
-  # あるため、ロックが空くまで待ってからapt-getを呼ぶ(hardware/modules/wireguardと同じ対応)。
+  # ある。事前にロックが空くのを待つだけではチェック直後に別プロセスが取って
+  # しまうTOCTOU競合があるため、失敗した場合はリトライする
+  # (hardware/modules/wireguardと同じ対応)。
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || break; sleep 5; done; apt-get update && apt-get install -y knot'",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; apt-get update && apt-get install -y knot && break; sleep 5; done'",
       "echo '${var.sudo_password}' | sudo -S mkdir -p /var/lib/knot",
     ]
   }
