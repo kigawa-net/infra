@@ -42,10 +42,26 @@ locals {
 
     export DEBIAN_FRONTEND=noninteractive
 
+    # 同一ホスト上の他モジュール(control_plane/wireguard/keepalived等)のapt-getとの
+    # 並列実行やOSのunattended-upgradesとの競合でdpkgロックが取れず失敗することが
+    # あるため、ロックが空くまで待ってからapt-getを呼ぶ(hardware/modules/wireguardと同じ対応)。
+    wait_for_dpkg_lock() {
+      for i in $(seq 1 60); do
+        if ! fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; then
+          return 0
+        fi
+        echo "dpkg lock is held by another process, waiting... ($i/60)"
+        sleep 5
+      done
+      echo "timed out waiting for dpkg lock" >&2
+      return 1
+    }
+
     echo "=== Removing stale knot-resolver static pod manifest (broken container image) ==="
     rm -f /etc/kubernetes/manifests/knot-resolver.yaml
 
     echo "=== apt-get install curl gpg ==="
+    wait_for_dpkg_lock
     apt-get install -y curl gpg
 
     echo "=== Fetching GPG key ==="
@@ -63,12 +79,14 @@ https://pkg.labs.nic.cz/knot-resolver $${VERSION_CODENAME} main" \
     cat /etc/apt/sources.list.d/labs-nic-cz-knot-resolver.list
 
     echo "=== apt-get update ==="
+    wait_for_dpkg_lock
     apt-get update
 
     echo "=== Masking native knot.service before install (authoritative DNS already runs as a container on 127.0.0.1:5353; the knot package's postinst tries to (re)start it and fails otherwise, which aborts dpkg configuration) ==="
     systemctl mask knot.service
 
     echo "=== Installing knot-resolver ==="
+    wait_for_dpkg_lock
     apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
       install -y --allow-change-held-packages knot-resolver
 
