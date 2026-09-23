@@ -18,12 +18,19 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
-    # k8s2はinuyama(k8s4)の冗長化として2本目のeBGPゲートウェイも兼ねるため、
-    # 自身の/32だけでなく10.0.0.0/24(クラスタLAN)への中継も許可する
-    # (inuyamaピアと同じ広いAllowedIPs)。
+    # 【重要】k8s2に10.0.0.0/24を割り当てるとk8s4のピアエントリ
+    # (下記、同じ10.0.0.0/24を保持)と重複し、WireGuardの暗号鍵ルーティング
+    # テーブル(cryptokey routing table)は同一プレフィックスを複数ピアに
+    # 割り当てられないため、後から設定されたピアが優先されてしまう。
+    # これによりk8s4からの10.0.0.x送信元パケットが送信元スプーフィング
+    # チェックで拒否され、soichiro等への中継が全滅する実害が発生した
+    # (issue #121で発見)。k8s2はBGP制御プレーンの冗長化(eBGPセッション
+    # 確立)のみを目的とし、データプレーンの中継(10.0.0.0/24)はk8s4が
+    # 引き続き専有する。真のデータプレーン冗長化には動的な切り替え機構が
+    # 別途必要。
     data.external.k8s2_wireguard_public_key.result.value != "" ? [{
       public_key           = data.external.k8s2_wireguard_public_key.result.value
-      allowed_ips          = ["${var.k8s2_wireguard_address}/32", "10.0.0.0/24"]
+      allowed_ips          = ["${var.k8s2_wireguard_address}/32"]
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
