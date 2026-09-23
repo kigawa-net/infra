@@ -141,13 +141,32 @@ jobs:
             MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}\n${HARDWARE_MODULE_CONSUMERS}\n${HARDWARE_ZONE_CONSUMERS}" \
               | grep -v '^$' | sort -u | jq -sc .)
           fi
+
+          # k8s1/k8s2/k8s4/ionosはionosに登録した専用WireGuardピア経由で
+          # GitHub-hosted runner(ubuntu-latest)から到達できるようにした
+          # (issue #100対策)。それ以外のモジュール(alice, k8s-worker3/5,
+          # cloudflare, ルートの"."等)は実IPが192.168.1.x(自宅LAN)固定で
+          # トンネル経由では到達できないため、引き続きarc-runner-set-infra
+          # (自己ホストランナー、自宅LANに直接接続)を使う。
+          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos"
+          MODULES=$(echo "$MODULES" | jq --arg gh "$GITHUB_HOSTED_MODULES" '
+            ($gh | split(" ")) as $gh_list
+            | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
+          ')
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
           echo "検出されたモジュール: $MODULES"
 
   terraform:
     needs: detect-modules
     if: needs.detect-modules.outputs.modules != '[]' && needs.detect-modules.outputs.modules != ''
-    runs-on: arc-runner-set-infra
+    # k8s1/k8s2/k8s4/ionosはionosに登録した専用WireGuardピア経由で
+    # ubuntu-latest(GitHub-hosted)からも到達できるようにしたため、
+    # arc-runner-set-infra(自己ホストランナー、worker1/4/5のメモリ逼迫で
+    # Pendingのまま進まないことが多い、issue #100)を避けられる。
+    # それ以外のモジュール(alice, k8s-worker3/5等)は実IPが192.168.1.x
+    # (自宅LAN)固定でトンネル経由では到達できないため、detect-modulesが
+    # 出力するmatrix.runnerで自己ホストランナーのままにする。
+    runs-on: ${{ matrix.runner }}
     strategy:
       max-parallel: 1
       matrix:
@@ -173,6 +192,45 @@ jobs:
           unzip bws.zip bws
           sudo mv bws /usr/local/bin/
           bws --version
+
+      # k8s1/k8s2/k8s4はプライベートIP(10.0.0.0/24)のみでubuntu-latestから
+      # 直接到達できないため、ionosに事前登録した専用WireGuardピア
+      # (kigawa-infra-ci-runner, 172.31.254.21)経由でトンネルを張る。
+      # ionos自身は自己のパブリックIP(74.208.55.86)へ直接SSHするため不要。
+      - name: WireGuardトンネルを張る (k8s1/k8s2/k8s4到達のため)
+        if: matrix.runner == 'ubuntu-latest' && matrix.module != 'ionos'
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          sudo apt-get install -y -q wireguard
+          PRIVATE_KEY=$(bws -c no secret get 5eeb43e8-4973-47f8-8bfe-b4ce0047b568 | jq -r '.value')
+          sudo install -d -m 700 /etc/wireguard
+          sudo tee /etc/wireguard/wg0.conf > /dev/null <<WG_EOF
+          [Interface]
+          Address = 172.31.254.21/24
+          PrivateKey = ${PRIVATE_KEY}
+
+          [Peer]
+          PublicKey = OH5QiXaMfpmH8nHVU1Onnfom4BZcq4zx5Ux6R6R4LR0=
+          AllowedIPs = 172.31.254.0/24, 10.0.0.0/24
+          Endpoint = 74.208.55.86:51820
+          PersistentKeepalive = 25
+          WG_EOF
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          sudo wg-quick up wg0
+          # WireGuardのハンドシェイクは初回パケット送信時に遅延して確立するため、
+          # 即座にpingすると間に合わないことがある。疎通確認はリトライしつつ、
+          # 実際の疎通に失敗してもここではジョブを止めない(本当のテストは後続の
+          # terraform init/plan/applyでのSSH接続そのもの)。
+          for i in $(seq 1 10); do
+            if ping -c 1 -W 2 10.0.0.100; then
+              echo "10.0.0.100 reachable"
+              break
+            fi
+            echo "retry $i..."
+            sleep 2
+          done
+          sudo wg show
 
       # ionos は soichiro(OneServerMC/infraへ移設済み)のWireGuardゲートウェイであり、
       # soichiroの公開鍵取得にCloudflare Tunnel経由のSSHを要求するため
@@ -259,3 +317,7 @@ jobs:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
+
+      - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
+        if: always() && matrix.runner == 'ubuntu-latest' && matrix.module != 'ionos'
+        run: sudo wg-quick down wg0 || true
