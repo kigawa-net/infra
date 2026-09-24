@@ -117,10 +117,16 @@ variable "minecraft_backend_vip" {
   default     = "192.168.1.241"
 }
 
-variable "k8s1_wireguard_public_key" {
-  description = "k8s1 の WireGuard 公開鍵 (空の場合はピア設定なし)"
+variable "k8s1_wireguard_ssh_host" {
+  description = "k8s1 の SSH ホスト (空の場合はピア設定なし)。aliceのapplyは自己ホストランナー(arc-runner-set-infra)上で実行され自宅LANに直接到達できるため、自宅LANアドレスを使う(hardware/ionosのubuntu-latest向け設定とは異なる)"
   type        = string
-  default     = ""
+  default     = "192.168.1.103"
+}
+
+variable "k8s1_wireguard_ssh_user" {
+  description = "k8s1 への SSH ユーザー"
+  type        = string
+  default     = "kigawa"
 }
 
 variable "k8s1_wireguard_address" {
@@ -129,10 +135,16 @@ variable "k8s1_wireguard_address" {
   default     = "172.31.255.11"
 }
 
-variable "k8s2_wireguard_public_key" {
-  description = "k8s2 の WireGuard 公開鍵 (空の場合はピア設定なし)"
+variable "k8s2_wireguard_ssh_host" {
+  description = "k8s2 の SSH ホスト (空の場合はピア設定なし)。aliceのapplyは自己ホストランナー(arc-runner-set-infra)上で実行され自宅LANに直接到達できるため、自宅LANアドレスを使う(hardware/ionosのubuntu-latest向け設定とは異なる)"
   type        = string
-  default     = ""
+  default     = "192.168.1.20"
+}
+
+variable "k8s2_wireguard_ssh_user" {
+  description = "k8s2 への SSH ユーザー"
+  type        = string
+  default     = "kigawa"
 }
 
 variable "k8s2_wireguard_address" {
