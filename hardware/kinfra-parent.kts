@@ -31,5 +31,4 @@ subProjects {
     subProject("k8s4")
     subProject("k8s-worker3")
     subProject("k8s-worker5")
-    subProject("alice")
 }

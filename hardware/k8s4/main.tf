@@ -79,17 +79,16 @@ module "control_plane" {
   join_certificate_key = data.external.join_info.result.certificate_key
 }
 
+# aliceは廃止済み(issue #157関連)。以前はこのリソースがalice向けwg0
+# トンネル(インターフェース・peer設定・wg-quick起動)一式を担っていたが、
+# alice向けの部分は削除した。ただし/etc/wireguard/inuyama_private.key/
+# inuyama_public.keyは、ionos向けwg1(null_resource.ionos_wireguard)が
+# 共用鍵として引き続き参照しているため、鍵配置ロジック自体は残す。
 resource "null_resource" "inuyama_wireguard" {
   depends_on = [module.control_plane]
 
   triggers = {
     host                  = var.server_ip
-    interface             = var.inuyama_wireguard_interface
-    address               = var.inuyama_wireguard_address
-    listen_port           = tostring(var.wireguard_listen_port)
-    alice_address         = var.alice_wireguard_address
-    alice_public_key      = sha256(var.alice_wireguard_public_key)
-    alice_endpoint        = var.alice_wireguard_endpoint
     inuyama_public_key    = sha256(data.external.inuyama_wireguard_public_key.result.value)
     private_key_secret_id = var.inuyama_wireguard_private_key_bitwarden_id
   }
@@ -114,13 +113,6 @@ resource "null_resource" "inuyama_wireguard" {
       umask 077
       exec > >(tee -a /tmp/inuyama-wireguard-setup.log) 2>&1
 
-      case "${var.inuyama_wireguard_interface}" in
-        ""|*[!a-zA-Z0-9._-]*)
-          echo "inuyama_wireguard_interface contains unsupported characters"
-          exit 1
-          ;;
-      esac
-
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
       apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -f -y
@@ -138,26 +130,11 @@ resource "null_resource" "inuyama_wireguard" {
       install -m 600 /tmp/inuyama-wireguard-private.key /etc/wireguard/inuyama_private.key
       printf '%s\n' "$configured_public_key" > /etc/wireguard/inuyama_public.key
       chmod 600 /etc/wireguard/inuyama_private.key /etc/wireguard/inuyama_public.key
-      inuyama_private_key=$(cat /etc/wireguard/inuyama_private.key)
 
-      cat > /etc/wireguard/${var.inuyama_wireguard_interface}.conf <<WGCONF
-      [Interface]
-      Address = ${var.inuyama_wireguard_address}
-      ListenPort = ${var.wireguard_listen_port}
-      PrivateKey = $inuyama_private_key
-      MTU = ${var.wireguard_mtu}
-
-      [Peer]
-      PublicKey = ${var.alice_wireguard_public_key}
-      AllowedIPs = ${var.alice_wireguard_address}/32
-      Endpoint = ${var.alice_wireguard_endpoint}
-      PersistentKeepalive = 25
-      WGCONF
-
-      chmod 600 /etc/wireguard/${var.inuyama_wireguard_interface}.conf
-      systemctl enable wg-quick@${var.inuyama_wireguard_interface}
-      systemctl restart wg-quick@${var.inuyama_wireguard_interface}
-      wg show ${var.inuyama_wireguard_interface}
+      # alice廃止に伴い、以前このリソースが管理していたalice向けwg0トンネルを
+      # 後片付けする(既にwg0が存在しない環境では何もしない)。
+      systemctl disable --now wg-quick@wg0 2>/dev/null || true
+      rm -f /etc/wireguard/wg0.conf
     SCRIPT
     destination = "/tmp/inuyama-wireguard-setup.sh"
   }
@@ -271,14 +248,6 @@ module "bgp" {
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
   external_bgp_peers = [
     {
-      local_ip        = trimsuffix(var.inuyama_wireguard_address, "/30")
-      local_as        = var.inuyama_asn
-      neighbor_ip     = var.alice_wireguard_address
-      neighbor_as     = var.alice_bgp_as
-      import_prefixes = [] # aliceは廃止済み。このpeerエントリ自体の削除は別PRで検討
-      export_prefixes = ["10.0.0.0/16"]
-    },
-    {
       local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
       local_as        = var.inuyama_asn
       neighbor_ip     = "172.31.254.2"
@@ -303,6 +272,12 @@ module "kube_vip" {
   api_server_ip = var.kube_vip_api_server_ip
 }
 
+# 注意: リソース名・K8sオブジェクト名は"alice"のままだが、実際には現在
+# ionos(hardware/ionosのinuyama_ingress_vip/minecraft_backend_vip、
+# どちらも同じ10.0.0.240/10.0.0.241を指す)からの転送先として機能している
+# 現役のインフラである。aliceの廃止(issue関連)にあたり削除を検討したが、
+# 削除するとionos経由のHTTP/HTTPS/Minecraft転送が壊れるため、名前は
+# レガシーのまま残し機能はそのまま維持する。
 resource "null_resource" "alice_gateway_services" {
   depends_on = [module.control_plane]
 

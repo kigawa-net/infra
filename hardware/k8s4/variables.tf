@@ -111,21 +111,6 @@ variable "inuyama_wireguard_address" {
   default = "172.31.255.1/30"
 }
 
-variable "alice_wireguard_address" {
-  type    = string
-  default = "172.31.255.2"
-}
-
-variable "alice_wireguard_public_key" {
-  type    = string
-  default = "/bsBpHC0xLxdncldAE1Qo7bWTIXgcJm3Vui6sZOtPhs="
-}
-
-variable "alice_wireguard_endpoint" {
-  type    = string
-  default = "161.248.62.66:51820"
-}
-
 variable "ionos_wireguard_interface" {
   type    = string
   default = "wg1"
@@ -172,11 +157,9 @@ variable "inuyama_asn" {
   default = 65010
 }
 
-variable "alice_bgp_as" {
-  type    = number
-  default = 65020
-}
-
+# 変数名は"alice"のままだが、実際には現在ionos(hardware/ionosの
+# inuyama_ingress_vip/minecraft_backend_vip)からの転送先として使われている
+# 現役のインフラ。null_resource.alice_gateway_servicesのコメント参照。
 variable "alice_metallb_namespace" {
   type    = string
   default = "metallb-system"
