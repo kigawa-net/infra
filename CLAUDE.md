@@ -18,7 +18,7 @@ Each node is an independent Terraform root module. Use the shared `hardware/run.
 
 ```bash
 # Usage: ./hardware/run.sh <module> <terraform-args...>
-# module: k8s1, k8s2, k8s4, k8s-worker5, alice, . (hardware/ 自体)
+# module: k8s1, k8s2, k8s4, k8s-worker5, . (hardware/ 自体)
 
 # Initialize (first time or after provider changes)
 ./hardware/run.sh k8s1 init
@@ -43,7 +43,6 @@ hardware/
   k8s2/               # control-plane node at 10.0.0.120
   k8s4/               # control-plane node at 10.0.0.140
   k8s-worker5/        # worker node at 10.0.0.40
-  alice/              # public gateway at 161.248.62.66
 application/          # empty (future use)
 platform/             # empty (future use)
 ```
