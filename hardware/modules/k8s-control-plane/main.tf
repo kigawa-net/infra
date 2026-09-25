@@ -127,6 +127,29 @@ locals {
     mkdir -p /home/${var.ssh_user}/.kube
     cp /etc/kubernetes/admin.conf /home/${var.ssh_user}/.kube/config
     chown ${var.ssh_user}:${var.ssh_user} /home/${var.ssh_user}/.kube/config
+
+    # kubeadmはデフォルトでkube-scheduler/kube-controller-manager/etcdのメトリクス
+    # ポートを127.0.0.1にのみbindする。Prometheus(Pod network側)からスクレイプ
+    # できずKubeSchedulerDown等の恒常的な誤検知アラートになるため、メトリクス専用
+    # ポート(10259/10257/2381、いずれもapiserver/etcdクライアントポートとは別)を
+    # 0.0.0.0へ変更する。既存クラスタへの再適用でも安全なようif文の外で無条件・
+    # 冪等に実行する(kubeletがstatic pod manifestの変更を検知して自動再起動する)。
+    sed -i 's/--bind-address=127.0.0.1/--bind-address=0.0.0.0/' /etc/kubernetes/manifests/kube-scheduler.yaml
+    sed -i 's/--bind-address=127.0.0.1/--bind-address=0.0.0.0/' /etc/kubernetes/manifests/kube-controller-manager.yaml
+    sed -i 's#--listen-metrics-urls=http://127.0.0.1:2381#--listen-metrics-urls=http://0.0.0.0:2381#' /etc/kubernetes/manifests/etcd.yaml
+
+    # kube-proxyのmetricsBindAddressも同様に127.0.0.1相当(空文字列 = デフォルト
+    # 127.0.0.1:10249)のためPrometheusから到達できない。ConfigMapはクラスタ全体で
+    # 共有のため全control-planeノードから冪等にpatchしてよい。DaemonSetの再起動は
+    # 変更があった場合のみ行う。
+    export KUBECONFIG=/etc/kubernetes/admin.conf
+    current_metrics_bind=$(kubectl get configmap kube-proxy -n kube-system -o jsonpath='{.data.config\.conf}' | grep -oP 'metricsBindAddress:\s*"\K[^"]*' || true)
+    if [ "$current_metrics_bind" != "0.0.0.0:10249" ]; then
+      kubectl get configmap kube-proxy -n kube-system -o yaml \
+        | sed 's/metricsBindAddress: ""/metricsBindAddress: "0.0.0.0:10249"/' \
+        | kubectl apply -f -
+      kubectl rollout restart daemonset/kube-proxy -n kube-system
+    fi
   SCRIPT
 }
 
