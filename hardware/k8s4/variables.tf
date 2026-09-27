@@ -142,6 +142,49 @@ variable "ionos_bgp_as" {
   default = 65030
 }
 
+# --- Oracle Cloud (計画中のバックアップネットワークハブ) ---
+# 外部ランブックで計画されている Oracle Cloud 側の WireGuard/BGP ハブ用のプレースホルダ変数。
+# Oracle Cloud ホスト自体のプロビジョニングは本リポジトリ/本セッションの外で別途対応中。
+# oracle_wireguard_public_key が空文字 "" の間は、main.tf の null_resource.oracle_wireguard は
+# count=0 で完全に無効 (no-op) のままとなり、module.bgp の external_bgp_peers にも
+# エントリが追加されない。実際のエンドポイント/公開鍵が判明した時点でこれらの値を
+# フォローアップ変更で上書きすれば有効化される。
+variable "oracle_wireguard_interface" {
+  description = "Oracle Cloud hub 向け WireGuard インターフェース名 (今後 wg-ionos/wg-oracle のような意味付きの命名規則に合わせる。既存のwg0/wg1は稼働中のためリネームしない)"
+  type        = string
+  default     = "wg-oracle"
+}
+
+variable "oracle_wireguard_address" {
+  description = "Oracle Cloud hub 向け WireGuard インターフェースのアドレス"
+  type        = string
+  default     = "172.31.253.1/24"
+}
+
+variable "oracle_wireguard_public_key" {
+  description = "Oracle の WireGuard 公開鍵 (cat /etc/wireguard/oracle_public.key で取得)。未設定(空文字)の間はoracle_wireguardリソースとBGPピアを無効化する安全弁"
+  type        = string
+  default     = ""
+}
+
+variable "oracle_wireguard_endpoint" {
+  description = "Oracle の WireGuard エンドポイント (IP:port)。Oracle Cloud ホスト未構築のためプレースホルダ"
+  type        = string
+  default     = "REPLACE_WITH_ORACLE_PUBLIC_IP:51820"
+}
+
+variable "oracle_wireguard_allowed_ips" {
+  description = "WireGuardトンネル経由でルーティングするIPレンジ。ionosの例(172.31.254.2/32)にならい対向ホスト単体への経路のみを許可する。サイト間の全体経路(10.0.0.0/16等)はAllowedIPsではなくBGPのexport_prefixesで広告する"
+  type        = list(string)
+  default     = ["172.31.253.2/32"]
+}
+
+variable "oracle_bgp_as" {
+  description = "Oracle Cloud hub のAS番号"
+  type        = number
+  default     = 65040
+}
+
 variable "wireguard_listen_port" {
   type    = number
   default = 51820

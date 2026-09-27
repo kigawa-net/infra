@@ -233,8 +233,86 @@ resource "null_resource" "ionos_wireguard" {
   }
 }
 
+
+# Oracle Cloud (計画中のバックアップネットワークハブ) 向け WireGuard トンネル (既定interface: wg-oracle)。
+# 外部ランブックで計画されている経路のスキャフォールドであり、Oracle Cloud側のホスト自体の
+# プロビジョニングは本リポジトリ/本セッションの外で別途対応中。
+# oracle_wireguard_public_key が空文字 "" の間は count=0 となり、このリソースは
+# 完全に無効(no-op)のまま — plan/applyしても何も作成・変更されない。
+# 実エンドポイント/公開鍵が判明し次第、フォローアップ変更でこれらの変数を上書きすれば有効化される。
+resource "null_resource" "oracle_wireguard" {
+  count      = var.oracle_wireguard_public_key != "" ? 1 : 0
+  depends_on = [null_resource.inuyama_wireguard]
+
+  triggers = {
+    host              = var.server_ip
+    interface         = var.oracle_wireguard_interface
+    address           = var.oracle_wireguard_address
+    oracle_public_key = sha256(var.oracle_wireguard_public_key)
+    oracle_endpoint   = var.oracle_wireguard_endpoint
+    allowed_ips       = join(",", var.oracle_wireguard_allowed_ips)
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -eo pipefail
+      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      umask 077
+      exec > >(tee -a /tmp/oracle-wireguard-setup.log) 2>&1
+
+      case "${var.oracle_wireguard_interface}" in
+        ""|*[!a-zA-Z0-9._-]*)
+          echo "oracle_wireguard_interface contains unsupported characters"
+          exit 1
+          ;;
+      esac
+
+      # wg0 (alice向け、廃止済み) のセットアップで既に /etc/wireguard/inuyama_private.key が
+      # 配置されている前提 (このinuyama鍵をoracle向けwg-oracleでも共用する)
+      if [ ! -f /etc/wireguard/inuyama_private.key ]; then
+        echo "/etc/wireguard/inuyama_private.key not found; inuyama_wireguard must be applied first"
+        exit 1
+      fi
+      inuyama_private_key=$(cat /etc/wireguard/inuyama_private.key)
+
+      cat > /etc/wireguard/${var.oracle_wireguard_interface}.conf <<WGCONF
+      [Interface]
+      Address = ${var.oracle_wireguard_address}
+      PrivateKey = $inuyama_private_key
+      MTU = ${var.wireguard_mtu}
+
+      [Peer]
+      PublicKey = ${var.oracle_wireguard_public_key}
+      AllowedIPs = ${join(", ", var.oracle_wireguard_allowed_ips)}
+      Endpoint = ${var.oracle_wireguard_endpoint}
+      PersistentKeepalive = 25
+      WGCONF
+
+      chmod 600 /etc/wireguard/${var.oracle_wireguard_interface}.conf
+      systemctl enable wg-quick@${var.oracle_wireguard_interface}
+      systemctl restart wg-quick@${var.oracle_wireguard_interface}
+      wg show ${var.oracle_wireguard_interface}
+    SCRIPT
+    destination = "/tmp/oracle-wireguard-setup.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/oracle-wireguard-setup.sh && rm -f /tmp/oracle-wireguard-setup.sh",
+    ]
+  }
+}
+
 module "bgp" {
-  depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard]
+  depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard, null_resource.oracle_wireguard]
   source     = "../modules/bgp-bird"
 
   host            = var.server_ip
@@ -246,16 +324,30 @@ module "bgp" {
   bgp_local_as    = var.bgp_local_as
   bgp_peers       = var.bgp_peers
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
-  external_bgp_peers = [
-    {
-      local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
-      local_as        = var.inuyama_asn
-      neighbor_ip     = "172.31.254.2"
-      neighbor_as     = var.ionos_bgp_as
-      import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路
-      export_prefixes = ["10.0.0.0/16"]
-    }
-  ]
+  external_bgp_peers = concat(
+    [
+      {
+        local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.254.2"
+        neighbor_as     = var.ionos_bgp_as
+        import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路
+        export_prefixes = ["10.0.0.0/16"]
+      }
+    ],
+    # Oracle Cloud (計画中): oracle_wireguard_public_key が空文字の間はこのリストに
+    # 何も追加されず、external_bgp_peers は従来通り1件のまま (no-op)。
+    var.oracle_wireguard_public_key != "" ? [
+      {
+        local_ip        = trimsuffix(var.oracle_wireguard_address, "/24")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.253.2"
+        neighbor_as     = var.oracle_bgp_as
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/16"]
+      }
+    ] : []
+  )
 }
 
 module "kube_vip" {
