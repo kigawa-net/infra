@@ -174,9 +174,9 @@ variable "oracle_wireguard_endpoint" {
 }
 
 variable "oracle_wireguard_allowed_ips" {
-  description = "WireGuardトンネル経由でルーティングするIPレンジ。ionosの例(172.31.254.2/32)にならい対向ホスト単体への経路のみを許可する。サイト間の全体経路(10.0.0.0/16等)はAllowedIPsではなくBGPのexport_prefixesで広告する"
+  description = "k8s4(inuyama)のoracle向けwg-oracleトンネルのAllowedIPs。OracleはIONOSと同様、soichiro等の他ピア宛トラフィックを中継するゲートウェイ役を担うため、ionos_wireguard_allowed_ipsと同じ理由でOracle自身の/32だけでなく172.31.253.0/24全体を含める必要がある(/32のみだと、Oracleが中継したsoichiro(172.31.253.13)宛の送信がWireGuard自体に'Required key not available'で拒否される。実機で確認・修正)"
   type        = list(string)
-  default     = ["172.31.253.2/32"]
+  default     = ["172.31.253.0/24"]
 }
 
 variable "oracle_bgp_as" {
