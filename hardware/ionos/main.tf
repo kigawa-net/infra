@@ -58,6 +58,18 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }],
+    # Oracle Cloud(バックアップハブ)。Inuyama<->IONOS間のリンクが落ちた場合の
+    # 迂回経路として、IONOS<->Oracle間を直接接続する。OracleはIONOSと同じく
+    # 固定IPを持つゲートウェイのため、AllowedIPsにOracle自身のトンネルIPだけでなく
+    # ホームサブネット(172.31.253.0/24)も含め、Oracle経由の中継を可能にする
+    # (var.wireguard_peer_allowed_ipsでInuyama向けピアに10.0.0.0/24を含めているのと
+    # 同じ考え方)。IONOS側からOracleへダイヤルする(Oracleは固定パブリックIPを持つ)。
+    var.oracle_wireguard_public_key != "" ? [{
+      public_key           = var.oracle_wireguard_public_key
+      allowed_ips          = ["${var.oracle_wireguard_address}/32", var.oracle_home_subnet]
+      endpoint             = var.oracle_wireguard_endpoint
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
@@ -70,6 +82,15 @@ locals {
     data.external.k8s2_wireguard_public_key.result.value != "" ? [{
       wg_address = var.k8s2_wireguard_address
       asn        = var.inuyama_asn
+    }] : [],
+    # Oracle Cloud(バックアップハブ、AS65040)。IONOS-OUT/INUYAMA-INの既存
+    # prefix-listがそのまま適用されるため、IONOSは172.31.254.0/24をOracleへ
+    # 広告し、Oracle経由で学習した10.0.0.0/24(Inuyama<->Oracle間で既に確立
+    # 済みのeBGPセッション経由で学習されたもの)を受け入れる、という迂回経路が
+    # 自動的に構成される。
+    var.oracle_wireguard_public_key != "" ? [{
+      wg_address = var.oracle_wireguard_address
+      asn        = var.oracle_asn
     }] : [],
   )
 

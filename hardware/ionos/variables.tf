@@ -219,6 +219,41 @@ variable "manage_firewall" {
   default = true
 }
 
+# --- Oracle Cloud (バックアップネットワークハブ) ---
+# IONOS <-> Oracle間を直接WireGuard/BGP接続し、Inuyama<->IONOS間のリンクが
+# 落ちた場合でもIONOS配下(k8s1/k8s2/soichiro)がOracle経由でInuyamaへの
+# 経路を確保できるようにする冗長パス。oracle_wireguard_public_keyが空文字の
+# 間はpeer/BGPネイバーとも無効化される安全弁(kigawa-net/infra hardware/k8s4の
+# oracle_wireguard_public_keyと同じパターン)。
+variable "oracle_wireguard_public_key" {
+  description = "Oracle の WireGuard 公開鍵。未設定(空文字)の間はOracleピアとBGPネイバーを無効化する安全弁"
+  type        = string
+  default     = "Jk/0cuz61srFyQNsCu5GXim12tjk9Fp/ttlrCpxMhVg="
+}
+
+variable "oracle_wireguard_endpoint" {
+  description = "Oracle の WireGuard エンドポイント (IP:port)。IONOS側からOracleへダイヤルする"
+  type        = string
+  default     = "161.33.138.252:51820"
+}
+
+variable "oracle_wireguard_address" {
+  description = "Oracle の IONOS側WireGuardトンネル内IP (k8s1=.11, k8s2=.12, soichiro=.13 に続く採番)"
+  type        = string
+  default     = "172.31.254.14"
+}
+
+variable "oracle_home_subnet" {
+  description = "Oracle自身のWireGuardホームサブネット (Inuyama<->Oracle間で使われているもの)。IONOS<->Oracle間のAllowedIPsに含め、Oracle宛の中継を可能にする"
+  type        = string
+  default     = "172.31.253.0/24"
+}
+
+variable "oracle_asn" {
+  type    = number
+  default = 65040
+}
+
 variable "firewall_ssh_port" {
   type    = number
   default = 22
