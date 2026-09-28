@@ -164,13 +164,13 @@ variable "oracle_wireguard_address" {
 variable "oracle_wireguard_public_key" {
   description = "Oracle の WireGuard 公開鍵 (cat /etc/wireguard/oracle_public.key で取得)。未設定(空文字)の間はoracle_wireguardリソースとBGPピアを無効化する安全弁"
   type        = string
-  default     = ""
+  default     = "Jk/0cuz61srFyQNsCu5GXim12tjk9Fp/ttlrCpxMhVg="
 }
 
 variable "oracle_wireguard_endpoint" {
-  description = "Oracle の WireGuard エンドポイント (IP:port)。Oracle Cloud ホスト未構築のためプレースホルダ"
+  description = "Oracle の WireGuard エンドポイント (IP:port)"
   type        = string
-  default     = "REPLACE_WITH_ORACLE_PUBLIC_IP:51820"
+  default     = "161.33.138.252:51820"
 }
 
 variable "oracle_wireguard_allowed_ips" {
