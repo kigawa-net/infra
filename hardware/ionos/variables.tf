@@ -258,3 +258,14 @@ variable "firewall_ssh_port" {
   type    = number
   default = 22
 }
+variable "kigawa_net_k8s_ci_runner_wireguard_public_key" {
+  description = "kigawa-net-k8sのGitHub Actions(ubuntu-latest)がPRのdry-run CI(kubectl apply --dry-run=server)実行時に、k8s.kigawa.net(10.0.0.100:6443)へ到達するために一時的にWireGuard接続するためのピア公開鍵。他のci_runner_wireguard_*/kigawa_infra_ci_runner_wireguard_*とは別の専用ピア(同じピアを共用すると複数CIの同時実行で接続元IPの奪い合いにより不安定になるため)。秘密鍵はBitwarden(ci-github-actions-wireguard-private-key, id: 80c81732-ff0b-4859-b6bb-b4d4009fa5ef)で管理"
+  type        = string
+  default     = "g0BfQ6y8e4f90F8JTn7jsj9i72HMckHhVY21D0yz6Uc="
+}
+
+variable "kigawa_net_k8s_ci_runner_wireguard_address" {
+  description = "kigawa-net-k8s CI runner の WireGuard IP (AllowedIPs)"
+  type        = string
+  default     = "172.31.254.22"
+}

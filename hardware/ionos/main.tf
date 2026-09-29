@@ -58,6 +58,14 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }],
+    # kigawa-net-k8s のPR CI(GitHub-hosted ubuntu-latest)がWireGuardトンネル経由で
+    # k8s.kigawa.net(10.0.0.100:6443)へ接続するための静的ピア。他のCI用ピアとは別の専用ピア。
+    [{
+      public_key           = var.kigawa_net_k8s_ci_runner_wireguard_public_key
+      allowed_ips          = ["${var.kigawa_net_k8s_ci_runner_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }],
     # Oracle Cloud(バックアップハブ)。Inuyama<->IONOS間のリンクが落ちた場合の
     # 迂回経路として、IONOS<->Oracle間を直接接続する。OracleはIONOSと同じく
     # 固定IPを持つゲートウェイのため、AllowedIPsにOracle自身のトンネルIPだけでなく
