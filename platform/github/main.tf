@@ -4,12 +4,31 @@
 # exactly one github_repository instance — otherwise Terraform would issue two
 # creates for the same name and the second one fails with 422 already_exists —
 # so the keys here are subtracted from that resource's for_each below.
+# Every key added here must also be listed in var.repositories (variables.tf):
+# branch protection comes from that list, and the key is subtracted from
+# github_repository.delete_branch_on_merge. Asserted by the check block below.
 locals {
   new_repositories = {
     # auto_init seeds README.md and license_template adds the MIT LICENSE in
     # the initial commit, so the repository is never empty. description is
     # intentionally left unset (kept empty).
+    # visibility is intentionally required per entry: if omitted, the GitHub
+    # provider falls back to its default of "private", silently contradicting
+    # the intent that each new repository's visibility is an explicit choice.
     exkes = { visibility = "public" }
+  }
+}
+
+# Terraform >= 1.6: fail fast if a local.new_repositories key is missing from
+# var.repositories (no branch protection) or vice versa (a 422 already_exists
+# from github_repository.delete_branch_on_merge trying to create a repository
+# that github_repository.this already creates).
+check "new_repositories_in_var_repositories" {
+  assert {
+    condition = alltrue([
+      for k in keys(local.new_repositories) : contains(var.repositories, k)
+    ])
+    error_message = "Every key of local.new_repositories must also be listed in var.repositories: ${join(", ", [for k in keys(local.new_repositories) : k if !contains(var.repositories, k)])}. Missing entries get no branch protection (github_branch_protection.default iterates var.repositories)."
   }
 }
 
