@@ -380,6 +380,10 @@ resource "null_resource" "inuyama_gateway_services" {
     metallb_reserved_range = var.gateway_metallb_reserved_range
     ingress_vip            = var.gateway_ingress_vip
     minecraft_vip          = var.gateway_minecraft_vip
+    # kigawa-net/infra#178: 旧alice-ingress/alice-minecraft削除ステップを追加した
+    # ことでスクリプト内容が変わったが、上記の値自体は変化していないため、
+    # このtriggerを明示的に更新して再実行(旧Service削除)を強制する
+    script_revision = "alice-cleanup-2026-09-30"
   }
 
   connection {
@@ -410,6 +414,14 @@ resource "null_resource" "inuyama_gateway_services" {
       done
 
       $KUBECTL -n ${var.gateway_metallb_namespace} patch ipaddresspool ${var.gateway_metallb_pool_name} --type=merge -p '{"spec":{"addresses":["${var.gateway_metallb_base_range}","${var.gateway_metallb_reserved_range}"],"autoAssign":true,"avoidBuggyIPs":true}}'
+
+      # kigawa-net/infra#178: 旧名称alice-ingress/alice-minecraftはTerraformの
+      # リソースとして追跡されていない(remote-execでkubectl applyしているだけ)ため、
+      # inuyama-ingress/inuyama-minecraftへの改名だけでは自動的に削除されず、
+      # MetalLBのVIP(10.0.0.240/241)を握ったまま残ってしまう。ここで明示的に削除し
+      # VIPを新Serviceへ引き継がせる(--ignore-not-foundで再実行しても安全)
+      $KUBECTL -n system delete svc alice-ingress --ignore-not-found
+      $KUBECTL -n kigawa-net delete svc alice-minecraft --ignore-not-found
 
       cat > /tmp/inuyama-gateway-services.yaml <<YAML
       apiVersion: v1
