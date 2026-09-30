@@ -36,7 +36,21 @@ variable "actions_bypass_repositories" {
 }
 
 variable "repositories" {
-  description = "kigawa-net org repositories to apply default branch protection to"
+  description = <<-EOT
+    kigawa-net org repositories to apply default branch protection to.
+
+    Every key of local.new_repositories (platform/github/main.tf) must also
+    be listed here, for two reasons:
+      - github_branch_protection.default iterates this list, so a repository
+        that is only a key of local.new_repositories and missing here gets no
+        branch protection at all.
+      - github_repository.delete_branch_on_merge subtracts
+        keys(local.new_repositories) from this list. If the two lists drift
+        apart (name in this list while github_repository.this also creates
+        it), Terraform issues two creates for the same repository and the
+        second one fails with 422 already_exists.
+    Enforced by the check block in main.tf (Terraform >= 1.6).
+  EOT
   type        = list(string)
   default = [
     "kinfra", "lipl", "keruta", "kigawa-net-k8s", "kodel", "infra",
@@ -47,7 +61,7 @@ variable "repositories" {
     "mc-manifest", "k8s-builders", "kest", "hakoniwa-core-plugin",
     "auth-server", "kweb", ".github", "server-chat", "keimvus",
     "RTPlugin", "config", "keimvus-maven-plugin", "craft-tools",
-    "studilay-bot",
+    "studilay-bot", "exkes",
   ]
 }
 
@@ -97,5 +111,6 @@ variable "default_branches" {
     RTPlugin                = "main"
     "craft-tools"           = "main"
     "studilay-bot"          = "main"
+    exkes                   = "main"
   }
 }

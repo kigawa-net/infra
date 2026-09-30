@@ -1,10 +1,46 @@
+# Repositories created from scratch by this module, as opposed to the
+# pre-existing ones that only get delete_branch_on_merge managed through
+# github_repository.delete_branch_on_merge. Each repository must be handled by
+# exactly one github_repository instance — otherwise Terraform would issue two
+# creates for the same name and the second one fails with 422 already_exists —
+# so the keys here are subtracted from that resource's for_each below.
+# Every key added here must also be listed in var.repositories (variables.tf):
+# branch protection comes from that list, and the key is subtracted from
+# github_repository.delete_branch_on_merge. Asserted by the check block below.
+locals {
+  new_repositories = {
+    # auto_init seeds README.md and license_template adds the MIT LICENSE in
+    # the initial commit, so the repository is never empty. description is
+    # intentionally left unset (kept empty).
+    # visibility is intentionally required per entry: if omitted, the GitHub
+    # provider falls back to its default of "private", silently contradicting
+    # the intent that each new repository's visibility is an explicit choice.
+    exkes = { visibility = "public" }
+  }
+}
+
+# Terraform >= 1.6: fail fast if a local.new_repositories key is missing from
+# var.repositories (no branch protection) or vice versa (a 422 already_exists
+# from github_repository.delete_branch_on_merge trying to create a repository
+# that github_repository.this already creates).
+check "new_repositories_in_var_repositories" {
+  assert {
+    condition = alltrue([
+      for k in keys(local.new_repositories) : contains(var.repositories, k)
+    ])
+    error_message = "Every key of local.new_repositories must also be listed in var.repositories: ${join(", ", [for k in keys(local.new_repositories) : k if !contains(var.repositories, k)])}. Missing entries get no branch protection (github_branch_protection.default iterates var.repositories)."
+  }
+}
+
 # issue #69: PRがmergeされた際にheadブランチを自動削除する。github_repository
 # リソースは本来リポジトリの新規作成用で、description/visibility/各種機能
 # フラグなど非常に多くの属性を持つ。既存リポジトリをimportしてこの1属性だけ
 # 変更したいので、他の属性はconfig側で指定せずlifecycle.ignore_changesで
 # 保護し、意図せずTerraformが他の設定を「修正」しようとしないようにする。
 resource "github_repository" "delete_branch_on_merge" {
-  for_each = toset(var.repositories)
+  # local.new_repositories are created (and fully configured) by
+  # github_repository.this instead; see the local's comment above.
+  for_each = toset(setsubtract(var.repositories, keys(local.new_repositories)))
 
   name                   = each.value
   delete_branch_on_merge = true
@@ -40,6 +76,25 @@ resource "github_repository" "delete_branch_on_merge" {
       security_and_analysis,
     ]
   }
+}
+
+# New repositories owned by this module. Existing repositories stay under
+# github_repository.delete_branch_on_merge above; this resource only handles
+# the entries in local.new_repositories, creating them with an initial commit
+# (README) plus an MIT LICENSE so they are usable from day one.
+resource "github_repository" "this" {
+  for_each = local.new_repositories
+
+  name             = each.key
+  visibility       = each.value.visibility
+  auto_init        = true
+  license_template = "mit"
+
+  has_issues   = true
+  has_projects = true
+  has_wiki     = false
+
+  delete_branch_on_merge = true
 }
 
 locals {
@@ -86,6 +141,11 @@ resource "github_branch_protection" "default" {
   }
 
   enforce_admins = false
+
+  # A repository listed in var.repositories that is still being created by
+  # github_repository.this would otherwise be protected before it exists
+  # (the API returns 404). Waiting on the creation fixes that ordering.
+  depends_on = [github_repository.this]
 }
 
 data "github_team" "dev_team" {
