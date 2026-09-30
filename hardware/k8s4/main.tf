@@ -364,23 +364,22 @@ module "kube_vip" {
   api_server_ip = var.kube_vip_api_server_ip
 }
 
-# 注意: リソース名・K8sオブジェクト名は"alice"のままだが、実際には現在
-# ionos(hardware/ionosのinuyama_ingress_vip/minecraft_backend_vip、
+# kigawa-net/infra#178: 旧名称"alice"(廃止済みの外部VPSゲートウェイ)から
+# gateway/inuyamaに改名。この2つのK8s Serviceは実際には現在ionos
+# (hardware/ionosのinuyama_ingress_vip/minecraft_backend_vip、
 # どちらも同じ10.0.0.240/10.0.0.241を指す)からの転送先として機能している
-# 現役のインフラである。aliceの廃止(issue関連)にあたり削除を検討したが、
-# 削除するとionos経由のHTTP/HTTPS/Minecraft転送が壊れるため、名前は
-# レガシーのまま残し機能はそのまま維持する。
-resource "null_resource" "alice_gateway_services" {
+# 現役のインフラであり、機能自体は変更しない(名前のみ変更)。
+resource "null_resource" "inuyama_gateway_services" {
   depends_on = [module.control_plane]
 
   triggers = {
     host                   = var.server_ip
-    metallb_namespace      = var.alice_metallb_namespace
-    metallb_pool_name      = var.alice_metallb_pool_name
-    metallb_base_range     = var.alice_metallb_base_range
-    metallb_reserved_range = var.alice_metallb_reserved_range
-    ingress_vip            = var.alice_ingress_vip
-    minecraft_vip          = var.alice_minecraft_vip
+    metallb_namespace      = var.gateway_metallb_namespace
+    metallb_pool_name      = var.gateway_metallb_pool_name
+    metallb_base_range     = var.gateway_metallb_base_range
+    metallb_reserved_range = var.gateway_metallb_reserved_range
+    ingress_vip            = var.gateway_ingress_vip
+    minecraft_vip          = var.gateway_minecraft_vip
   }
 
   connection {
@@ -395,7 +394,7 @@ resource "null_resource" "alice_gateway_services" {
       #!/bin/bash
       set -eo pipefail
       export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      exec > >(tee -a /tmp/alice-gateway-services.log) 2>&1
+      exec > >(tee -a /tmp/inuyama-gateway-services.log) 2>&1
 
       KUBECTL="kubectl --kubeconfig=/etc/kubernetes/admin.conf --server=https://${var.host}:6443 --request-timeout=30s"
 
@@ -410,20 +409,20 @@ resource "null_resource" "alice_gateway_services" {
         sleep 5
       done
 
-      $KUBECTL -n ${var.alice_metallb_namespace} patch ipaddresspool ${var.alice_metallb_pool_name} --type=merge -p '{"spec":{"addresses":["${var.alice_metallb_base_range}","${var.alice_metallb_reserved_range}"],"autoAssign":true,"avoidBuggyIPs":true}}'
+      $KUBECTL -n ${var.gateway_metallb_namespace} patch ipaddresspool ${var.gateway_metallb_pool_name} --type=merge -p '{"spec":{"addresses":["${var.gateway_metallb_base_range}","${var.gateway_metallb_reserved_range}"],"autoAssign":true,"avoidBuggyIPs":true}}'
 
-      cat > /tmp/alice-gateway-services.yaml <<YAML
+      cat > /tmp/inuyama-gateway-services.yaml <<YAML
       apiVersion: v1
       kind: Service
       metadata:
-        name: alice-ingress
+        name: inuyama-ingress
         namespace: system
         labels:
-          app.kigawa.net/component: alice-gateway
+          app.kigawa.net/component: inuyama-gateway
           app.kigawa.net/managed-by: terraform
       spec:
         type: LoadBalancer
-        loadBalancerIP: ${var.alice_ingress_vip}
+        loadBalancerIP: ${var.gateway_ingress_vip}
         externalTrafficPolicy: Cluster
         selector:
           app.kubernetes.io/instance: haproxy
@@ -443,14 +442,14 @@ resource "null_resource" "alice_gateway_services" {
       apiVersion: v1
       kind: Service
       metadata:
-        name: alice-minecraft
+        name: inuyama-minecraft
         namespace: kigawa-net
         labels:
-          app.kigawa.net/component: alice-gateway
+          app.kigawa.net/component: inuyama-gateway
           app.kigawa.net/managed-by: terraform
       spec:
         type: LoadBalancer
-        loadBalancerIP: ${var.alice_minecraft_vip}
+        loadBalancerIP: ${var.gateway_minecraft_vip}
         externalTrafficPolicy: Cluster
         selector:
           app: mc-router
@@ -461,16 +460,16 @@ resource "null_resource" "alice_gateway_services" {
           targetPort: 25565
       YAML
 
-      $KUBECTL apply -f /tmp/alice-gateway-services.yaml
-      $KUBECTL -n system get svc alice-ingress -o wide
-      $KUBECTL -n kigawa-net get svc alice-minecraft -o wide
+      $KUBECTL apply -f /tmp/inuyama-gateway-services.yaml
+      $KUBECTL -n system get svc inuyama-ingress -o wide
+      $KUBECTL -n kigawa-net get svc inuyama-minecraft -o wide
     SCRIPT
-    destination = "/tmp/alice-gateway-services.sh"
+    destination = "/tmp/inuyama-gateway-services.sh"
   }
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${data.external.sudo_password.result.value}' | sudo -S bash -c 'bash /tmp/alice-gateway-services.sh && rm -f /tmp/alice-gateway-services.sh /tmp/alice-gateway-services.yaml'",
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash -c 'bash /tmp/inuyama-gateway-services.sh && rm -f /tmp/inuyama-gateway-services.sh /tmp/inuyama-gateway-services.yaml'",
     ]
   }
 }

@@ -200,35 +200,36 @@ variable "inuyama_asn" {
   default = 65010
 }
 
-# 変数名は"alice"のままだが、実際には現在ionos(hardware/ionosの
-# inuyama_ingress_vip/minecraft_backend_vip)からの転送先として使われている
-# 現役のインフラ。null_resource.alice_gateway_servicesのコメント参照。
-variable "alice_metallb_namespace" {
+# kigawa-net/infra#178: 旧名称"alice"は廃止済みの外部VPSゲートウェイの名残。
+# 実際には現在ionos(hardware/ionosのinuyama_ingress_vip/minecraft_backend_vip)
+# からの転送先として使われている現役のインフラのため、gateway_*に改名した。
+# null_resource.inuyama_gateway_servicesのコメント参照。
+variable "gateway_metallb_namespace" {
   type    = string
   default = "metallb-system"
 }
 
-variable "alice_metallb_pool_name" {
+variable "gateway_metallb_pool_name" {
   type    = string
   default = "main-pool"
 }
 
-variable "alice_metallb_base_range" {
+variable "gateway_metallb_base_range" {
   type    = string
   default = "10.0.0.50-10.0.0.99"
 }
 
-variable "alice_metallb_reserved_range" {
+variable "gateway_metallb_reserved_range" {
   type    = string
   default = "10.0.0.240-10.0.0.249"
 }
 
-variable "alice_ingress_vip" {
+variable "gateway_ingress_vip" {
   type    = string
   default = "10.0.0.240"
 }
 
-variable "alice_minecraft_vip" {
+variable "gateway_minecraft_vip" {
   type    = string
   default = "10.0.0.241"
 }
