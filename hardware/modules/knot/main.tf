@@ -26,7 +26,7 @@ resource "null_resource" "knot" {
     # the provisioners below that actually deploy zone files only run on resource
     # create/replace, and this trigger set had no reference to zone *content* at all.
     zones          = jsonencode(var.zones)
-    script_version = "3"
+    script_version = "4"
   }
 
   connection {
@@ -76,9 +76,23 @@ resource "null_resource" "knot" {
   provisioner "remote-exec" {
     inline = [
       "echo '${var.sudo_password}' | sudo -S chown -R knot:knot /var/lib/knot",
-      "echo '${var.sudo_password}' | sudo -S systemctl enable knot",
-      "echo '${var.sudo_password}' | sudo -S systemctl restart knot",
-      "echo 'Knot configured and started'",
+      # kigawa-net/infra#192: 認証DNSは静的Pod manifest
+      # (/etc/kubernetes/manifests/knot.yaml、cznic/knot:latestコンテナ)として
+      # ポート127.0.0.1:5353で稼働する設計で、このモジュールはそのPodが読む
+      # /etc/knot/knot.conf・/var/lib/knot/配下のzoneファイルを配備するのが
+      # 本来の役目。以前はここで`systemctl enable knot` + `systemctl restart knot`
+      # によりホストネイティブなknot.serviceも同時に有効化・起動しており、
+      # hardware/modules/knot-resolverのインストールスクリプトがknot.serviceを
+      # maskする想定(「authoritative DNS already runs as a container on
+      # 127.0.0.1:5353」というコメント参照)と矛盾していた。このモジュールが
+      # 再適用されるたびにmaskが解除されknot.serviceが再有効化され、静的Podと
+      # 同じポートを取り合ってクラッシュループする障害が実際に発生した
+      # (k8s2/k8s4で44〜47時間継続)。ホストネイティブ側は明示的に停止・
+      # 無効化・maskし、静的Podのみがポートを保持するようにする。
+      "echo '${var.sudo_password}' | sudo -S systemctl stop knot.service || true",
+      "echo '${var.sudo_password}' | sudo -S systemctl disable knot.service || true",
+      "echo '${var.sudo_password}' | sudo -S systemctl mask knot.service || true",
+      "echo 'Knot config/zones deployed; host-native knot.service masked (static pod serves DNS)'",
     ]
   }
 
