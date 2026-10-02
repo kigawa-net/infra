@@ -44,7 +44,7 @@ jobs:
     outputs:
       modules: ${{ steps.detect.outputs.modules }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -177,23 +177,24 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install dependencies
         run: sudo apt-get update -q && sudo apt-get install -y -q jq unzip curl
 
       - name: Install bws CLI
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # kigawa-net/infra#190: 以前は/releasesを都度APIで引いて最新のbws-v*タグを
+          # 動的に解決していたが(bitwarden/sdk-smは複数SDKのリリースを同一repoで
+          # 混在させて公開しているため/releases/latestは使えない)、CIが実行の度に
+          # 異なるバイナリを取得しうる(＝再現性が無く、サプライチェーン上検証
+          # できない)状態だった。バージョンを明示し、公式チェックサムで検証する。
+          BWS_TAG: "2.1.0"
+          BWS_SHA256: "ba8233c3a4aee5d43e3c73bbd04d99e9bc5aba13bbbfd06d89b073abe732b860"
         run: |
-          # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
-          # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
-          # on publish order. Find the most recent release actually tagged bws-v* instead.
-          BWS_VERSION=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/bitwarden/sdk-sm/releases?per_page=30" \
-            | jq -r '[.[] | select(.tag_name | startswith("bws-v"))][0].tag_name')
-          BWS_TAG=${BWS_VERSION#bws-v}
+          BWS_VERSION="bws-v${BWS_TAG}"
           curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
+          echo "${BWS_SHA256}  bws.zip" | sha256sum -c -
           unzip bws.zip bws
           sudo mv bws /usr/local/bin/
           bws --version
@@ -245,13 +246,21 @@ jobs:
       # terraform実行環境にcloudflaredが必要。
       - name: cloudflared をインストール (ionos用)
         if: matrix.module == 'ionos'
+        env:
+          # kigawa-net/infra#190: /releases/latest/downloadは実行の度に異なる
+          # バイナリを取得しうる(再現性・検証不可)ため、バージョンを明示し、
+          # ダウンロード直後に自前算出したチェックサムで検証する
+          # (cloudflaredは公式のchecksumファイルを配布していないため)。
+          CLOUDFLARED_VERSION: "2026.9.3"
+          CLOUDFLARED_SHA256: "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2"
         run: |
-          curl -Lo cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          curl -Lo cloudflared "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64"
+          echo "${CLOUDFLARED_SHA256}  cloudflared" | sha256sum -c -
           chmod +x cloudflared
           sudo mv cloudflared /usr/local/bin/
           cloudflared --version
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "~1.6"
           # The default Node-based CLI wrapper isn't usable here — this self-hosted
@@ -280,7 +289,7 @@ jobs:
 
       - name: PR にプランをコメント
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const fs = require('fs');
