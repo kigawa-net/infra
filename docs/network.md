@@ -58,6 +58,36 @@ show running-config | include name-server
 ```
 `10.0.0.53` 以外のエントリがある場合は削除し、`10.0.0.53` のみにすること。
 
+### 2.5 workerノードから内部ネットワーク(10.0.0.0/24)への経路
+
+workerノードは `192.168.1.0/24` のみに接続され、BGPピアではない(birdは動かない)。
+そのままではデフォルトゲートウェイ(物理スイッチ `192.168.1.1`)に `10.0.0.0/24` 宛を
+送出してしまい到達できない(issue #154 / #193)。DNS VIP `10.0.0.53` や Keycloak/Ingress
+VIP `10.0.0.240` に届かず、CoreDNSのforward失敗やadmin-panelのJWKS取得失敗の原因になる。
+
+対策として、全workerに以下の静的経路を入れる。k8s1/k8s2/k8s4 は自宅LAN側にもアドレスを持ち
+`ip_forward=1` のため、これらを next-hop とした ECMP 経路にする。
+
+```
+ip route replace 10.0.0.0/24 \
+  nexthop via 192.168.1.103 weight 1 \
+  nexthop via 192.168.1.20  weight 1 \
+  nexthop via 192.168.1.120 weight 1
+```
+
+- 定義: `hardware/modules/cluster-route`(Terraform。`k8s-worker3` / `k8s-worker5` から利用)
+- 自己修復: `cluster-route.timer` が1分ごとに `cluster-route.service` を再実行する
+  (`ip route replace` は冪等)。経路が何らかの理由で失われても最大1分で復旧する
+  (2026-10-03、経路が失われたままCoreDNSのタイムアウトが約3時間続いた事象への対策)
+- 確認コマンド(worker上):
+  ```
+  ip route get 10.0.0.53          # via 192.168.1.{103,20,120} になること
+  systemctl list-timers cluster-route.timer
+  dig +short +time=2 +tries=1 @10.0.0.53 kigawa.net
+  ```
+- 注意: `k8s-worker1` / `k8s-worker4` は現状 `hardware/` に Terraform 定義がなく、同じ経路を
+  手動で設定している。IaC への取り込みは #198 で追跡する。
+
 ### 3. 高可用性 (VRRP / Keepalived / kube-vip)
 
 - **Keepalived (VRRP)**:
