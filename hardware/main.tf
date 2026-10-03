@@ -20,6 +20,7 @@ data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../lib/bws-retry.sh"
     ssh_key=$(bws_get_value "${var.control_plane_ssh_key_bitwarden_id}") || exit 1
+    sudo_pass=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
@@ -29,7 +30,7 @@ data "external" "join_info" {
       -o StrictHostKeyChecking=no \
       -o BatchMode=yes \
       "${var.control_plane_ssh_user}@${var.control_plane_host}" \
-      'sudo kubeadm token create --print-join-command 2>/dev/null')
+      "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
 
     rm -f "$tmpkey"
 
