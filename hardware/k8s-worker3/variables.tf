@@ -34,8 +34,9 @@ variable "k8s_endpoint" {
 }
 
 variable "control_plane_host" {
-  type    = string
-  default = "k8s1"
+  description = "kubeadm token createを実行するcontrol-planeのアドレス。ホスト名(k8s1)は自己ホストランナーでしか解決できず、ubuntu-latest(WireGuard経由)では空のtokenになるためIPで指定する(k8s1 = 10.0.0.103)"
+  type        = string
+  default     = "10.0.0.103"
 }
 
 variable "control_plane_ssh_user" {

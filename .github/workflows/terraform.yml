@@ -148,7 +148,7 @@ jobs:
           # cloudflare, ルートの"."等)は実IPが192.168.1.x(自宅LAN)固定で
           # トンネル経由では到達できないため、引き続きarc-runner-set-infra
           # (自己ホストランナー、自宅LANに直接接続)を使う。
-          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos"
+          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker3 k8s-worker5"
           MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
@@ -220,7 +220,7 @@ jobs:
 
           [Peer]
           PublicKey = OH5QiXaMfpmH8nHVU1Onnfom4BZcq4zx5Ux6R6R4LR0=
-          AllowedIPs = 172.31.254.0/24, 10.0.0.0/24
+          AllowedIPs = 172.31.254.0/24, 10.0.0.0/24, 192.168.1.130/32, 192.168.1.150/32
           Endpoint = 74.208.55.86:51820
           PersistentKeepalive = 25
           WG_EOF
@@ -239,17 +239,6 @@ jobs:
             sleep 2
           done
           sudo wg show
-
-      # ionos は soichiro(OneServerMC/infraへ移設済み)のWireGuardゲートウェイであり、
-      # soichiroの公開鍵取得にCloudflare Tunnel経由のSSHを要求するため
-      # terraform実行環境にcloudflaredが必要。
-      - name: cloudflared をインストール (ionos用)
-        if: matrix.module == 'ionos'
-        run: |
-          curl -Lo cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          chmod +x cloudflared
-          sudo mv cloudflared /usr/local/bin/
-          cloudflared --version
 
       - uses: hashicorp/setup-terraform@v3
         with:
