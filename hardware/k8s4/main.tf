@@ -1,6 +1,7 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +9,8 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -16,7 +18,8 @@ data "external" "sudo_password" {
 
 data "external" "inuyama_wireguard_private_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_private_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.inuyama_wireguard_private_key_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -24,7 +27,8 @@ data "external" "inuyama_wireguard_private_key" {
 
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.inuyama_wireguard_public_key_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -32,9 +36,9 @@ data "external" "inuyama_wireguard_public_key" {
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
-
+    source "${path.module}/../../lib/bws-retry.sh"
+    ssh_key=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
+    sudo_pass=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
