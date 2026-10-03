@@ -259,6 +259,13 @@ data "external" "sudo_password" {
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
     value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
+    # 2026-10-03: bwsが空を返すと「PublicKey =」が空のwg0.confが生成され、wg-quick@wg0が
+    # 起動できずionosゲートウェイが約1.5時間停止した。空/null/異常な値は必ずエラーにして
+    # applyを止める(WireGuard公開鍵は44文字のbase64)。
+    if [ -z "$value" ] || [ "$value" = "null" ] || ! printf '%s' "$value" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then
+      echo "inuyama_wireguard_public_key is empty or not a WireGuard public key" >&2
+      exit 1
+    fi
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
