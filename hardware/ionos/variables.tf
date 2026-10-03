@@ -167,35 +167,6 @@ variable "k8s2_wireguard_ssh_user" {
   default     = "kigawa"
 }
 
-variable "soichiro_wireguard_address" {
-  description = "soichiro の WireGuard IP (AllowedIPs)"
-  type        = string
-  default     = "172.31.254.13"
-}
-
-variable "soichiro_ssh_hostname" {
-  description = "soichiro への到達ホスト名 (Cloudflare Tunnel経由)。空の場合はpeer設定なし"
-  type        = string
-  default     = "ssh.soichiro0520.com"
-}
-
-variable "soichiro_ssh_user" {
-  type    = string
-  default = "kigawa"
-}
-
-variable "cf_access_client_id_bitwarden_id" {
-  description = "soichiroのCloudflare Access Service Token Client ID (hardware/soichiroと同じ値)。ssh.soichiro0520.comはCloudflare Accessで保護されており、非対話SSH(公開鍵取得)にはService Auth用のポリシーとこのTokenが必要"
-  type        = string
-  default     = "6a97e2f5-1add-477d-a464-b4cb00102bbf"
-}
-
-variable "cf_access_client_secret_bitwarden_id" {
-  description = "soichiroのCloudflare Access Service Token Client Secret (hardware/soichiroと同じ値)"
-  type        = string
-  default     = "944c9557-01db-4c84-988b-b4cb00103314"
-}
-
 variable "ci_runner_wireguard_public_key" {
   description = "OneServerMC/infraのGitHub Actions(ubuntu-latest)から一時的にWireGuard接続するためのピア公開鍵。k8s1/k8s2/soichiroと異なりSSHで到達できない(ephemeralなrunner)ため、事前に生成した固定鍵を使う静的ピア設定にしている。秘密鍵はBitwarden(ci-runner-wireguard-private-key)で管理"
   type        = string
