@@ -146,6 +146,90 @@ resource "null_resource" "inuyama_wireguard" {
   }
 }
 
+# GitHub Actions(ubuntu-latest)がWireGuard(ionos→k8s4)経由でworker3/5へSSHできるよう、
+# wg1→自宅LANのforwardを「CIランナー→指定worker宛tcp/22」のみに限定して許可し、
+# 復路用に同じ通信だけMASQUERADEする(192.168.1.1のスイッチは172.31.254.0/24への
+# 経路を持たないため、送信元NATがないと返信が戻らない)。
+# k8s4のufwはinactiveでFORWARDは暗黙ACCEPTのため、専用チェーン末尾のDROPで
+# CIランナー発の他のLAN宛通信を明示的に遮断する。
+resource "null_resource" "ci_ssh_forward" {
+  depends_on = [null_resource.ionos_wireguard]
+
+  triggers = {
+    host    = var.server_ip
+    wg_if   = var.ionos_wireguard_interface
+    lan_if  = var.lan_interface
+    ci_addr = var.ci_runner_wireguard_address
+    targets = join(",", var.ci_ssh_forward_targets)
+    version = "1"
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = <<-SCRIPT
+      #!/bin/bash
+      set -eo pipefail
+      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      IPT="iptables -w 5"
+      WG_IF="${var.ionos_wireguard_interface}"
+      LAN_IF="${var.lan_interface}"
+      CI="${var.ci_runner_wireguard_address}"
+      CHAIN=CI-WG-SSH
+
+      # 専用チェーンを作り直す(再実行しても重複しない)
+      $IPT -N $CHAIN 2>/dev/null || $IPT -F $CHAIN
+      %{for t in var.ci_ssh_forward_targets~}
+      $IPT -A $CHAIN -d ${t}/32 -p tcp --dport 22 -j ACCEPT
+      %{endfor~}
+      $IPT -A $CHAIN -j DROP
+
+      # CIランナー発のLAN宛通信は専用チェーンで評価(SSH以外は破棄)
+      $IPT -C FORWARD -i $WG_IF -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN 2>/dev/null \
+        || $IPT -I FORWARD 1 -i $WG_IF -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN
+      # 復路(確立済みのみ)
+      $IPT -C FORWARD -i $LAN_IF -o $WG_IF -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+        || $IPT -I FORWARD 1 -i $LAN_IF -o $WG_IF -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+      # 送信元NAT(許可した宛先のtcp/22のみ)
+      %{for t in var.ci_ssh_forward_targets~}
+      $IPT -t nat -C POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE 2>/dev/null \
+        || $IPT -t nat -A POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE
+      %{endfor~}
+    SCRIPT
+    destination = "/tmp/ci-ssh-forward.sh"
+  }
+
+  provisioner "file" {
+    content     = <<-UNIT
+      [Unit]
+      Description=Allow CI runner SSH to LAN workers via wg1 (forward + MASQUERADE, tcp/22 only)
+      After=network-online.target wg-quick@${var.ionos_wireguard_interface}.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/bin/ci-ssh-forward.sh
+
+      [Install]
+      WantedBy=multi-user.target
+    UNIT
+    destination = "/tmp/ci-ssh-forward.service"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash -c 'install -m 755 /tmp/ci-ssh-forward.sh /usr/local/bin/ci-ssh-forward.sh && install -m 644 /tmp/ci-ssh-forward.service /etc/systemd/system/ci-ssh-forward.service && systemctl daemon-reload && systemctl enable ci-ssh-forward.service && systemctl restart ci-ssh-forward.service && rm -f /tmp/ci-ssh-forward.sh /tmp/ci-ssh-forward.service'",
+    ]
+  }
+}
+
 resource "null_resource" "ionos_wireguard" {
   depends_on = [null_resource.inuyama_wireguard]
 
