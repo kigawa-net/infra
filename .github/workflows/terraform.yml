@@ -81,20 +81,9 @@ jobs:
               | grep '^hardware/[^/]\+/' | cut -d'/' -f2 | grep -vE '^(modules|zones)$' | sort -u \
               | xargs -I {} echo '{"dir": "hardware", "module": "{}"}')
 
-            # 2. 直下のファイル (main.tf, variables.tf, etc.)
-            HARDWARE_ROOT_FILES=$(git diff --name-only $DIFF_SPEC -- hardware/ \
-              | grep -v "$EXCLUDE_PATTERN" \
-              | grep '^hardware/[^/]\+$' | wc -l)
-            if [ "$HARDWARE_ROOT_FILES" -gt 0 ]; then
-              HARDWARE_ROOT_MODULE='{"dir": "hardware", "module": "."}'
-            else
-              HARDWARE_ROOT_MODULE=""
-            fi
-
             # hardware/modules/<name> が変更された場合、実際に
             # source = "../modules/<name>" を参照しているモジュールだけを
-            # 実行対象に追加する (hardware/. を含む未使用モジュールを
-            # 誤って巻き込まないようにするため)
+            # 実行対象に追加する (未使用モジュールを誤って巻き込まないようにするため)
             CHANGED_SHARED_MODULES=$(git diff --name-only $DIFF_SPEC -- hardware/modules/ \
               | grep -v "$EXCLUDE_PATTERN" \
               | grep '^hardware/modules/[^/]\+/' | cut -d'/' -f3 | sort -u)
@@ -105,11 +94,7 @@ jobs:
                 | grep -v '^hardware/modules/')
               for f in $CONSUMER_FILES; do
                 rel="${f#hardware/}"
-                if [ "$rel" = "main.tf" ]; then
-                  mod="."
-                else
-                  mod="${rel%%/*}"
-                fi
+                mod="${rel%%/*}"
                 HARDWARE_MODULE_CONSUMERS="${HARDWARE_MODULE_CONSUMERS}\n{\"dir\": \"hardware\", \"module\": \"$mod\"}"
               done
             done
@@ -128,17 +113,13 @@ jobs:
                 | grep -v '^hardware/zones/')
               for f in $CONSUMER_FILES; do
                 rel="${f#hardware/}"
-                if [ "$rel" = "main.tf" ]; then
-                  mod="."
-                else
-                  mod="${rel%%/*}"
-                fi
+                mod="${rel%%/*}"
                 HARDWARE_ZONE_CONSUMERS="${HARDWARE_ZONE_CONSUMERS}\n{\"dir\": \"hardware\", \"module\": \"$mod\"}"
               done
             done
             HARDWARE_ZONE_CONSUMERS=$(echo -e "$HARDWARE_ZONE_CONSUMERS" | grep -v '^$' | sort -u)
 
-            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_ROOT_MODULE}\n${HARDWARE_MODULE_CONSUMERS}\n${HARDWARE_ZONE_CONSUMERS}" \
+            MODULES=$(echo -e "${PLATFORM_MODULES}\n${HARDWARE_SUB_MODULES}\n${HARDWARE_MODULE_CONSUMERS}\n${HARDWARE_ZONE_CONSUMERS}" \
               | grep -v '^$' | sort -u | jq -sc .)
           fi
 
@@ -146,13 +127,12 @@ jobs:
           # GitHub-hosted runner(ubuntu-latest)から到達できるようにした
           # (issue #100対策)。k8s-worker3/5は192.168.1.130/.150の/32だけをSSH(tcp/22)限定で
           # 同じ経路(ionos AllowedIPs + k8s4のci-ssh-forward)に載せた。
-          # cloudflareはCloudflare APIだけを使い、ルートの"."はplan時にk8s1(10.0.0.103)へ
-          # SSHするだけなので、どちらもubuntu-latestで動く。
+          # cloudflareはCloudflare APIだけを使うので、ubuntu-latestで動く。
           # arc-runner-set-infra(worker1/4/5のメモリ逼迫・containerd不調でPendingになりがち、
           # issue #100/#182)に依存しないよう、全モジュールをubuntu-latestにする。
           # 新しいモジュールを追加して、192.168.1.xなどトンネルで届かないホストに接続する場合は、
           # ここに足さずにarc-runner-set-infraのままにするか、経路を追加すること。
-          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker3 k8s-worker5 cloudflare ."
+          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker3 k8s-worker5 cloudflare"
           MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
