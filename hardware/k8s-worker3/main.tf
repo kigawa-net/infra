@@ -1,6 +1,12 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
     value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
+    # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
+    if [ -z "$value" ] || [ "$value" = "null" ]; then
+      echo "ssh_key: bws secret is empty" >&2
+      exit 1
+    fi
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -9,6 +15,12 @@ data "external" "ssh_key" {
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
     value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
+    # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
+    if [ -z "$value" ] || [ "$value" = "null" ]; then
+      echo "sudo_password: bws secret is empty" >&2
+      exit 1
+    fi
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -18,6 +30,11 @@ data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
     sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+
+    if [ -z "$ssh_key" ] || [ "$ssh_key" = "null" ] || [ -z "$sudo_pass" ] || [ "$sudo_pass" = "null" ]; then
+      echo "join_info: bws secret is empty" >&2
+      exit 1
+    fi
 
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
@@ -34,6 +51,10 @@ data "external" "join_info" {
 
     token=$(printf '%s' "$cmd" | grep -oP '(?<=--token )\S+')
     hash=$(printf '%s' "$cmd"  | grep -oP '(?<=--discovery-token-ca-cert-hash )\S+')
+    if [ -z "$token" ] || [ -z "$hash" ]; then
+      echo "join_info: kubeadm token create did not return token/ca_cert_hash" >&2
+      exit 1
+    fi
     printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
   EOT
   ]
@@ -137,22 +158,17 @@ resource "null_resource" "worker_node" {
     ]
   }
 
+  # token(kubeadm token createで毎回変わる)・ca_cert_hash・sudo_password・ssh_keyを
+  # triggerに入れていたため、planのたびにworker_nodeが置き換え対象になり、さらに
+  # 変更前のsudoパスワードがCIログに平文で出ていた(2026-10-03)。ノードのセットアップは
+  # 初回のbootstrap用なので、host以外のtrigger変更では再作成しない。
+  # 空のtoken/ca_cert_hashはjoin_infoのdata sourceで検証して止める。
   triggers = {
-    ssh_key       = data.external.ssh_key.result.value
-    sudo_password = data.external.sudo_password.result.value
-    token         = data.external.join_info.result.token
-    ca_cert_hash  = data.external.join_info.result.ca_cert_hash
+    host = var.host
   }
 
   lifecycle {
-    postcondition {
-      condition     = length(self.triggers.token) > 0
-      error_message = "join_info did not return a token"
-    }
-    postcondition {
-      condition     = length(self.triggers.ca_cert_hash) > 0
-      error_message = "join_info did not return a ca_cert_hash"
-    }
+    ignore_changes = [triggers]
   }
 }
 
