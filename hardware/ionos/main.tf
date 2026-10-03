@@ -34,12 +34,6 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
-    data.external.soichiro_wireguard_public_key.result.value != "" ? [{
-      public_key           = data.external.soichiro_wireguard_public_key.result.value
-      allowed_ips          = ["${var.soichiro_wireguard_address}/32"]
-      endpoint             = ""
-      persistent_keepalive = var.wireguard_persistent_keepalive
-    }] : [],
     # OneServerMC/infra の GitHub Actions(ubuntu-latest)が hardware/soichiro の
     # terraform apply 時に k8s1 へ到達する(kubeadm join token取得)ための静的ピア。
     # ephemeralなrunnerでSSH公開鍵を都度取得できないため、事前生成した固定鍵を使う。
@@ -259,6 +253,13 @@ data "external" "sudo_password" {
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
     value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
+    # 2026-10-03: bwsが空を返すと「PublicKey =」が空のwg0.confが生成され、wg-quick@wg0が
+    # 起動できずionosゲートウェイが約1.5時間停止した。空/null/異常な値は必ずエラーにして
+    # applyを止める(WireGuard公開鍵は44文字のbase64)。
+    if [ -z "$value" ] || [ "$value" = "null" ] || ! printf '%s' "$value" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then
+      echo "inuyama_wireguard_public_key is empty or not a WireGuard public key" >&2
+      exit 1
+    fi
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -308,35 +309,6 @@ data "external" "k8s2_wireguard_public_key" {
   ]
 }
 
-# soichiroはCloudflare Tunnel (cloudflared access ssh) 経由でのみSSH到達可能なため、
-# k8s1/k8s2と異なりProxyCommandを使う。SSH鍵自体は他ホストと共通のため、
-# k8s_ssh_key_bitwarden_idをそのまま使う(Bitwardenから取得)。
-# terraform applyを実行するマシンにcloudflaredが必要 (hardware/soichiro と同様)。
-data "external" "soichiro_wireguard_public_key" {
-  program = ["bash", "-c", <<-EOT
-    if [ -z "${var.soichiro_ssh_hostname}" ]; then
-      jq -n '{"value": ""}'; exit 0
-    fi
-    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
-    cf_access_client_id=$(bws secret get "${var.cf_access_client_id_bitwarden_id}" --color no | jq -r '.value')
-    cf_access_client_secret=$(bws secret get "${var.cf_access_client_secret_bitwarden_id}" --color no | jq -r '.value')
-    tmpkey=$(mktemp)
-    chmod 600 "$tmpkey"
-    printf '%s\n' "$ssh_key" > "$tmpkey"
-    value=$(ssh \
-      -i "$tmpkey" \
-      -o StrictHostKeyChecking=accept-new \
-      -o BatchMode=yes \
-      -o ConnectTimeout=5 \
-      -o "ProxyCommand=cloudflared access ssh --hostname %h --id $cf_access_client_id --secret $cf_access_client_secret" \
-      "${var.soichiro_ssh_user}@${var.soichiro_ssh_hostname}" \
-      'cat /etc/wireguard/publickey' 2>/dev/null) || value=""
-    rm -f "$tmpkey"
-    jq -n --arg value "$value" '{"value": $value}'
-  EOT
-  ]
-}
-
 resource "null_resource" "ionos_gateway" {
   triggers = {
     setup_version                  = "3"
@@ -346,7 +318,6 @@ resource "null_resource" "ionos_gateway" {
     wireguard_config               = sha256(local.wireguard_config)
     k8s1_wireguard_public_key      = sha256(data.external.k8s1_wireguard_public_key.result.value)
     k8s2_wireguard_public_key      = sha256(data.external.k8s2_wireguard_public_key.result.value)
-    soichiro_wireguard_public_key  = sha256(data.external.soichiro_wireguard_public_key.result.value)
     frr_config                     = sha256(local.frr_config)
     haproxy_config                 = sha256(local.haproxy_config)
     setup_script                   = sha256(local.setup_script)

@@ -251,3 +251,30 @@ Grafana
 ```
 
 初期実装は Shumoku topology YAML を正とする。
+
+## CI(GitHub Actions ubuntu-latest)から自宅LANのworkerへのSSH経路
+
+`hardware/k8s-worker3`(192.168.1.130)と`hardware/k8s-worker5`(192.168.1.150)は実IPが
+自宅LANのため、従来は自己ホストランナー(arc-runner-set-infra)でしかapplyできず、
+そのランナーがworker1/4/5のメモリ逼迫でPendingになるとapplyが進まなかった(issue #100)。
+GitHub-hostedランナーからWireGuard経由でこの2台にだけSSHできるようにした。
+
+```
+ubuntu-latest(wg0, 172.31.254.21)
+   │ AllowedIPs に 192.168.1.130/32, 192.168.1.150/32 を追加
+   ▼
+ionos wg0 ── k8s4(Inuyama)ピアのAllowedIPsに同じ/32を追加(wg-quickのkernel routeで中継)
+   ▼
+k8s4 wg1 → ens18: iptablesチェーン CI-WG-SSH
+   - 送信元 172.31.254.21 → 192.168.1.130/.150 の tcp/22 のみ ACCEPT、それ以外のLAN宛は DROP
+   - 同じ通信だけ MASQUERADE(スイッチ192.168.1.1は172.31.254.0/24への経路を持たないため)
+   ▼
+worker3 / worker5 (SSH)
+```
+
+- 範囲は2台の/32 + tcp/22のみ。LAN全体(スイッチ管理画面やNAS等)には届かない。
+- 設定箇所は次の3か所で、必ず揃えること。
+  - `.github/workflows/terraform.yml` の AllowedIPs と `GITHUB_HOSTED_MODULES`
+  - `hardware/ionos/variables.tf` の `wireguard_peer_allowed_ips`
+  - `hardware/k8s4/variables.tf` の `ci_ssh_forward_targets`(`hardware/k8s4/main.tf` の `ci_ssh_forward`、systemd `ci-ssh-forward.service`)
+- 確認(k8s4上): `sudo iptables -S CI-WG-SSH` / `sudo iptables -t nat -S POSTROUTING | grep 172.31.254.21`
