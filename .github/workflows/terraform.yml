@@ -189,11 +189,11 @@ jobs:
           # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
           # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
           # on publish order. Find the most recent release actually tagged bws-v* instead.
-          BWS_VERSION=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+          BWS_VERSION=$(curl -s --retry 5 --retry-delay 3 --retry-all-errors -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/bitwarden/sdk-sm/releases?per_page=30" \
             | jq -r '[.[] | select(.tag_name | startswith("bws-v"))][0].tag_name')
           BWS_TAG=${BWS_VERSION#bws-v}
-          curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
+          curl -L --retry 5 --retry-delay 3 --retry-all-errors -o bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
           unzip bws.zip bws
           sudo mv bws /usr/local/bin/
           bws --version
@@ -211,7 +211,9 @@ jobs:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
           sudo apt-get install -y -q wireguard
-          PRIVATE_KEY=$(bws -c no secret get 5eeb43e8-4973-47f8-8bfe-b4ce0047b568 | jq -r '.value')
+          # bws の一時的な 503 で PrivateKey が空のまま wg-quick が失敗するのを防ぐ(lib/bws-retry.sh)
+          source "$GITHUB_WORKSPACE/lib/bws-retry.sh"
+          PRIVATE_KEY=$(bws_get_value 5eeb43e8-4973-47f8-8bfe-b4ce0047b568)
           sudo install -d -m 700 /etc/wireguard
           sudo tee /etc/wireguard/wg0.conf > /dev/null <<WG_EOF
           [Interface]

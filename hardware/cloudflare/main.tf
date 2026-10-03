@@ -1,6 +1,7 @@
 data "external" "api_token" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.api_token_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.api_token_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]

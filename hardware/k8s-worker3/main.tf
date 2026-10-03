@@ -1,6 +1,7 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
     # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
     # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
     if [ -z "$value" ] || [ "$value" = "null" ]; then
@@ -14,7 +15,8 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
     # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
     if [ -z "$value" ] || [ "$value" = "null" ]; then
@@ -28,9 +30,9 @@ data "external" "sudo_password" {
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
-    ssh_key=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
-    sudo_pass=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
-
+    source "${path.module}/../../lib/bws-retry.sh"
+    ssh_key=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
+    sudo_pass=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     if [ -z "$ssh_key" ] || [ "$ssh_key" = "null" ] || [ -z "$sudo_pass" ] || [ "$sudo_pass" = "null" ]; then
       echo "join_info: bws secret is empty" >&2
       exit 1
