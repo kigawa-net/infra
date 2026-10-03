@@ -53,7 +53,23 @@ Each subdirectory under `hardware/` is a self-contained Terraform root module wi
 
 ### Secrets
 
-All secrets come from Bitwarden Secrets Manager via the `bws` CLI. Terraform accesses them through `data "external"` blocks that call `bws secret get <uuid> | jq -r '.value'`. The R2 backend credentials are injected by `run.sh` (not in `.tf` files).
+All secrets come from Bitwarden Secrets Manager via the `bws` CLI. Terraform accesses them through `data "external"` blocks that call `bws_get_value <uuid>` (a retry helper, see below). The R2 backend credentials are injected by `run.sh` (not in `.tf` files).
+
+**`bws` は直接呼ばない。`lib/bws-retry.sh` の `bws_get_value` を使う。** Bitwarden の API は断続的に 503 を返す(2026-10-03、同期の約2.5%)。`value=$(bws secret get ... | jq -r .value)` は失敗しても空文字のまま進み、ionos の `wg0.conf` が `PublicKey =` 空で生成されてゲートウェイが停止した。`bws_get_value` は一時的なエラー(5xx/429/タイムアウト)だけを指数バックオフで再試行し、失敗・空・null なら `return 1` する。
+
+```hcl
+data "external" "ssh_key" {
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"   # hardware/<module>/ からの相対パス
+    value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+```
+
+- 必須のシークレットは `|| exit 1` で止める(任意なら `|| true`)。`export X=$(...)` は失敗が隠れるので、代入してから `export` する。
+- テスト: `bash lib/test-bws-retry.sh`(偽の `bws` を使うので Bitwarden には接続しない)。
 
 ### Provisioning Pattern
 
@@ -96,8 +112,10 @@ module="${1:?Usage: $0 <module> <terraform-args...>}"
 shift
 export AWS_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY
-AWS_ACCESS_KEY_ID=$(bws secret get <uuid> | jq -r '.value')
-AWS_SECRET_ACCESS_KEY=$(bws secret get <uuid> | jq -r '.value')
+source "$script_dir/../lib/bws-retry.sh"
+AWS_ACCESS_KEY_ID=$(bws_get_value <uuid>)
+AWS_SECRET_ACCESS_KEY=$(bws_get_value <uuid>)
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 terraform -chdir="$script_dir/$module" "$@"
 ```
 

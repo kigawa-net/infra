@@ -236,7 +236,8 @@ locals {
 
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -244,7 +245,8 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -252,7 +254,8 @@ data "external" "sudo_password" {
 
 data "external" "inuyama_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.inuyama_wireguard_public_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.inuyama_wireguard_public_key_bitwarden_id}") || exit 1
     # 2026-10-03: bwsが空を返すと「PublicKey =」が空のwg0.confが生成され、wg-quick@wg0が
     # 起動できずionosゲートウェイが約1.5時間停止した。空/null/異常な値は必ずエラーにして
     # applyを止める(WireGuard公開鍵は44文字のbase64)。
@@ -267,10 +270,11 @@ data "external" "inuyama_wireguard_public_key" {
 
 data "external" "k8s1_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
     if [ -z "${var.k8s1_wireguard_ssh_host}" ]; then
       jq -n '{"value": ""}'; exit 0
     fi
-    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    ssh_key=$(bws_get_value "${var.k8s_ssh_key_bitwarden_id}") || exit 1
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
@@ -289,10 +293,11 @@ data "external" "k8s1_wireguard_public_key" {
 
 data "external" "k8s2_wireguard_public_key" {
   program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
     if [ -z "${var.k8s2_wireguard_ssh_host}" ]; then
       jq -n '{"value": ""}'; exit 0
     fi
-    ssh_key=$(bws secret get "${var.k8s_ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    ssh_key=$(bws_get_value "${var.k8s_ssh_key_bitwarden_id}") || exit 1
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"

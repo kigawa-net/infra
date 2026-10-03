@@ -144,11 +144,15 @@ jobs:
 
           # k8s1/k8s2/k8s4/ionosはionosに登録した専用WireGuardピア経由で
           # GitHub-hosted runner(ubuntu-latest)から到達できるようにした
-          # (issue #100対策)。それ以外のモジュール(alice, k8s-worker3/5,
-          # cloudflare, ルートの"."等)は実IPが192.168.1.x(自宅LAN)固定で
-          # トンネル経由では到達できないため、引き続きarc-runner-set-infra
-          # (自己ホストランナー、自宅LANに直接接続)を使う。
-          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker3 k8s-worker5"
+          # (issue #100対策)。k8s-worker3/5は192.168.1.130/.150の/32だけをSSH(tcp/22)限定で
+          # 同じ経路(ionos AllowedIPs + k8s4のci-ssh-forward)に載せた。
+          # cloudflareはCloudflare APIだけを使い、ルートの"."はplan時にk8s1(10.0.0.103)へ
+          # SSHするだけなので、どちらもubuntu-latestで動く。
+          # arc-runner-set-infra(worker1/4/5のメモリ逼迫・containerd不調でPendingになりがち、
+          # issue #100/#182)に依存しないよう、全モジュールをubuntu-latestにする。
+          # 新しいモジュールを追加して、192.168.1.xなどトンネルで届かないホストに接続する場合は、
+          # ここに足さずにarc-runner-set-infraのままにするか、経路を追加すること。
+          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker3 k8s-worker5 cloudflare ."
           MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
@@ -189,11 +193,11 @@ jobs:
           # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
           # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
           # on publish order. Find the most recent release actually tagged bws-v* instead.
-          BWS_VERSION=$(curl -s -H "Authorization: Bearer ${GH_TOKEN}" \
+          BWS_VERSION=$(curl -s --retry 5 --retry-delay 3 --retry-all-errors -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/bitwarden/sdk-sm/releases?per_page=30" \
             | jq -r '[.[] | select(.tag_name | startswith("bws-v"))][0].tag_name')
           BWS_TAG=${BWS_VERSION#bws-v}
-          curl -Lo bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
+          curl -L --retry 5 --retry-delay 3 --retry-all-errors -o bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
           unzip bws.zip bws
           sudo mv bws /usr/local/bin/
           bws --version
@@ -211,7 +215,9 @@ jobs:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
           sudo apt-get install -y -q wireguard
-          PRIVATE_KEY=$(bws -c no secret get 5eeb43e8-4973-47f8-8bfe-b4ce0047b568 | jq -r '.value')
+          # bws の一時的な 503 で PrivateKey が空のまま wg-quick が失敗するのを防ぐ(lib/bws-retry.sh)
+          source "$GITHUB_WORKSPACE/lib/bws-retry.sh"
+          PRIVATE_KEY=$(bws_get_value 5eeb43e8-4973-47f8-8bfe-b4ce0047b568)
           sudo install -d -m 700 /etc/wireguard
           sudo tee /etc/wireguard/wg0.conf > /dev/null <<WG_EOF
           [Interface]

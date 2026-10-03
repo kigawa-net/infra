@@ -1,6 +1,7 @@
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.control_plane_ssh_key_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.control_plane_ssh_key_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -8,7 +9,8 @@ data "external" "ssh_key" {
 
 data "external" "sudo_password" {
   program = ["bash", "-c", <<-EOT
-    value=$(bws secret get "${var.sudo_password_bitwarden_id}" --color no | jq -r '.value')
+    source "${path.module}/../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -16,8 +18,9 @@ data "external" "sudo_password" {
 
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
-    ssh_key=$(bws secret get "${var.control_plane_ssh_key_bitwarden_id}" --color no | jq -r '.value')
-
+    source "${path.module}/../lib/bws-retry.sh"
+    ssh_key=$(bws_get_value "${var.control_plane_ssh_key_bitwarden_id}") || exit 1
+    sudo_pass=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     tmpkey=$(mktemp)
     chmod 600 "$tmpkey"
     printf '%s\n' "$ssh_key" > "$tmpkey"
@@ -27,12 +30,16 @@ data "external" "join_info" {
       -o StrictHostKeyChecking=no \
       -o BatchMode=yes \
       "${var.control_plane_ssh_user}@${var.control_plane_host}" \
-      'sudo kubeadm token create --print-join-command 2>/dev/null')
+      "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
 
     rm -f "$tmpkey"
 
     token=$(printf '%s' "$cmd" | grep -oP '(?<=--token )\S+')
     hash=$(printf '%s' "$cmd"  | grep -oP '(?<=--discovery-token-ca-cert-hash )\S+')
+    if [ -z "$token" ] || [ -z "$hash" ]; then
+      echo "join_info: kubeadm token create did not return token/ca_cert_hash" >&2
+      exit 1
+    fi
     printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
   EOT
   ]
