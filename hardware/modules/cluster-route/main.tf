@@ -15,12 +15,32 @@ locals {
   SCRIPT
 }
 
+locals {
+  # 2026-10-03(issue #193): 経路が失われたまま誰も気付かず、CoreDNSの
+  # 10.0.0.53向けforwardが約3時間タイムアウトし続けた。原因を特定できていないため、
+  # 原因に依存しない対策として、冪等な `ip route replace` を1分ごとに再実行し、
+  # 経路が何らかの理由で消えても自動復旧させる。
+  route_timer = <<-TIMER
+    [Unit]
+    Description=Periodically re-apply static route to cluster LAN (${var.destination_cidr})
+
+    [Timer]
+    OnBootSec=30s
+    OnUnitActiveSec=60s
+    AccuracySec=5s
+
+    [Install]
+    WantedBy=timers.target
+  TIMER
+}
+
 resource "null_resource" "cluster_route" {
   triggers = {
     host              = var.host
     destination_cidr  = var.destination_cidr
     gateways          = join(",", var.gateways)
     route_script_hash = sha256(local.route_script)
+    timer_hash        = sha256(local.route_timer)
   }
 
   connection {
@@ -44,7 +64,6 @@ resource "null_resource" "cluster_route" {
 
       [Service]
       Type=oneshot
-      RemainAfterExit=yes
       ExecStart=/usr/local/bin/cluster-route.sh
 
       [Install]
@@ -53,9 +72,14 @@ resource "null_resource" "cluster_route" {
     destination = "/tmp/cluster-route.service"
   }
 
+  provisioner "file" {
+    content     = local.route_timer
+    destination = "/tmp/cluster-route.timer"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && systemctl daemon-reload && systemctl enable --now cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service'",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && install -m 644 /tmp/cluster-route.timer /etc/systemd/system/cluster-route.timer && systemctl daemon-reload && systemctl enable cluster-route.service && systemctl enable --now cluster-route.timer && systemctl start cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service /tmp/cluster-route.timer'",
     ]
   }
 }
