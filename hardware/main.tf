@@ -35,6 +35,10 @@ data "external" "join_info" {
 
     token=$(printf '%s' "$cmd" | grep -oP '(?<=--token )\S+')
     hash=$(printf '%s' "$cmd"  | grep -oP '(?<=--discovery-token-ca-cert-hash )\S+')
+    if [ -z "$token" ] || [ -z "$hash" ]; then
+      echo "join_info: kubeadm token create did not return token/ca_cert_hash" >&2
+      exit 1
+    fi
     printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
   EOT
   ]
