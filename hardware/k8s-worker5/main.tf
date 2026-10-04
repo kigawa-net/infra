@@ -164,5 +164,6 @@ module "cluster_route" {
 
   # Karmada(Soichiro の VM)への経路。Inuyama の BGP(k8s4)が学習する 10.255.10.12/32 を含む範囲を、
   # クラスタLANと同じ next-hop(k8s1/k8s2/k8s4)に向ける。
-  extra_destination_cidrs = ["10.255.10.0/24"]
+  # 172.31.254.2/32: IONOS の Karmada etcd #3(WireGuard のアドレス)。Inuyama の etcd #1 が、メンバー間の通信に使う。
+  extra_destination_cidrs = ["10.255.10.0/24", "172.31.254.2/32"]
 }
