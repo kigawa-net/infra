@@ -7,9 +7,28 @@ locals {
   )
   ionos_prefix_list_rules = concat(
     [for index, prefix in var.ionos_advertised_prefixes : format("ip prefix-list IONOS-OUT seq %d permit %s", (index + 1) * 10, prefix)],
+    # Soichiro から学習した管理 IP(/32)を Inuyama(k8s4)へ再広告する。`network` 文は出さない
+    # (IONOS 自身が発生源ではなく、BGP で学習した経路を中継するだけのため)。
+    var.soichiro_wireguard_public_key != "" ? [for index, prefix in var.soichiro_accepted_prefixes : format("ip prefix-list IONOS-OUT seq %d permit %s", 500 + (index + 1) * 10, prefix)] : [],
     ["ip prefix-list IONOS-OUT seq 999 deny 0.0.0.0/0 le 32"],
   )
-  ionos_network_statements = [for prefix in var.ionos_advertised_prefixes : "  network ${prefix}"]
+
+  # Soichiro 専用の prefix-list。Soichiro からは管理 IP の /32 だけを受け取り、
+  # Soichiro へは Inuyama のネットワーク(inuyama_accepted_prefixes)だけを渡す。
+  soichiro_prefix_list_rules = concat(
+    [for index, prefix in var.soichiro_accepted_prefixes : format("ip prefix-list SOICHIRO-IN seq %d permit %s", (index + 1) * 10, prefix)],
+    ["ip prefix-list SOICHIRO-IN seq 999 deny 0.0.0.0/0 le 32"],
+    [for index, prefix in var.inuyama_accepted_prefixes : format("ip prefix-list SOICHIRO-OUT seq %d permit %s", (index + 1) * 10, prefix)],
+    ["ip prefix-list SOICHIRO-OUT seq 999 deny 0.0.0.0/0 le 32"],
+  )
+  ionos_network_statements = concat(
+    [for prefix in var.ionos_advertised_prefixes : "  network ${prefix}"],
+    # k8s4(Inuyama)は、IONOS が許可する 10.0.0.0/24 を BGP で渡さない(k8s4 の export は 10.0.0.0/16 の完全一致)ため、
+    # IONOS の BGP テーブルには Inuyama のネットワークが無く、Soichiro に渡せない。
+    # IONOS 自身が持つカーネル経路(10.0.0.0/24 dev wg0、WireGuard の AllowedIPs 由来)を、Soichiro 向けにだけ発生させる。
+    # IONOS-OUT(Inuyama / Oracle 向け)は 10.0.0.0/24 を許可しないので、他のピアには漏れない。
+    var.soichiro_wireguard_public_key != "" ? [for prefix in var.inuyama_accepted_prefixes : "  network ${prefix}"] : [],
+  )
 
   k8s_wireguard_peers = concat(
     data.external.k8s1_wireguard_public_key.result.value != "" ? [{
@@ -72,6 +91,14 @@ locals {
       endpoint             = var.oracle_wireguard_endpoint
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    # Soichiro(Karmada の etcd #2 / control plane)。Soichiro 側から IONOS へ発信する(endpoint なし)。
+    # 公開鍵は静的な値。AllowedIPs は、トンネル内 IP と、管理 IP(/32)だけ(他のピアと重複させない。issue #121)。
+    var.soichiro_wireguard_public_key != "" ? [{
+      public_key           = var.soichiro_wireguard_public_key
+      allowed_ips          = concat(["${var.soichiro_wireguard_address}/32"], var.soichiro_accepted_prefixes)
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
@@ -80,10 +107,14 @@ locals {
     [{
       wg_address = var.inuyama_wireguard_address
       asn        = var.inuyama_asn
+      in_list    = "INUYAMA-IN"
+      out_list   = "IONOS-OUT"
     }],
     data.external.k8s2_wireguard_public_key.result.value != "" ? [{
       wg_address = var.k8s2_wireguard_address
       asn        = var.inuyama_asn
+      in_list    = "INUYAMA-IN"
+      out_list   = "IONOS-OUT"
     }] : [],
     # Oracle Cloud(バックアップハブ、AS65040)。IONOS-OUT/INUYAMA-INの既存
     # prefix-listがそのまま適用されるため、IONOSは172.31.254.0/24をOracleへ
@@ -93,6 +124,15 @@ locals {
     var.oracle_wireguard_public_key != "" ? [{
       wg_address = var.oracle_wireguard_address
       asn        = var.oracle_asn
+      in_list    = "INUYAMA-IN"
+      out_list   = "IONOS-OUT"
+    }] : [],
+    # Soichiro(AS65040とは別、AS65020)。専用の prefix-list を使う(管理 IP の /32 だけを受け取る)。
+    var.soichiro_wireguard_public_key != "" ? [{
+      wg_address = var.soichiro_wireguard_address
+      asn        = var.soichiro_asn
+      in_list    = "SOICHIRO-IN"
+      out_list   = "SOICHIRO-OUT"
     }] : [],
   )
 
@@ -116,6 +156,7 @@ locals {
     wireguard_interface      = var.wireguard_interface
     inuyama_prefix_list      = join("\n", local.inuyama_prefix_list_rules)
     ionos_prefix_list        = join("\n", local.ionos_prefix_list_rules)
+    soichiro_prefix_list     = var.soichiro_wireguard_public_key != "" ? join("\n", local.soichiro_prefix_list_rules) : ""
     ionos_network_statements = join("\n", local.ionos_network_statements)
   })
 

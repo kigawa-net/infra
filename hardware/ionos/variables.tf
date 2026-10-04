@@ -246,3 +246,34 @@ variable "kigawa_net_k8s_ci_runner_wireguard_address" {
   type        = string
   default     = "172.31.254.22"
 }
+
+# Soichiro(Karmada の etcd #2 / control plane を置く別拠点の VM)。Soichiro 側から IONOS へ発信する静的ピア。
+# 公開鍵は静的な値で持つ(bws の一時的な 503 で PublicKey が空になり wg0 が止まった 2026-10-03 の事故の再発防止)。
+# 空文字にすると、ピアと BGP neighbor は追加されない。
+variable "soichiro_wireguard_public_key" {
+  description = "Soichiro VM の WireGuard 公開鍵(IONOS 用)。空文字でピアと BGP neighbor を無効化する"
+  type        = string
+  default     = "pa4k7e3L+pccP9PwaM374CUZKmWU1MGkMrNa+rrkBHs="
+
+  validation {
+    condition     = var.soichiro_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.soichiro_wireguard_public_key))
+    error_message = "soichiro_wireguard_public_key は、空文字か、WireGuard の公開鍵(44文字の base64)にしてください。"
+  }
+}
+
+variable "soichiro_wireguard_address" {
+  description = "Soichiro の IONOS 側 WireGuard トンネル内 IP (k8s1=.11, k8s2=.12, 旧soichiro=.13, oracle=.14 に続く採番)"
+  type        = string
+  default     = "172.31.254.15"
+}
+
+variable "soichiro_asn" {
+  type    = number
+  default = 65020
+}
+
+variable "soichiro_accepted_prefixes" {
+  description = "Soichiro から受け取る prefix(管理 IP の /32 のみ)。WireGuard の AllowedIPs にも入れ、IONOS-OUT で Inuyama(k8s4)へ再広告する"
+  type        = list(string)
+  default     = ["10.255.10.12/32"]
+}
