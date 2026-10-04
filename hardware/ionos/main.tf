@@ -260,6 +260,12 @@ locals {
       # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
       # 暗黙にブロックされていた。wg0インターフェース間の転送を明示的に許可する。
       ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
+      # Karmada の etcd #3(2379/2380)。下の `deny 2379:2380/tcp`(公開インターネット向け)より前に、
+      # WireGuard 内の特定の送信元だけを許可する。ufw は順序で評価するため、`insert 1` で先頭に入れる
+      # (すでに同じルールがあれば、スキップされる)。
+      %{for src in var.etcd_allowed_sources~}
+      ufw insert 1 allow in on ${var.wireguard_interface} from ${src} to any port 2379,2380 proto tcp
+      %{endfor~}
       ufw deny 179/tcp
       ufw deny 6443/tcp
       ufw deny 2379:2380/tcp

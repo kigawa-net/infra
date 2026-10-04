@@ -277,3 +277,15 @@ variable "soichiro_accepted_prefixes" {
   type        = list(string)
   default     = ["10.255.10.12/32"]
 }
+
+variable "etcd_allowed_sources" {
+  description = "IONOS の Karmada etcd #3(2379/2380)に、WireGuard(wg)内から接続してよい送信元。ufw の既存の `deny 2379:2380/tcp`(公開インターネット向け)より前に、これらの allow を挿入する"
+  type        = list(string)
+  default = [
+    "172.31.254.1",  # k8s4(Inuyama)。Inuyama の etcd #1 の通信は、worker のアドレスで届くが、念のため
+    "192.168.1.130", # k8s-worker3(etcd #1 の Pod が動く。Pod の外向きは、ノードの IP に変換される)
+    "192.168.1.150", # k8s-worker5
+    "172.31.254.15", # Soichiro(wg-ionos)
+    "10.255.10.12",  # Soichiro(管理 IP)
+  ]
+}
