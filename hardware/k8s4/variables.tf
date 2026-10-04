@@ -248,9 +248,9 @@ variable "ci_runner_wireguard_address" {
 }
 
 variable "ci_ssh_forward_targets" {
-  description = "CIランナーからwg1経由でSSH(tcp/22)のみ中継を許可する自宅LAN上のworkerのIP(k8s-worker3/k8s-worker5)。ionosのwireguard_peer_allowed_ipsの/32と揃えること"
+  description = "CIランナーからwg1経由でSSH(tcp/22)のみ中継を許可する自宅LAN上のworkerのIP(k8s-worker3/k8s-worker5/k8s-worker1/k8s-worker4)。ionosのwireguard_peer_allowed_ipsの/32と揃えること"
   type        = list(string)
-  default     = ["192.168.1.130", "192.168.1.150"]
+  default     = ["192.168.1.130", "192.168.1.150", "192.168.1.228", "192.168.1.121"]
 }
 
 variable "lan_interface" {
