@@ -1,7 +1,7 @@
 $ORIGIN onemc.world.
 $TTL 86400
 onemc.world.     IN      SOA     ns.onemc.world. contact.kigawa.net. (
-                2026082101      ; Serial
+                2026100402      ; Serial
                 10800           ; refresh
                 600             ; retry
                 86400           ; expire
@@ -12,3 +12,9 @@ ns.onemc.world.         IN A            10.0.0.103
 onemc.world.            IN A            10.0.0.241
 mc.onemc.world.         IN A            10.0.0.241
 build.onemc.world.      IN CNAME        mc.onemc.world.
+
+; Karmada(Inuyama / Soichiro / IONOS の 3 拠点。kigawa-net-k8s issue #268)。管理ネットワーク(WireGuard)内のみ。
+api.karmada.onemc.world.            IN A            10.0.0.242
+etcd-inuyama.karmada.onemc.world.   IN A            10.0.0.243
+etcd-soichiro.karmada.onemc.world.  IN A            10.255.10.12
+etcd-ionos.karmada.onemc.world.     IN A            172.31.254.2
