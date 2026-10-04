@@ -26,3 +26,9 @@ variable "gateways" {
   description = "宛先CIDRへのnext-hopとして使う、同一L2セグメント上のIP forwarding有効なノード群(通常はk8s1/k8s2/k8s4の自宅LAN側アドレス)。複数指定するとECMPで冗長化される"
   type        = list(string)
 }
+
+variable "extra_destination_cidrs" {
+  description = "destination_cidr に加えて、同じnext-hop(gateways)で到達させたい宛先CIDR。既定は空(追加なし)"
+  type        = list(string)
+  default     = []
+}
