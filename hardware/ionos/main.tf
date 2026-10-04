@@ -21,7 +21,14 @@ locals {
     [for index, prefix in var.inuyama_accepted_prefixes : format("ip prefix-list SOICHIRO-OUT seq %d permit %s", (index + 1) * 10, prefix)],
     ["ip prefix-list SOICHIRO-OUT seq 999 deny 0.0.0.0/0 le 32"],
   )
-  ionos_network_statements = [for prefix in var.ionos_advertised_prefixes : "  network ${prefix}"]
+  ionos_network_statements = concat(
+    [for prefix in var.ionos_advertised_prefixes : "  network ${prefix}"],
+    # k8s4(Inuyama)は、IONOS が許可する 10.0.0.0/24 を BGP で渡さない(k8s4 の export は 10.0.0.0/16 の完全一致)ため、
+    # IONOS の BGP テーブルには Inuyama のネットワークが無く、Soichiro に渡せない。
+    # IONOS 自身が持つカーネル経路(10.0.0.0/24 dev wg0、WireGuard の AllowedIPs 由来)を、Soichiro 向けにだけ発生させる。
+    # IONOS-OUT(Inuyama / Oracle 向け)は 10.0.0.0/24 を許可しないので、他のピアには漏れない。
+    var.soichiro_wireguard_public_key != "" ? [for prefix in var.inuyama_accepted_prefixes : "  network ${prefix}"] : [],
+  )
 
   k8s_wireguard_peers = concat(
     data.external.k8s1_wireguard_public_key.result.value != "" ? [{
