@@ -1,7 +1,7 @@
 $ORIGIN kigawa.net.
 $TTL 86400
 kigawa.net.     IN      SOA     ns.kigawa.net. contact.kigawa.net. (
-                2026082101      ; Serial
+                2026100401      ; Serial
                 10800           ; refresh
                 600             ; retry
                 86400           ; expire
@@ -13,6 +13,7 @@ kigawa.net.             IN A            10.0.0.100
 mc.kigawa.net.          IN A            10.0.0.241
 *.kigawa.net.           IN A            10.0.0.240
 k8s.kigawa.net.         IN A            10.0.0.100
+karmada.kigawa.net.     IN A            10.0.0.242
 mod.kigawa.net.         IN CNAME        mc.kigawa.net.
 oyu.kigawa.net.         IN CNAME        mc.kigawa.net.
 lunail.kigawa.net.      IN CNAME        mc.kigawa.net.
