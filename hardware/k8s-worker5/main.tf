@@ -167,3 +167,14 @@ module "cluster_route" {
   # 172.31.254.2/32: IONOS の Karmada etcd #3(WireGuard のアドレス)。Inuyama の etcd #1 が、メンバー間の通信に使う。
   extra_destination_cidrs = ["10.255.10.0/24", "172.31.254.2/32"]
 }
+
+# 内部ドメイン(kigawa.net など)を、kresd に向ける。ノードは、自宅ルーターで k8s.kigawa.net を引いており、
+# ルーターの上流(k8s2)が止まると、kubelet が API に繋がらなくなった(2026-10-04)。
+module "node_dns" {
+  source = "../modules/node-dns"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
