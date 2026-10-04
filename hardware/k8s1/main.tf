@@ -208,3 +208,14 @@ module "dual_stack_network" {
   secondary_cidr  = "${var.server_ip}/24"
   nameservers     = ["192.168.1.1", "10.0.0.1"]
 }
+
+# 内部ドメイン(kigawa.net など)を、kresd に向ける。ノードは、自宅ルーターで k8s.kigawa.net を引いており、
+# ルーターの上流(k8s2)が止まると、kubelet が API に繋がらなくなった(2026-10-04)。
+module "node_dns" {
+  source = "../modules/node-dns"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
