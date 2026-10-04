@@ -420,7 +420,10 @@ module "bgp" {
         neighbor_ip     = "172.31.254.2"
         neighbor_as     = var.ionos_bgp_as
         import_prefixes = ["172.31.254.0/24", "10.255.10.12/32"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路 + Soichiro の管理 IP
-        export_prefixes = ["10.0.0.0/16"]
+        # 10.0.0.0/24(クラスタ LAN)。bird のフィルタは完全一致(net = <prefix>)で、k8s4 の経路表に 10.0.0.0/16 という経路は
+        # 無いため、以前の "10.0.0.0/16" では、何も広告されていなかった(実機の `birdc show protocols all` で
+        # IONOS・Oracle のどちらも `0 exported`。2026-10-05)。
+        export_prefixes = ["10.0.0.0/24"]
       }
     ],
     # Oracle Cloud (計画中): oracle_wireguard_public_key が空文字の間はこのリストに
@@ -432,7 +435,10 @@ module "bgp" {
         neighbor_ip     = "172.31.253.2"
         neighbor_as     = var.oracle_bgp_as
         import_prefixes = ["10.255.10.12/32"] # Soichiro の管理 IP
-        export_prefixes = ["10.0.0.0/16"]
+        # 10.0.0.0/24(クラスタ LAN)。bird のフィルタは完全一致(net = <prefix>)で、k8s4 の経路表に 10.0.0.0/16 という経路は
+        # 無いため、以前の "10.0.0.0/16" では、何も広告されていなかった(実機の `birdc show protocols all` で
+        # IONOS・Oracle のどちらも `0 exported`。2026-10-05)。
+        export_prefixes = ["10.0.0.0/24"]
         # Soichiro への経路は、遅延の小さい Oracle 経由(実測 約 12ms)を優先する。
         # IONOS 経由は、Inuyama↔IONOS 約 157ms + IONOS↔Soichiro 約 149ms で、約 300ms 台。
         # IONOS 経由は、Oracle が使えないときの予備(既定の 100)。
