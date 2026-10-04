@@ -419,7 +419,7 @@ module "bgp" {
         local_as        = var.inuyama_asn
         neighbor_ip     = "172.31.254.2"
         neighbor_as     = var.ionos_bgp_as
-        import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路
+        import_prefixes = ["172.31.254.0/24", "10.255.10.12/32"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路 + Soichiro の管理 IP
         export_prefixes = ["10.0.0.0/16"]
       }
     ],
@@ -431,7 +431,7 @@ module "bgp" {
         local_as        = var.inuyama_asn
         neighbor_ip     = "172.31.253.2"
         neighbor_as     = var.oracle_bgp_as
-        import_prefixes = []
+        import_prefixes = ["10.255.10.12/32"] # Soichiro の管理 IP(予備の経路)
         export_prefixes = ["10.0.0.0/16"]
       }
     ] : []
