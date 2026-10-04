@@ -421,6 +421,8 @@ module "bgp" {
         neighbor_as     = var.ionos_bgp_as
         import_prefixes = ["172.31.254.0/24", "10.255.10.12/32"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路 + Soichiro の管理 IP
         export_prefixes = ["10.0.0.0/16"]
+        # IONOS 経由を、バックアップの Oracle 経由より優先する(Oracle は既定の 100)
+        local_pref = 200
       }
     ],
     # Oracle Cloud (計画中): oracle_wireguard_public_key が空文字の間はこのリストに

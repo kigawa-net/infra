@@ -8,7 +8,7 @@ locals {
 
   external_peer_blocks = join("\n\n", [
     for idx, peer in var.external_bgp_peers :
-    "protocol bgp external${idx} {\n  local ${peer.local_ip} as ${peer.local_as};\n  neighbor ${peer.neighbor_ip} as ${peer.neighbor_as};\n  ipv4 {\n    import filter {\n${join("\n", [for prefix in peer.import_prefixes : "      if net = ${prefix} then accept;"])}\n      reject;\n    };\n    export filter {\n${join("\n", [for prefix in peer.export_prefixes : "      if net = ${prefix} then accept;"])}\n      reject;\n    };\n  };\n}"
+    "protocol bgp external${idx} {\n  local ${peer.local_ip} as ${peer.local_as};\n  neighbor ${peer.neighbor_ip} as ${peer.neighbor_as};\n  ipv4 {\n    import filter {\n${join("\n", [for prefix in peer.import_prefixes : "      if net = ${prefix} then ${peer.local_pref != null ? "{ bgp_local_pref = ${peer.local_pref}; accept; }" : "accept;"}"])}\n      reject;\n    };\n    export filter {\n${join("\n", [for prefix in peer.export_prefixes : "      if net = ${prefix} then accept;"])}\n      reject;\n    };\n  };\n}"
   ])
 
   bird_conf = <<-CONF
