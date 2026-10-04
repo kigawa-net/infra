@@ -14,8 +14,8 @@ router bgp ${ionos_asn}
 %{ for peer in gateway_bgp_peers ~}
   neighbor ${peer.wg_address} activate
   neighbor ${peer.wg_address} soft-reconfiguration inbound
-  neighbor ${peer.wg_address} prefix-list INUYAMA-IN in
-  neighbor ${peer.wg_address} prefix-list IONOS-OUT out
+  neighbor ${peer.wg_address} prefix-list ${peer.in_list} in
+  neighbor ${peer.wg_address} prefix-list ${peer.out_list} out
 %{ endfor ~}
 %{ if ionos_network_statements != "" ~}
 ${ionos_network_statements}
@@ -24,6 +24,9 @@ ${ionos_network_statements}
 !
 ${inuyama_prefix_list}
 ${ionos_prefix_list}
+%{ if soichiro_prefix_list != "" ~}
+${soichiro_prefix_list}
+%{ endif ~}
 !
 line vty
 !
