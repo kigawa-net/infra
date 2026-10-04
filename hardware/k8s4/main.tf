@@ -654,3 +654,75 @@ module "dual_stack_network" {
   secondary_cidr  = "${var.server_ip}/24"
   nameservers     = ["192.168.1.1", "10.0.0.1"]
 }
+
+# Karmada の etcd #1(worker3 の Pod)から Soichiro(10.255.10.12)への peer / client 通信の戻りの経路を作る。
+# Pod の外向きの通信は flannel でノードのアドレス(192.168.1.130)に変換され、k8s1 / k8s2 / k8s4 を経由して
+# wg-oracle から出るため、Soichiro から見た送信元が 192.168.1.130 になる。Soichiro は 192.168.1.0/24 への経路を
+# 持たないので、SYN-ACK が戻れず、Inuyama のログに `i/o timeout` が出ていた(2026-10-05、tcpdump で確認)。
+# Soichiro 宛の etcd(tcp/2379,2380)だけを、WireGuard の出口で MASQUERADE し、送信元を k8s4 のトンネルのアドレス
+# (wg-oracle: 172.31.253.1、wg1: 172.31.254.1)にする。k8s4 の FORWARD は暗黙 ACCEPT のため、FORWARD は触らない。
+locals {
+  etcd_peer_masquerade_interfaces = [var.oracle_wireguard_interface, var.ionos_wireguard_interface]
+
+  etcd_peer_masquerade_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    IPT="iptables -w 5"
+    SRC="${var.etcd_peer_masquerade_source_cidr}"
+    %{for dst in var.etcd_peer_masquerade_destinations~}
+    %{for ifc in local.etcd_peer_masquerade_interfaces~}
+    $IPT -t nat -C POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j MASQUERADE 2>/dev/null \
+      || $IPT -t nat -A POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j MASQUERADE
+    %{endfor~}
+    %{endfor~}
+  SCRIPT
+}
+
+resource "null_resource" "etcd_peer_masquerade" {
+  depends_on = [null_resource.ionos_wireguard, null_resource.oracle_wireguard]
+
+  triggers = {
+    host         = var.server_ip
+    source       = var.etcd_peer_masquerade_source_cidr
+    destinations = join(",", var.etcd_peer_masquerade_destinations)
+    interfaces   = join(",", local.etcd_peer_masquerade_interfaces)
+    script_hash  = sha256(local.etcd_peer_masquerade_script)
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = local.etcd_peer_masquerade_script
+    destination = "/tmp/etcd-peer-masquerade.sh"
+  }
+
+  provisioner "file" {
+    content     = <<-UNIT
+      [Unit]
+      Description=MASQUERADE Karmada etcd traffic (worker LAN -> Soichiro) at the WireGuard egress
+      After=network-online.target wg-quick@${var.oracle_wireguard_interface}.service wg-quick@${var.ionos_wireguard_interface}.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/bin/etcd-peer-masquerade.sh
+
+      [Install]
+      WantedBy=multi-user.target
+    UNIT
+    destination = "/tmp/etcd-peer-masquerade.service"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash -c 'install -m 755 /tmp/etcd-peer-masquerade.sh /usr/local/bin/etcd-peer-masquerade.sh && install -m 644 /tmp/etcd-peer-masquerade.service /etc/systemd/system/etcd-peer-masquerade.service && systemctl daemon-reload && systemctl enable etcd-peer-masquerade.service && systemctl restart etcd-peer-masquerade.service && rm -f /tmp/etcd-peer-masquerade.sh /tmp/etcd-peer-masquerade.service'",
+    ]
+  }
+}
