@@ -180,7 +180,10 @@ variable "oracle_wireguard_endpoint" {
 variable "oracle_wireguard_allowed_ips" {
   description = "k8s4(inuyama)のoracle向けwg-oracleトンネルのAllowedIPs。OracleはIONOSと同様、soichiro等の他ピア宛トラフィックを中継するゲートウェイ役を担うため、ionos_wireguard_allowed_ipsと同じ理由でOracle自身の/32だけでなく172.31.253.0/24全体を含める必要がある(/32のみだと、Oracleが中継したsoichiro(172.31.253.13)宛の送信がWireGuard自体に'Required key not available'で拒否される。実機で確認・修正)"
   type        = list(string)
-  default     = ["172.31.253.0/24"]
+  # 10.255.10.12/32: Soichiro の管理 IP。k8s4 が BGP(Oracle 経由)で学習した経路で送れるよう、
+  # WireGuard の暗号鍵ルーティングにも含める(含めないと 'Required key not available' で拒否される。
+  # 2026-10-04、hardware/k8s4 の IONOS 向け ionos_wireguard_allowed_ips と同じ修正)。
+  default = ["172.31.253.0/24", "10.255.10.12/32"]
 }
 
 variable "oracle_bgp_as" {
