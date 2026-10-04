@@ -258,3 +258,15 @@ variable "lan_interface" {
   type        = string
   default     = "ens18"
 }
+
+variable "etcd_peer_masquerade_source_cidr" {
+  description = "Karmada の etcd #1(worker3 の Pod)の通信が、k8s4 に届くときの送信元(worker の LAN)。この送信元から Soichiro 宛の etcd の通信を、k8s4 の WireGuard の出口で MASQUERADE する"
+  type        = string
+  default     = "192.168.1.0/24"
+}
+
+variable "etcd_peer_masquerade_destinations" {
+  description = "MASQUERADE の対象にする宛先(Soichiro の管理 IP)。Soichiro は 192.168.1.0/24 への戻りの経路を持たないため、送信元を k8s4 の WireGuard のアドレスに書き換えないと、SYN-ACK が戻れない。IONOS(172.31.254.2)は、192.168.1.130/32・.150/32 を wg0 で持っているため、対象にしない"
+  type        = list(string)
+  default     = ["10.255.10.12"]
+}
