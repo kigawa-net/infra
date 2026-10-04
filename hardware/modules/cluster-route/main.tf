@@ -8,11 +8,17 @@ locals {
   # 経路が使えない場合の最後のフォールバックに留める。
   nexthops = join(" ", [for gw in var.gateways : "nexthop via ${gw} weight 1"])
 
-  route_script = <<-SCRIPT
+  route_script_base = <<-SCRIPT
     #!/bin/bash
     set -eo pipefail
     ip route replace ${var.destination_cidr} ${local.nexthops}
   SCRIPT
+
+  # クラスタLAN以外に、同じnext-hopで到達させたい宛先(例: 別拠点のKarmada VM 10.255.10.0/24)。
+  # 既定の空リストのときは、route_script_base と同一の文字列になる(既存のノードに影響しない)。
+  extra_routes = join("", [for cidr in var.extra_destination_cidrs : "ip route replace ${cidr} ${local.nexthops}\n"])
+
+  route_script = "${local.route_script_base}${local.extra_routes}"
 }
 
 locals {

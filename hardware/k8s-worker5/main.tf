@@ -161,4 +161,8 @@ module "cluster_route" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
   gateways        = ["192.168.1.103", "192.168.1.20", "192.168.1.120"]
+
+  # Karmada(Soichiro の VM)への経路。Inuyama の BGP(k8s4)が学習する 10.255.10.12/32 を含む範囲を、
+  # クラスタLANと同じ next-hop(k8s1/k8s2/k8s4)に向ける。
+  extra_destination_cidrs = ["10.255.10.0/24"]
 }
