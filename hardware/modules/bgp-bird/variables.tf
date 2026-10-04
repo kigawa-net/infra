@@ -65,6 +65,9 @@ variable "external_bgp_peers" {
     neighbor_as     = number
     import_prefixes = list(string)
     export_prefixes = list(string)
+    # import した経路に付ける local-pref(大きいほど優先)。null の間は設定しない(BIRD の既定値のまま)。
+    # 複数の外部ピアから同じ宛先を学習するとき(例: IONOS 経由と Oracle 経由)に、優先する経路を決める。
+    local_pref = optional(number)
   }))
   default = []
 }
