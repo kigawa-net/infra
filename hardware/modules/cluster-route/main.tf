@@ -47,6 +47,10 @@ resource "null_resource" "cluster_route" {
     gateways          = join(",", var.gateways)
     route_script_hash = sha256(local.route_script)
     timer_hash        = sha256(local.route_timer)
+    # 2026-10-04: systemctl start は、すでに active (exited) のユニットに対して何もしないため、
+    # 古い状態のまま固まったユニットでは、経路が再適用されず、タイマーも止まっていた。
+    # restart に直したので、既存のノードにも一度だけ再適用させる。
+    apply_version = "2"
   }
 
   connection {
@@ -85,7 +89,7 @@ resource "null_resource" "cluster_route" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && install -m 644 /tmp/cluster-route.timer /etc/systemd/system/cluster-route.timer && systemctl daemon-reload && systemctl enable cluster-route.service && systemctl enable --now cluster-route.timer && systemctl start cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service /tmp/cluster-route.timer'",
+      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && install -m 644 /tmp/cluster-route.timer /etc/systemd/system/cluster-route.timer && systemctl daemon-reload && systemctl enable cluster-route.service && systemctl enable --now cluster-route.timer && systemctl restart cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service /tmp/cluster-route.timer'",
     ]
   }
 }
