@@ -62,9 +62,9 @@ variable "wireguard_mtu" {
 }
 
 variable "wireguard_peer_allowed_ips" {
-  # 192.168.1.130/32, 192.168.1.150/32: GitHub Actions(ubuntu-latest)から
-  # k8s-worker3/k8s-worker5へSSH(terraform apply)するための経路(issue #193関連)。
-  # 全LANではなく2台の/32のみ。k8s4側(hardware/k8s4 ci_ssh_forward_targets)の
+  # 192.168.1.130/32, .150/32, .228/32, .121/32: GitHub Actions(ubuntu-latest)から
+  # k8s-worker3/5/1/4へSSH(terraform apply)するための経路(issue #193関連)。
+  # 全LANではなく4台の/32のみ。k8s4側(hardware/k8s4 ci_ssh_forward_targets)の
   # tcp/22限定のforward+MASQUERADEと、terraform.ymlのAllowedIPsと必ず揃えること。
   type = list(string)
   default = [
@@ -72,6 +72,8 @@ variable "wireguard_peer_allowed_ips" {
     "10.0.0.0/24",
     "192.168.1.130/32",
     "192.168.1.150/32",
+    "192.168.1.228/32", # k8s-worker1(2026-10-05: node-dns を IaC で適用するため)
+    "192.168.1.121/32", # k8s-worker4(同上)
   ]
 }
 
