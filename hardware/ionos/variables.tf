@@ -139,16 +139,15 @@ variable "k8s1_wireguard_address" {
   default     = "172.31.254.11"
 }
 
-variable "k8s1_wireguard_ssh_host" {
-  description = "k8s1 の SSH ホスト (空の場合はピア設定なし)。terraform applyがubuntu-latest(GitHub-hosted)上で実行される場合、専用WireGuardピア経由で到達できるのは10.0.0.0/24(クラスタLAN)のみで192.168.1.x(自宅LAN)には到達できないため、クラスタLANアドレスを使う"
+variable "k8s1_wireguard_public_key" {
+  description = "k8s1 の WireGuard 公開鍵(IONOS 用)。静的な値で持つ(公開鍵は変わらない公開情報)。空文字にすると、ピアと BGP neighbor を無効化する。以前は、CI から k8s1 に SSH して取得し、失敗すると空文字になって、ピアが黙って外れた(2026-10-05、k8s2 のダウン中の apply で、k8s2 のピアが外れ、CI の経路が壊れた)。値は、k8s1 の /etc/wireguard/publickey と、IONOS の wg show で一致を確認した"
   type        = string
-  default     = "10.0.0.103"
-}
+  default     = "HZ5NneXNytqEanGjJSLDE5ncHk440O2fXxUmXDyOKDw="
 
-variable "k8s1_wireguard_ssh_user" {
-  description = "k8s1 への SSH ユーザー"
-  type        = string
-  default     = "kigawa"
+  validation {
+    condition     = var.k8s1_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.k8s1_wireguard_public_key))
+    error_message = "k8s1_wireguard_public_key は、空文字か、WireGuard の公開鍵(44 文字の base64)にしてください。"
+  }
 }
 
 variable "k8s2_wireguard_address" {
@@ -157,16 +156,15 @@ variable "k8s2_wireguard_address" {
   default     = "172.31.254.12"
 }
 
-variable "k8s2_wireguard_ssh_host" {
-  description = "k8s2 の SSH ホスト (空の場合はピア設定なし)。terraform applyがubuntu-latest(GitHub-hosted)上で実行される場合、専用WireGuardピア経由で到達できるのは10.0.0.0/24(クラスタLAN)のみで192.168.1.x(自宅LAN)には到達できないため、クラスタLANアドレスを使う"
+variable "k8s2_wireguard_public_key" {
+  description = "k8s2 の WireGuard 公開鍵(IONOS 用)。静的な値で持つ(公開鍵は変わらない公開情報)。空文字にすると、ピアと BGP neighbor を無効化する。以前は、CI から k8s2 に SSH して取得し、失敗すると空文字になって、ピアが黙って外れた(2026-10-05、k8s2 のダウン中の apply で、k8s2 のピアが外れ、CI の経路が壊れた)。値は、k8s2 の /etc/wireguard/publickey と、IONOS の wg show で一致を確認した"
   type        = string
-  default     = "10.0.0.120"
-}
+  default     = "+PuboGsR5IW7ODJ+h7tKXfaeQeTZyC9dsGJPBKos+iY="
 
-variable "k8s2_wireguard_ssh_user" {
-  description = "k8s2 への SSH ユーザー"
-  type        = string
-  default     = "kigawa"
+  validation {
+    condition     = var.k8s2_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.k8s2_wireguard_public_key))
+    error_message = "k8s2_wireguard_public_key は、空文字か、WireGuard の公開鍵(44 文字の base64)にしてください。"
+  }
 }
 
 variable "ci_runner_wireguard_public_key" {
