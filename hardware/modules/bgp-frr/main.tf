@@ -52,6 +52,19 @@ locals {
     }
     trap cleanup EXIT
 
+    # 冪等性: FRR が既に動いていて、設定と bgpd=yes が同一なら、停止・再起動しない。
+    # zebra は停止時に自分の経路を消すため、不要な再起動は BGP の切断と経路の一時的な消失を招く
+    # (CI から ssh で apply している最中に、戻りの経路を失うことがある)。手動で切り替えた
+    # ノードに、あとから Terraform を追随させるときも、再起動なしで済む。
+    already_running=false
+    if systemctl is-active --quiet frr.service \
+      && cmp -s /tmp/frr-module.conf /etc/frr/frr.conf \
+      && grep -q '^bgpd=yes' /etc/frr/daemons; then
+      already_running=true
+      echo 'FRR is already running with the same configuration; skipping install/restart'
+    fi
+
+    if ! "$already_running"; then
     # Never override an administrator's mask. Block package postinst auto-start
     # until configuration is installed and BIRD's listener has disappeared.
     case "$(systemctl is-enabled frr.service 2>/dev/null || true)" in
@@ -87,6 +100,8 @@ locals {
     fi
     # zebra is always enabled by the FRR service; no zebra=yes toggle needed.
     install -o frr -g frr -m 0640 /tmp/frr-module.conf /etc/frr/frr.conf
+    fi
+
     ip addr del 127.0.0.100/32 dev lo 2>/dev/null || true
     rm -f /etc/netplan/99-bgp-loopback.yaml
     install -m 0755 /tmp/frr-local-vip-setup.sh /usr/local/bin/local-vip-setup.sh
@@ -95,6 +110,7 @@ locals {
     systemctl enable --now local-vip.service
     systemctl restart local-vip.service
 
+    if ! "$already_running"; then
     # Only an explicit migration request may remove the BIRD manifest.
     %{if var.stop_bird~}
     rm -f /etc/kubernetes/manifests/bird.yaml
@@ -115,6 +131,7 @@ locals {
     masked_by_setup=false
     systemctl enable --now frr
     systemctl restart frr
+    fi
     SCRIPT
 }
 
