@@ -24,7 +24,10 @@ helper 変数は互換性のため残すが、**非空値は validation で拒�
 
 ## 未決事項と推奨
 
-- **direct / kernel learn:** zebra の OS 経路認識と BGP 再広告は別。現状 `redistribute connected` / `redistribute kernel` は入れない。BIRD で広告していた直結/kernel 経路が減る可能性がある。必要 prefix を棚卸しし、WireGuard や他ノード由来の経路を混ぜない許可リスト付き再配布を検証してから追加する。
+- **direct / kernel learn(実機で棚卸し済み、2026-10-05):** k8s1 / k8s2 / k8s4 の BIRD を `birdc show route export <peer>` で確認した。
+  - **`redistribute connected` は必須**: k8s4 が IONOS / Oracle へ広告するのは `10.0.0.0/24`(`direct1` = 直結)だけ。API VIP `10.0.0.100/32`(kube-vip 保持ノードのインターフェースに直結として存在)と、ゲートウェイ VIP `10.0.0.254/32`(keepalived)も `direct1` として iBGP に載っている。再配布しないと、外部への広告と VIP の伝搬が止まる。→ `redistribute_connected_prefixes`(許可リスト、完全一致)で再配布する。ノードごとの指定は `["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32"]`。
+  - **`redistribute kernel` は入れない**: BIRD は kernel の経路(flannel の `172.16.x.0/24`、デフォルト経路 `0.0.0.0/0 via 192.168.1.1`)も iBGP に流している。その結果、k8s1 では `0.0.0.0/0` が k8s4 経由(BGP の優先度 100 が kernel の 10 に勝つ)、`172.16.x.0/24` が flannel ではなく BGP 経由になっている。これは意図した設計ではなく、#241 の「BGP からデフォルト経路を配布しない」とも合わない。FRR では流さない。**移行すると、この副作用は消える**ので、移行後に各ノードのデフォルト経路が `192.168.1.1` 直行になること、flannel 経由で Pod 宛が届くことを確認する。
+  - **要検証**: `192.168.1.53/32`(k8s4 の `lo`)と `172.31.254.11/32` / `172.31.254.12/32`(k8s1 / k8s2 の `wg1` のアドレス)は、`direct1` として iBGP に載っている。必要かどうかは未確認で、今回の許可リストには入れていない。`172.31.254.0/30`(k8s4 の `wg1`)も同様。
 - **kernel export filter:** BIRD の `172.31.254.2/32` 除外に対応して zebra の `ip protocol bgp route-map` で exact `/32` を拒否し、その他を許可する。iBGP の広告拒否とは別の kernel 導入制御。対象 FRR で実際に FIB へ入らず他の BGP 経路は入ることを接続前に検証する。static helper は別 protocol なので、この BGP filter だけでは止まらない。[zebra filtering](https://docs.frrouting.org/en/latest/zebra.html#zebra-route-filtering)
 - **helper:** `ip route 172.31.254.2/32 <iface>` を機械的に移すと zebra が kernel に入れ、より詳細な `/32` が中継経路を上書きし、WireGuard AllowedIPs/送信元検査で返信を落とし得る。まず helper を作らず既存経路で解決できるか確認する。`hardware/k8s2/main.tf` の `extra_post_up` は既に `ip route add 172.31.254.2/32 dev %i` を持つが、実ホストの存在・影響は未確認。k8s4 の直結 `/30`、他ノードの next-hop 書換や別解決方式も比較し、必要なら static 向け zebra filter を含め検証する。FRR 内だけの helper を推測で実装しない。
 - **停止時の経路:** BIRD の `persist` と zebra の既定動作は同じではない。zebra は `--retain` を指定しない限り終了時に自身の経路を削除する。停止・再起動・ロールバック時の残存経路と収束を確認する。[zebra 起動オプション](https://docs.frrouting.org/en/latest/zebra.html#invoking-zebra)

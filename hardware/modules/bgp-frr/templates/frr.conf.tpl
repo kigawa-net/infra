@@ -17,6 +17,16 @@ route-map KUBE-VIP-IN permit 10
  set ip next-hop ${bgp_router_id}
 route-map KUBE-VIP-OUT deny 10
 !
+! BIRD の protocol direct 相当は、許可リスト方式で直結経路だけを再配布する。
+%{ for idx, prefix in redistribute_connected_prefixes ~}
+ip prefix-list CONNECTED-ALLOW seq ${(idx + 1) * 10} permit ${prefix}
+%{ endfor ~}
+%{ if length(redistribute_connected_prefixes) > 0 ~}
+route-map CONNECTED-TO-BGP permit 10
+ match ip address prefix-list CONNECTED-ALLOW
+%{ endif ~}
+route-map CONNECTED-TO-BGP deny 100
+!
 %{ for idx, peer in external_bgp_peers ~}
 %{ for pidx, prefix in peer.import_prefixes ~}
 ip prefix-list EXT-${idx}-IN seq ${(pidx + 1) * 10} permit ${prefix}
@@ -65,6 +75,9 @@ router bgp ${bgp_local_as}
 %{ for vip in advertised_vips ~}
   network ${vip}/32
 %{ endfor ~}
+%{ if length(redistribute_connected_prefixes) > 0 ~}
+  redistribute connected route-map CONNECTED-TO-BGP
+%{ endif ~}
 %{ for peer in bgp_peers ~}
   neighbor ${peer} activate
   neighbor ${peer} next-hop-self

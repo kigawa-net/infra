@@ -51,6 +51,18 @@ variable "advertised_vips" {
   default     = []
 }
 
+variable "redistribute_connected_prefixes" {
+  description = <<-EOT
+    直結(connected)経路のうち、BGPへ再配布するprefixの完全一致リスト。
+    BIRDの protocol direct は直結経路を全てBGPテーブルへ入れていたが、FRRでは許可リスト方式にする。
+    実機(2026-10-05)で必要と確認したもの: 10.0.0.0/24(k8s4がIONOS/Oracleへ広告)、
+    10.0.0.100/32(kube-vipのAPI VIP。保持ノードのインターフェースに直結として存在する)、
+    10.0.0.254/32(keepalivedのゲートウェイVIP)。
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "ionos_nexthop_helper_interface" {
   description = "互換性のため保持。FRRでのnext-hop専用経路の扱いは未決のため空文字列のみ許可する"
   type        = string
