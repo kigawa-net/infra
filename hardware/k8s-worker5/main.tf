@@ -160,11 +160,11 @@ module "cluster_route" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
-  # 2026-10-05: k8s2(192.168.1.20)がダウンしている間は外す(復旧したら元に戻す: issue #228)。
-  # ECMP のハッシュ方式が既定(fib_multipath_hash_policy=0、宛先と送信元のアドレスのみ)のため、
-  # worker3 から API の VIP(10.0.0.100)への通信は、常に同じゲートウェイに流れ、それが k8s2 だと
-  # `no route to host`(ARP が INCOMPLETE)で、kubelet が API に繋がらず、ノードが NotReady になった。
-  gateways = ["192.168.1.103", "192.168.1.120"]
+  # k8s1 / k8s2 / k8s4 の 3 台。ECMP のハッシュ方式が既定(fib_multipath_hash_policy=0、宛先と送信元のアドレスのみ)のため、
+  # あるゲートウェイがダウンすると、そこに振られる通信(worker3 -> API の VIP 10.0.0.100 など)が、常にそこへ流れ続け、
+  # `no route to host` になる(2026-10-05、k8s2 のダウン中に worker3 が NotReady になった。k8s2 の復旧後に戻した: issue #228)。
+  # 死んだゲートウェイを自動で外す仕組みは、まだ無い(#232 と合わせて検討)。ゲートウェイが長く止まるときは、ここから外すこと。
+  gateways = ["192.168.1.103", "192.168.1.20", "192.168.1.120"]
 
   # Karmada(Soichiro の VM)への経路。Inuyama の BGP(k8s4)が学習する 10.255.10.12/32 を含む範囲を、
   # クラスタLANと同じ next-hop(k8s1/k8s2/k8s4)に向ける。
