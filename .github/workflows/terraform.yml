@@ -90,8 +90,10 @@ jobs:
 
             HARDWARE_MODULE_CONSUMERS=""
             for shared_module in $CHANGED_SHARED_MODULES; do
+              # まだどのルートからも使われていない新規モジュール(consumer なし)でも、
+              # grep -v が終了コード 1 を返して bash -e でジョブ全体が落ちないよう || true を付ける。
               CONSUMER_FILES=$(grep -rlE "source[[:space:]]*=[[:space:]]*\"\.\./modules/${shared_module}\"" hardware --include="*.tf" \
-                | grep -v '^hardware/modules/')
+                | grep -v '^hardware/modules/' || true)
               for f in $CONSUMER_FILES; do
                 rel="${f#hardware/}"
                 mod="${rel%%/*}"
@@ -110,7 +112,7 @@ jobs:
             HARDWARE_ZONE_CONSUMERS=""
             for zone_file in $CHANGED_ZONE_FILES; do
               CONSUMER_FILES=$(grep -rlE "zones/${zone_file}" hardware --include="*.tf" \
-                | grep -v '^hardware/zones/')
+                | grep -v '^hardware/zones/' || true)
               for f in $CONSUMER_FILES; do
                 rel="${f#hardware/}"
                 mod="${rel%%/*}"
