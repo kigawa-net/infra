@@ -13,10 +13,12 @@ route-map BGP-TO-KERNEL deny 10
 route-map BGP-TO-KERNEL permit 20
 ip protocol bgp route-map BGP-TO-KERNEL
 !
+%{ if enable_kube_vip_peer ~}
 route-map KUBE-VIP-IN permit 10
  set ip next-hop ${bgp_router_id}
 route-map KUBE-VIP-OUT deny 10
 !
+%{ endif ~}
 ! BIRD の protocol direct 相当は、許可リスト方式で直結経路だけを再配布する。
 %{ for idx, prefix in redistribute_connected_prefixes ~}
 ip prefix-list CONNECTED-ALLOW seq ${(idx + 1) * 10} permit ${prefix}
@@ -59,10 +61,12 @@ router bgp ${bgp_local_as}
  neighbor ${peer} remote-as ${bgp_local_as}
  neighbor ${peer} update-source ${bgp_router_id}
 %{ endfor ~}
+%{ if enable_kube_vip_peer ~}
  neighbor 127.0.0.1 remote-as ${kube_vip_as}
  neighbor 127.0.0.1 ebgp-multihop
  neighbor 127.0.0.1 update-source 127.0.0.2
  neighbor 127.0.0.1 passive
+%{ endif ~}
 %{ for peer in external_bgp_peers ~}
  neighbor ${peer.neighbor_ip} remote-as ${peer.neighbor_as}
  neighbor ${peer.neighbor_ip} update-source ${peer.local_ip}
@@ -83,9 +87,11 @@ router bgp ${bgp_local_as}
   neighbor ${peer} next-hop-self
   neighbor ${peer} route-map IBGP-OUT out
 %{ endfor ~}
+%{ if enable_kube_vip_peer ~}
   neighbor 127.0.0.1 activate
   neighbor 127.0.0.1 route-map KUBE-VIP-IN in
   neighbor 127.0.0.1 route-map KUBE-VIP-OUT out
+%{ endif ~}
 %{ for idx, peer in external_bgp_peers ~}
   neighbor ${peer.neighbor_ip} activate
   neighbor ${peer.neighbor_ip} route-map EXT-${idx}-IN in

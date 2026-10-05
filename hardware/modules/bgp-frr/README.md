@@ -17,10 +17,30 @@ helper 変数は互換性のため残すが、**非空値は validation で拒�
 
 ## BIRD との差分・採用方針
 
-- iBGP は全受信、helper `/32` 以外を広告し next-hop-self。kube-vip は loopback の passive multihop、受信 next-hop 書換、全広告拒否。外部ピアは ge/le なし prefix-list で完全一致し、空リストは route-map の全拒否になる。全 eBGP に双方向ポリシーがあるため `bgp ebgp-requires-policy` を維持する。
+- iBGP は全受信、helper `/32` 以外を広告し next-hop-self。kube-vip との BGP は、既定で**出力しない**(`enable_kube_vip_peer = false`。下の「隔離環境での検証結果」参照)。外部ピアは ge/le なし prefix-list で完全一致し、空リストは route-map の全拒否になる。全 eBGP に双方向ポリシーがあるため `bgp ebgp-requires-policy` を維持する。
 - 外部 `local_as` がプロセス AS と異なる場合は `local-as ... no-prepend replace-as`。余分なプロセス AS の付加を避ける判断で、eBGP 専用。AS loop 判定や複数 local-AS 間の再広告は BIRD の独立 protocol と完全同一とは限らず、実経路で確認する。[FRR BGP](https://docs.frrouting.org/en/latest/bgp.html)
 - VIP は loopback `/32` と `network <vip>/32`、`bgp network import-check` を使い、blackhole/static route を追加しない。不要な blackhole による転送破壊を避ける一方、zebra RIB に同じ経路がないと広告されず、BIRD の常設 static と違ってアドレス消失時に広告停止し得る。loopback 経路の認識は対象版で要検証。VIP 削除時に古い loopback アドレスが残る挙動は既存スクリプトと同じ。
 - syslog 出力、IPv4 unicast の明示的な有効化/ポリシー設定。neighbor のセッション属性は FRR の文法に従って router 階層に置く。設定変更は systemd restart のため全セッションが一時切断される。
+
+## 隔離環境での検証結果(2026-10-05、Docker 上の FRR 8.4.7 / 10.2.1 と gobgp)
+
+k8s4 相当の構成(iBGP 1、IONOS 役 1、kube-vip 役 1)で経路交換を確認した。ノードには触れていない。
+
+確認できたこと:
+- 外部ピアへは、許可リストの `10.0.0.0/24` 相当だけが広告された(VIP や iBGP の経路は出ない)。
+- 外部ピアの import は許可リストが効き、許可外(`8.8.8.0/24`)は iBGP の仲間にも届かない。
+- iBGP の仲間には、直結の再配布(`10.0.0.0/24` 相当)、`network` の VIP `/32`、IONOS から学んだ経路(next-hop は自ノード = next-hop-self)が届いた。
+- `network <vip>/32` は、`lo` にそのアドレスがあれば valid / best になる(アドレスが無いと広告されない)。
+
+**確認できたこと(悪い方): 同一ホストの kube-vip と FRR の BGP は、今の構成では動かない。**
+- `127.0.0.2`(BIRD での自分側アドレス)は、FRR では BGP の自分側アドレスに使えない: `nexthop_set failed, resetting connection - intf (Unknown)`。`lo` に `127.0.0.2/32` を足しても同じ。
+- 自ノードのインターフェースにあるアドレスは、neighbor に指定できない: `Can not configure the local system as neighbor`。
+- 動的ネイバー(`bgp listen range`)と `lo` の非 127 アドレス(例: `10.99.99.1` / `.2`)なら、セッションは確立する。ただし、kube-vip(gobgp)が送る next-hop は自ノードのアドレスなので、更新は破棄される: `DENIED due to: martian or self next-hop`。`bgp allow-martian-nexthop` を足しても解消しない。
+- 結論: kube-vip の BGP 経由の広告は、FRR 側では受け取れない。API VIP `10.0.0.100/32` は、BIRD の経路表でも、保持ノードのインターフェースに**直結**として存在した。`redistribute_connected_prefixes` で伝搬できる想定(**要検証**)。
+
+未検証:
+- kube-vip が、BGP のピアがつながらない状態でも、VIP を保持ノードのインターフェースに付けるか。付けないなら、API VIP は届かなくなる。**ステップ 2 の前に、実機に近い環境で必ず確認する**。
+- zebra が BGP の経路をカーネルに入れるか。検証用コンテナでは、zebra が「FIB に入れた」と表示するのに、`ip route` に反映されなかった(コンテナの権限の制約と思われ、設定の問題とは断定できない)。`ip protocol bgp route-map BGP-TO-KERNEL` の動作も、同じ理由で未検証。
 
 ## 未決事項と推奨
 

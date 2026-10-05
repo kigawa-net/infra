@@ -45,6 +45,21 @@ variable "kube_vip_as" {
   default     = 65001
 }
 
+variable "enable_kube_vip_peer" {
+  description = <<-EOT
+    同一ホストの kube-vip と BGP を張る(127.0.0.2 <-> 127.0.0.1)設定を出力する。既定は無効。
+    隔離環境の FRR 8.4.7 での検証(2026-10-05)で、この構成は動かないと分かった:
+    - 127.0.0.x は BGP の自分側アドレスに使えない(nexthop_set failed, intf Unknown)。
+    - 自ノードのインターフェースにあるアドレスは neighbor に指定できない。
+    - 動的ネイバー(bgp listen range)+ lo の非127アドレスなら確立するが、kube-vip が送る next-hop は
+      自ノードのアドレスのため、受信時に "martian or self next-hop" で破棄される(allow-martian-nexthop でも解消しない)。
+    API VIP(10.0.0.100/32)は、保持ノードのインターフェースに直結として存在するため、
+    redistribute_connected_prefixes で伝搬する想定。READMEの未決事項を参照。
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "advertised_vips" {
   description = "BGP経由で広告するVIPのIPリスト (各ノードのloopbackに追加してnetworkで広告)"
   type        = list(string)

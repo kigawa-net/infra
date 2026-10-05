@@ -16,6 +16,7 @@ locals {
     external_bgp_peers = var.external_bgp_peers
 
     redistribute_connected_prefixes = var.redistribute_connected_prefixes
+    enable_kube_vip_peer            = var.enable_kube_vip_peer
   })
 
   # Keep these shared files compatible with bgp-bird.
