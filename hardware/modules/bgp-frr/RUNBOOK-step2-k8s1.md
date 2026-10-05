@@ -97,6 +97,19 @@ cp /root/bird.yaml.bak /etc/kubernetes/manifests/bird.yaml   # kubelet が BIRD 
 ```
 TCP 179 が FRR から空いたことを確認してから BIRD を戻す。戻したら、作業前の記録(手順 1)と比べる。Terraform の変更も戻す(`module "bgp"` を復活)。
 
+## 実施結果(k8s1、2026-10-06 JST)
+
+手動で切り替えた(apt の FRR 8.4.4、Ubuntu 24.04)。所要は FRR の起動から iBGP 2 本の確立まで約 1.5〜3 分。切り替えは成功し、自動ロールバックは取り消した。
+
+- **zebra は BGP の経路をカーネルに入れる**(`proto bgp metric 20`)。ただし、BIRD が `persist` で残した経路(`proto bird`、距離 0)が先に選ばれ、iBGP(距離 200)は FIB に入らなかった。`ip route flush proto bird` で残留経路 24 件を消した直後に、zebra が入れ直した。**手順 4-5 の flush は必須**。
+- 作業前に、カーネルにあった `172.31.254.0/24 via 10.0.0.140`、`10.0.0.100 via 10.0.0.120` などは、すべて zebra が同等の経路を入れた。
+- BIRD 時代にあった、BGP 由来の重複経路(`default via 10.0.0.140`、flannel の `172.16.x.0/24` の二重登録)が消えた。デフォルト経路は `192.168.1.1`、flannel は `flannel.1` 経由のまま。
+- `redistribute connected` は効いた: `10.0.0.0/24`、`10.0.0.254/32` が自ノード起点、`10.0.0.53/32` は `network` で広告された。API VIP `10.0.0.100/32` は k8s2(リーダー)の直結経路が、iBGP 経由で届いた。
+- k8s4(BIRD)側から見ても、k8s1 は Established で、k8s1 起点の経路が届いている。
+- IONOS の next-hop 補助経路は不要だった(`172.31.254.2/32 dev wg1` はカーネルに既にある)。
+- DNS(`@192.168.1.103` → `10.0.0.100`)、API(`/livez` 200)、WireGuard の handshake、`kubectl get nodes`(全 Ready)は正常。
+- 一時的な注意: k8s4 との iBGP は、FRR 起動から約 1.5 分 `Active` だった(BIRD 側の再接続待ち)。
+
 ## 7. 未検証の前提(実機で初めて分かること)
 
 - zebra が BGP の経路をカーネルに入れるか(隔離環境では確認できなかった)。
