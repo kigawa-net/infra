@@ -26,3 +26,21 @@ variable "github_app_private_key" {
   type        = string
   sensitive   = true
 }
+
+variable "keycloak_url" {
+  description = "Keycloak base URL"
+  type        = string
+  default     = "https://user.kigawa.net"
+}
+
+variable "keycloak_realm" {
+  description = "Keycloak realm ID"
+  type        = string
+  default     = "kigawa-net"
+}
+
+variable "keycloak_admin_password" {
+  description = "Keycloak admin password (injected by run.sh from BWS)"
+  type        = string
+  sensitive   = true
+}
