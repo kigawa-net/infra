@@ -39,7 +39,9 @@ k8s4 相当の構成(iBGP 1、IONOS 役 1、kube-vip 役 1)で経路交換を確
 - 結論: kube-vip の BGP 経由の広告は、FRR 側では受け取れない。API VIP `10.0.0.100/32` は、BIRD の経路表でも、保持ノードのインターフェースに**直結**として存在した。`redistribute_connected_prefixes` で伝搬できる想定(**要検証**)。
 
 未検証:
-- kube-vip が、BGP のピアがつながらない状態でも、VIP を保持ノードのインターフェースに付けるか。付けないなら、API VIP は届かなくなる。**ステップ 2 の前に、実機に近い環境で必ず確認する**。
+- ~~kube-vip が、BGP のピアがつながらない状態でも、VIP を保持ノードのインターフェースに付けるか。~~ **ソース(kube-vip v0.8.9、`pkg/cluster/service.go` の `vipService`)で確認済み**: リーダーになると、まず `AddIP(false)` で VIP をインターフェースに付与し、そのあとで `bgpServer.AddHost` を呼ぶ。ピアが設定されていて接続できないだけなら、`AddHost` は成功し、kube-vip は止まらず VIP を保持する。リーダーを失うと `DeleteIP` で VIP が消え、直結経路も消えるので、FRR の広告も取り下げられる。
+  - **注意**: ピアの環境変数(`bgp_peeraddress`)を消してはいけない。`NewBGPServer` はピアが 0 件だとエラーを返し、`bgpServer` が `nil` のまま `AddHost` が呼ばれて落ちる可能性がある。現状の `bgp_peeraddress=127.0.0.2` は残す(FRR 側は接続を拒否するだけで、kube-vip のログが増えるのみ)。
+  - 実機では未確認。ステップ 2 の k8s1 の切り替えで、VIP が保持され、`redistribute connected` で広告されることを確認する。
 - zebra が BGP の経路をカーネルに入れるか。検証用コンテナでは、zebra が「FIB に入れた」と表示するのに、`ip route` に反映されなかった(コンテナの権限の制約と思われ、設定の問題とは断定できない)。`ip protocol bgp route-map BGP-TO-KERNEL` の動作も、同じ理由で未検証。
 
 ## 未決事項と推奨
