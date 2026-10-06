@@ -17,11 +17,16 @@ locals {
     }
     CONF
 
-  # ヘルスチェック(IP 転送が有効で、BGP が :179 で待ち受け中)。BIRD でも FRR でも動く条件にしている。
+  # ヘルスチェック(IP 転送が有効で、BGP が :179 で待ち受け中で、kube-proxy が healthz に 200 を返す)。
+  # BIRD でも FRR でも動く条件にしている。
+  # kube-proxy を見るのは、worker の 10.0.0.0/24 宛の通信が、この VIP の MASTER 1 台に集まるため(#241、#250)。
+  # MASTER で kube-proxy だけが壊れると、サービスの VIP(kube-ipvs0 / lo)を受けて振り分けられず、
+  # VIP が移らないまま worker の DNS・API などが途切れる(#252)。curl のタイムアウトは interval(2 秒)より短くする。
   check_core_router_script = <<-SCRIPT
     #!/bin/bash
     [ "$(sysctl -n net.ipv4.ip_forward)" = "1" ] || exit 1
     ss -H -ltn 'sport = :179' | grep -q . || exit 1
+    [ "$(curl -s -m 1 -o /dev/null -w '%%{http_code}' http://127.0.0.1:10256/healthz)" = "200" ] || exit 1
     SCRIPT
 
   # vrrp_script を使うには enable_script_security が必要(無いと keepalived が SECURITY VIOLATION で拒否する)。
