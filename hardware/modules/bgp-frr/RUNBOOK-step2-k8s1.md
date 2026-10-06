@@ -110,6 +110,17 @@ TCP 179 が FRR から空いたことを確認してから BIRD を戻す。戻�
 - DNS(`@192.168.1.103` → `10.0.0.100`)、API(`/livez` 200)、WireGuard の handshake、`kubectl get nodes`(全 Ready)は正常。
 - 一時的な注意: k8s4 との iBGP は、FRR 起動から約 1.5 分 `Active` だった(BIRD 側の再接続待ち)。
 
+## 実施結果(k8s2、2026-10-06 JST)
+
+k8s1 と同じ手順(stage → 自動ロールバックの仕掛け → cutover → flush → verify → 取り消し)で、手動で切り替えた。所要は約10分。切り替えは成功し、自動ロールバックは取り消した。
+
+- iBGP は、FRR 起動から k8s1 と 56 秒、k8s4 と 1 秒で Established(k8s1 のときの「k8s4 が約 1.5 分 Active」は、今回は出なかった)。
+- `flush` で `proto bird` の経路 21 件を消した直後に、zebra が BGP の経路 8 件をカーネルに入れた(`172.31.254.0/24`、`10.0.0.100`、`10.0.0.254` など)。
+- 補助経路は不要だった(`172.31.254.2 dev wg1` は、`wireguard` の `extra_post_up` で既にある)。
+- IONOS との外部ピアは、従来どおり確立しない(#238。BIRD のときから `Idle`)。FRR は `Active` のまま。`local_as` が `bgp_local_as` と異なる(65010 と 65000)ので、`local-as 65010 no-prepend replace-as` が出力される。
+- k8s1 の FRR から見て、k8s2 は Established。DNS、API、全ノード Ready は正常。
+- keepalived の `VI_CORE` のヘルスチェックが、BIRD が止まってから FRR が `:179` を持つまでの約 2 秒だけ失敗した(k8s2 は BACKUP で、MASTER は k8s1 のままなので影響なし)。**MASTER のノードを切り替えるときは、VIP が一瞬 BACKUP に移りうる**ので、k8s4 は VRRP の BACKUP であることを確認してから切り替える。
+
 ## 7. 未検証の前提(実機で初めて分かること)
 
 - zebra が BGP の経路をカーネルに入れるか(隔離環境では確認できなかった)。
