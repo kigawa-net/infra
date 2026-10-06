@@ -629,6 +629,15 @@ module "keepalived" {
   priority          = 90
   virtual_ip        = var.gateway_vip
   state             = "BACKUP"
+
+  # Core Router VIP (#241 Phase 2)。LAN(192.168.1.0/24)側の仮想コアルーターの next-hop。
+  extra_instances = [{
+    name              = "VI_CORE"
+    virtual_router_id = 2
+    priority          = 90
+    state             = "BACKUP"
+    virtual_ip        = var.core_router_vip
+  }]
 }
 
 module "node_exporter" {

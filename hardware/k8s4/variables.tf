@@ -91,6 +91,12 @@ variable "gateway_vip" {
   default     = "10.0.0.254"
 }
 
+variable "core_router_vip" {
+  description = "Core Router VIP (#241)。LAN(192.168.1.0/24)側の仮想コアルーターの next-hop。prefix 付き"
+  type        = string
+  default     = "192.168.1.200/24"
+}
+
 variable "inuyama_wireguard_private_key_bitwarden_id" {
   type    = string
   default = "549fe18f-afa9-477e-b4ce-b45f0033e8f2"
