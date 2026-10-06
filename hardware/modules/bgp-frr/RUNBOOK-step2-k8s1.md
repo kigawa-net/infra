@@ -121,6 +121,18 @@ k8s1 と同じ手順(stage → 自動ロールバックの仕掛け → cutover 
 - k8s1 の FRR から見て、k8s2 は Established。DNS、API、全ノード Ready は正常。
 - keepalived の `VI_CORE` のヘルスチェックが、BIRD が止まってから FRR が `:179` を持つまでの約 2 秒だけ失敗した(k8s2 は BACKUP で、MASTER は k8s1 のままなので影響なし)。**MASTER のノードを切り替えるときは、VIP が一瞬 BACKUP に移りうる**ので、k8s4 は VRRP の BACKUP であることを確認してから切り替える。
 
+## 実施結果(k8s4、2026-10-06 JST)
+
+k8s1・k8s2 と同じ手順で、手動で切り替えた。所要は約10分。外部ピア(IONOS・Oracle)を持つノードで、4 つのセッション(iBGP 2 + eBGP 2)が、FRR の起動から 2 秒で Established になった。自動ロールバックは取り消した。
+
+- 外部ピアへの広告は、IONOS・Oracle ともに `10.0.0.0/24` だけ(切り替え前の BIRD と同じ。`redistribute connected` の許可リストと `export_prefixes` の完全一致が効いた)。
+- 受信: IONOS から `172.31.254.0/24`(ベスト)と `10.255.10.12/32`、Oracle から `10.255.10.12/32`。`10.255.10.12/32` は、Oracle 経由が `local_pref 200` でベスト(valid)。
+- **IONOS 経由の `10.255.10.12/32` は、next-hop `172.31.254.15`(IONOS 配下の別ピア)が到達不能(`inaccessible`)で無効**。Oracle が使えないときの予備経路にならない。BIRD のときも、IONOS 経由の経路は k8s4 の経路表に出ておらず(`external1` のみ)、新しい劣化ではないが、予備が成立していない点は #238 で扱う。
+- Oracle 経由の `10.255.10.12/32` は、カーネルには `proto bgp` として入らない。`dev wg-oracle` の直結経路(`wg-quick` の AllowedIPs 由来、距離 0)が先に選ばれるため。転送先は同じ。
+- `flush` で BIRD の残留経路 12 件を消した後、zebra が BGP の経路を入れた(`172.31.254.0/24 via 172.31.254.2 dev wg1`、API VIP など)。
+- k8s1・k8s2 から見て、k8s4 は Established(7 経路)。k8s1 のカーネルに、`10.255.10.12`、`172.31.253.0/24`、`172.31.254.0/30`、`172.31.254.0/24`、`192.168.1.53` の経路が、k8s4 経由で残った。減ったのは、BIRD が流していた不要な経路(flannel の `/32` など)。
+- DNS、API、WireGuard の handshake、全ノード Ready は正常。k8s4 は VRRP の BACKUP で、VIP には影響なし。
+
 ## 7. 未検証の前提(実機で初めて分かること)
 
 - zebra が BGP の経路をカーネルに入れるか(隔離環境では確認できなかった)。

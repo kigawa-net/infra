@@ -399,9 +399,11 @@ resource "null_resource" "oracle_wireguard" {
   }
 }
 
+# BIRD から FRR へ移行する (#210)。k8s1・k8s2 は移行済み。k8s4 は外部ピア(IONOS・Oracle)を持つので最後。
+# 手順は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。マージ前に必ず手順書を読み、合意した時間に行うこと。
 module "bgp" {
   depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard, null_resource.oracle_wireguard]
-  source     = "../modules/bgp-bird"
+  source     = "../modules/bgp-frr"
 
   host            = var.server_ip
   ssh_user        = var.ssh_user
@@ -412,6 +414,20 @@ module "bgp" {
   bgp_local_as    = var.bgp_local_as
   bgp_peers       = var.bgp_peers
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
+
+  # BIRD の protocol direct 相当(許可リスト)。実機(2026-10-06)の BIRD が direct として iBGP / 外部に流していた経路のうち、必要なもの:
+  #   10.0.0.0/24      : IONOS・Oracle へ広告するクラスタ LAN
+  #   10.0.0.100/32    : API VIP(kube-vip の保持ノードで直結)
+  #   10.0.0.254/32    : ゲートウェイ VIP(keepalived)
+  #   172.31.253.0/24  : Oracle との WireGuard(wg-oracle)。他ノードが Oracle 側のアドレスへ k8s4 経由で届くため
+  #   172.31.254.0/30  : IONOS との WireGuard(wg1)の遷移ネット。同上
+  #   192.168.1.53/32  : k8s4 の lo にあるアドレス。BIRD が iBGP に流していた。用途は未確認(現状維持のため残す)
+  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32", "172.31.253.0/24", "172.31.254.0/30", "192.168.1.53/32"]
+  # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
+  enable_kube_vip_peer = false
+  # FRR の起動前に BIRD の static Pod を止める。
+  stop_bird = true
+
   external_bgp_peers = concat(
     [
       {
