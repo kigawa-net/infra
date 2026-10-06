@@ -56,7 +56,7 @@ Endpoint = 74.208.55.86:51820
 PersistentKeepalive = 25
 ```
 
-### 3.2 BGP (FRR/Bird)
+### 3.2 BGP (FRR)
 
 ASN `65030` の ionos と `172.31.254.1` <-> `172.31.254.2` でBGPピアを追加する。alice ピア(`neighbor 172.31.255.2 remote-as 65020`)と同様の設定を、ionos 用に追記する。
 

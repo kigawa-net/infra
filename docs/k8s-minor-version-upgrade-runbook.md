@@ -115,7 +115,7 @@ jsonpath='{...nodeSelector...}'`で事前に該当有無を確認すること。
 
 - `kubectl get nodes -o wide` で全ノードが目的バージョン & `Ready`
 - etcd cluster health確認(`etcdctl endpoint health --cluster -w table`)
-- kube-vip / Flannel / BGP(bird)/ WireGuardが正常か確認
+- kube-vip / Flannel / BGP(FRR: `vtysh -c 'show bgp ipv4 unicast summary'`)/ WireGuardが正常か確認
   (VIPを保持しているcontrol-planeを再起動する際はfailover先を確認)
 - `hardware/*/variables.tf`の`k8s_version`デフォルト値を更新するPR作成
 - 本docsの内容を更新(新たな落とし穴が見つかった場合は追記)
