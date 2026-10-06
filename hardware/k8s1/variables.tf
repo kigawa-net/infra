@@ -110,6 +110,12 @@ variable "gateway_vip" {
   default     = "10.0.0.254"
 }
 
+variable "core_router_vip" {
+  description = "Core Router VIP (#241)。LAN(192.168.1.0/24)側の仮想コアルーターの next-hop。prefix 付き"
+  type        = string
+  default     = "192.168.1.200/24"
+}
+
 variable "wireguard_address" {
   description = "WireGuard インターフェースのアドレス"
   type        = string
