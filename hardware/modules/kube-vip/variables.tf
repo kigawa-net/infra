@@ -44,7 +44,7 @@ variable "kube_vip_bgp_as" {
 }
 
 variable "bgp_peer_as" {
-  description = "BGPピア(BIRD2)のAS番号"
+  description = "BGPピア(FRR)のAS番号。FRR は同一ホストの kube-vip の BGP を受けられない(bgp-frr の README 参照)ため、実際にはセッションは張れない。bgp_peeraddress は、ピア 0 件だと kube-vip が落ちるので残している"
   type        = number
   default     = 65000
 }

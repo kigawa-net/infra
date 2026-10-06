@@ -8,18 +8,22 @@
 
 ## コンポーネント
 
-### 1. BGP ルーティング (Bird / FRR)
+### 1. BGP ルーティング (FRR)
 
-ネットワーク全体のルーティング制御にBGPを使用しています。
+ネットワーク全体のルーティング制御にBGPを使用しています。コントロールプレーンノード(k8s1, k8s2, k8s4)の BGP は、2026-10-06 に BIRD から FRR へ移行しました(#210)。
 
 - **iBGP フルメッシュ**: Kubernetes コントロールプレーンノード（k8s1, k8s2, k8s4）間でiBGPフルメッシュが構成されています。
-    - **ソフトウェア**: [Bird2](https://bird.network.cz/)
-    - **設定ファイルパス**: `/etc/bird/bird.conf`
-    - **ピアリング設定**: 各ノードの `bird.conf` に、他のコントロールプレーンノードが隣接ノードとして定義されています。
-- **AS番号**: `65000` (Inuyama K8s) を主に使用しています。
+    - **ソフトウェア**: [FRR (Free Range Routing)](https://frrouting.org/)(ホストの systemd サービス `frr.service`: zebra + bgpd。apt のパッケージ)
+    - **設定ファイルパス**: `/etc/frr/frr.conf`(`hardware/modules/bgp-frr` が生成)
+    - **ピアリング設定**: 各ノードの `frr.conf` に、他のコントロールプレーンノードが iBGP の隣接ノードとして定義されています(`next-hop-self`)。
+    - **確認**: `vtysh -c 'show bgp ipv4 unicast summary'`、`ip route show proto bgp`
+- **AS番号**: `65000` (Inuyama K8s) を主に使用しています。外部ピア(IONOS・Oracle)とは `local-as 65010 no-prepend replace-as` で接続します。
 - **広告ルート**:
-    - **DNS VIP (10.0.0.53)**: 各コントロールプレーンノードが自身にこのIPをアサインし、BGP経由で広告します。
+    - **DNS VIP (10.0.0.53)**: 各コントロールプレーンノードが自身の `lo` にこのIPをアサインし、`network` 文でBGP経由で広告します。
+    - **直結経路の再配布**: `redistribute connected` を、許可リスト(`redistribute_connected_prefixes`)付きで使います。BIRD の `protocol direct` のように全ての直結経路は流しません。API VIP(`10.0.0.100/32`)とゲートウェイ VIP(`10.0.0.254/32`)は、保持ノードの直結経路として伝搬します。
     - **Kubernetes サービスネットワーク**: kube-vip 等を通じて広告される場合があります。
+- **kube-vip との BGP**: 同一ホストの kube-vip と FRR の BGP は張れません(FRR は `127.0.0.x` を BGP の自分側に使えず、自ノードのアドレスを neighbor に指定できず、kube-vip が送る next-hop は自ノードのアドレスのため `martian or self next-hop` で破棄されます)。kube-vip は VIP を保持ノードのインターフェースに付けるだけで、広告は直結経路の再配布が担います。kube-vip の `bgp_peeraddress`(`127.0.0.2`)は、消さずに残します(ピア 0 件だと kube-vip が落ちる)。FRR は接続を拒否するだけで、kube-vip のログに接続エラーが出ます。詳細は `hardware/modules/bgp-frr/README.md`。
+- **移行の記録**: `hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md`(切り替え手順と、k8s1・k8s2・k8s4 の実施結果)。
 - **Alice Gateway (FRR)**: `alice` ノードで [FRR (Free Range Routing)](https://frrouting.org/) が動作しています。
     - **役割**: 外部ピアとの接続、OSPFによる内部ルートの学習、WireGuardインターフェース経由のルーティング。
 
@@ -45,22 +49,41 @@
 ドメイン別のオーバーライドやキャッシュ制御はできない) で `ip name-server`
 に設定した上位DNSへ単純に問い合わせを転送するだけの機能しかない。
 
-この `ip name-server` は必ず `10.0.0.53`(上記DNS VIP)のみを指すように
-すること。過去に別の古い内部DNSサーバー(`192.168.1.113` 等)が
-`ip name-server` に残っていたことがあり、それらが `k8s.kigawa.net` 等の
-古い/誤ったレコード(移行前の `192.168.1.x` 系アドレス)を返し続けて
-いたため、`kubectl` や他のクラスタ内サービスへの接続が数時間〜半日単位で
-断続的に失敗する原因になっていた(2026-08-12 判明・修正)。
+この `ip name-server` は、**各コントロールプレーンノードの kresd の LAN アドレス**
+(`192.168.1.103`(k8s1)、`192.168.1.20`(k8s2)、`192.168.1.120`(k8s4))だけを
+指すようにすること。`10.0.0.53`(DNS VIP)は**指定しないこと**。
+
+- **`10.0.0.53` を指定してはいけない理由**: スイッチにとって `10.0.0.0/24` は
+  `vlan2` の直結サブネットのため、`10.0.0.53` を ARP で探す。VIP は各ノードの
+  `lo` にあり、BGP でクラスタ内に広告されるだけで ARP には答えないため、
+  スイッチから届かず、`no DNS response packet ... from 10.0.0.53` が出続けた
+  (2026-10-05 判明・修正。#239)。
+- 3台の kresd は、内部名(`k8s.kigawa.net` → `10.0.0.100`、`onemc.world` ゾーン)と
+  外部名の両方を引ける。1台が落ちても、残りに回る。
+- 過去に別の古い内部DNSサーバー(`192.168.1.113` 等)が `ip name-server` に
+  残っていたことがあり、それらが `k8s.kigawa.net` 等の古い/誤ったレコード
+  (移行前の `192.168.1.x` 系アドレス)を返し続けていたため、`kubectl` や他の
+  クラスタ内サービスへの接続が数時間〜半日単位で断続的に失敗する原因になっていた
+  (2026-08-12 判明・修正)。古いサーバーを残さないこと。
 
 確認コマンド:
 ```
 show running-config | include name-server
 ```
-`10.0.0.53` 以外のエントリがある場合は削除し、`10.0.0.53` のみにすること。
+上の3つ以外のエントリがある場合は削除すること。端末側の確認は
+`dig +short k8s.kigawa.net @192.168.1.1` が `10.0.0.100` を返すこと。
+
+なお、`10.0.0.53` を LAN から使うには、ARP に答える機器が必要。#241 の Core Router VIP
+(`192.168.1.200/24`)の実装後に、使えるかを判断する。
+
+作業端末など、有線(`192.168.1.1`)と無線(別ルーター)の両方が DefaultRoute の
+場合、無線側の DNS が `k8s.kigawa.net` を公開 IP に解決することがある。
+`resolvectl domain <有線 IF> ~kigawa.net ~onemc.world` で、内部ドメインを
+有線の DNS に固定する。
 
 ### 2.5 workerノードから内部ネットワーク(10.0.0.0/24)への経路
 
-workerノードは `192.168.1.0/24` のみに接続され、BGPピアではない(birdは動かない)。
+workerノードは `192.168.1.0/24` のみに接続され、BGPピアではない(BGP デーモンは動かない)。
 そのままではデフォルトゲートウェイ(物理スイッチ `192.168.1.1`)に `10.0.0.0/24` 宛を
 送出してしまい到達できない(issue #154 / #193)。DNS VIP `10.0.0.53` や Keycloak/Ingress
 VIP `10.0.0.240` に届かず、CoreDNSのforward失敗やadmin-panelのJWKS取得失敗の原因になる。
@@ -224,7 +247,7 @@ Inuyamaサイト（`10.0.0.0/24`）では、管理の容易性と将来の拡張
 |-----------|--------------|----------|----------|
 | 10.0.0.1 | 物理ルーター | 静的割当 | インフラ |
 | 10.0.0.254 | デフォルトゲートウェイ VIP | Keepalived (VRRP) | ゲートウェイ |
-| 10.0.0.53 | DNS VIP | Bird (BGP広告) | VIP |
+| 10.0.0.53 | DNS VIP | FRR (BGP広告) | VIP |
 | 10.0.0.100 | K8s API VIP | kube-vip | CP (VIP) |
 | 10.0.0.103 | k8s1 (Node) | 静的割当 | CP (Node) |
 | 10.0.0.120 | k8s2 (Node) | 静的割当 | CP (Node) |

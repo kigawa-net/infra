@@ -75,8 +75,8 @@ module "control_plane" {
   join_certificate_key = data.external.join_info.result.certificate_key
 }
 
-# BIRD から FRR へ移行する (#210 Step 2)。k8s1 のみ。k8s2 / k8s4 は BIRD のまま。
-# 手順は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。マージ前に必ず手順書を読むこと。
+# BGP は FRR (#210)。k8s1・k8s2・k8s4 は、2026-10-06 に BIRD から FRR へ移行済み。
+# 切り替えの手順と実施結果は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。
 module "bgp" {
   depends_on = [module.control_plane]
   source     = "../modules/bgp-frr"

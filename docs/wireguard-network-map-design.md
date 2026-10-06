@@ -39,7 +39,7 @@ alice-01
    v
 k8s4
   - WireGuard wg0: 172.31.255.1/30
-  - BIRD / BGP AS65010
+  - FRR / BGP AS65010
   - Kubernetes control-plane
    |
    v
@@ -78,7 +78,7 @@ ShumokuのYAMLは `nodes` と `links` で構成する。現状はOverlay mapとS
 | --- | --- | --- |
 | `internet-client` | external | public client |
 | `alice-01` | alice | public gateway, HAProxy, WireGuard endpoint, FRR/BGP |
-| `k8s4` | inuyama | Kubernetes control-plane / etcd, WireGuard endpoint, BIRD/BGP |
+| `k8s4` | inuyama | Kubernetes control-plane / etcd, WireGuard endpoint, FRR/BGP |
 | `inuyama-ingress-vip` | inuyama | `10.0.0.240`, HTTP/HTTPS backend VIP |
 | `minecraft-backend-vip` | inuyama | `10.0.0.241`, Minecraft backend VIP |
 
