@@ -138,7 +138,7 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
       | `VI_1` | 1 | `10.0.0.254/32` | 内部(`10.0.0.0/24`)側のゲートウェイ VIP |
       | `VI_CORE` | 2 | `192.168.1.200/24` | **Core Router VIP**(#241)。LAN(`192.168.1.0/24`)側の仮想コアルーターの next-hop。worker の `10.0.0.0/24` 宛の経路(2.5 節)が使う |
 
-    - **Core Router VIP のヘルスチェック**: `/etc/keepalived/check-core-router.sh`(IP 転送が有効で、BGP が `:179` で待ち受け中)。失敗すると、`VI_CORE` の優先度が 30 下がり(`weight -30`)、別のノードに VIP が移る。`vrrp_script` には `enable_script_security` が必要で、`VI_CORE` があるときだけ `global_defs` で有効にしている。**kube-proxy の死活は、見ていない**(MASTER のノードで kube-proxy だけが壊れると、VIP は移らない)。
+    - **Core Router VIP のヘルスチェック**: `/etc/keepalived/check-core-router.sh`(IP 転送が有効で、BGP が `:179` で待ち受け中で、kube-proxy が `http://127.0.0.1:10256/healthz` に 200 を返す)。失敗すると、`VI_CORE` の優先度が 30 下がり(`weight -30`)、別のノードに VIP が移る。`vrrp_script` には `enable_script_security` が必要で、`VI_CORE` があるときだけ `global_defs` で有効にしている。kube-proxy を見るのは、worker の `10.0.0.0/24` 宛の通信が、この VIP の MASTER 1 台に集まり、サービスの VIP(`kube-ipvs0` / `lo`)の振り分けを kube-proxy に頼っているため(#252)。`interval 2` / `fall 2` なので、2 回連続(約 4 秒)で失敗すると、優先度が下がる。
     - **failover**: MASTER の keepalived を止めると、約1秒で、別のノードが MASTER になる(2026-10-06 の試験。worker3 から DNS・API へ 0.3 秒間隔で 224 回アクセスして、失敗 0 回)。突然ノードが落ちた場合は、`advert_int` の3倍(約3秒)で引き継ぐ想定(未試験)。
     - **設定の反映**: `systemctl reload-or-restart keepalived`(reload を優先する。既存の `VI_1` の VIP は、reload では外れない)。
     - **確認**:
