@@ -65,20 +65,30 @@ module "control_plane" {
   join_certificate_key = data.external.join_info.result.certificate_key
 }
 
+# BIRD から FRR へ移行する (#210)。k8s1 は移行済み。手順は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。
+# マージ前に必ず手順書を読み、合意した時間に行うこと。
 module "bgp" {
   depends_on = [module.control_plane]
-  source     = "../modules/bgp-bird"
+  source     = "../modules/bgp-frr"
 
   host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  bgp_router_id                  = var.server_ip
-  bgp_local_as                   = var.bgp_local_as
-  bgp_peers                      = var.bgp_peers
-  advertised_vips                = var.dns_vip != "" ? [var.dns_vip] : []
-  ionos_nexthop_helper_interface = var.wireguard_ionos_interface
+  bgp_router_id   = var.server_ip
+  bgp_local_as    = var.bgp_local_as
+  bgp_peers       = var.bgp_peers
+  advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
+
+  # BIRD の protocol direct 相当。API VIP は kube-vip の保持ノードで直結経路になる。
+  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32"]
+  # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
+  enable_kube_vip_peer = false
+  # k8s2 のカーネルには、wireguard の extra_post_up で 172.31.254.2/32 dev wg1 が既にあるため、next-hop 補助経路は不要。
+  ionos_nexthop_helper_interface = ""
+  # FRR の起動前に BIRD の static Pod を止める。
+  stop_bird = true
 
   # k8s4(inuyama)の冗長化として、k8s2もionosと直接eBGPを張る2本目の
   # ゲートウェイにする(issue #116)。k8s4が落ちてもこのセッション経由で
