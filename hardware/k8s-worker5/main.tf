@@ -160,11 +160,13 @@ module "cluster_route" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
-  # k8s1 / k8s2 / k8s4 の 3 台。ECMP のハッシュ方式が既定(fib_multipath_hash_policy=0、宛先と送信元のアドレスのみ)のため、
-  # あるゲートウェイがダウンすると、そこに振られる通信(worker3 -> API の VIP 10.0.0.100 など)が、常にそこへ流れ続け、
-  # `no route to host` になる(2026-10-05、k8s2 のダウン中に worker3 が NotReady になった。k8s2 の復旧後に戻した: issue #228)。
-  # 死んだゲートウェイを自動で外す仕組みは、まだ無い(#232 と合わせて検討)。ゲートウェイが長く止まるときは、ここから外すこと。
-  gateways = ["192.168.1.103", "192.168.1.20", "192.168.1.120"]
+  # Core Router VIP(#241)1 本。k8s1 / k8s2 / k8s4 の keepalived(VRRP)が持つ VIP で、MASTER の 1 台に転送を任せる。
+  # 以前は k8s1 / k8s2 / k8s4 の 3 台への ECMP だった。ECMP のハッシュ方式が既定(fib_multipath_hash_policy=0、
+  # 宛先と送信元のアドレスのみ)のため、あるゲートウェイがダウンすると、そこに振られる通信(worker3 -> API の VIP
+  # 10.0.0.100 など)が、常にそこへ流れ続け、`no route to host` になった(2026-10-05、k8s2 のダウン中に worker3 が
+  # NotReady になった: issue #228)。VRRP の failover(約 1 秒)に任せることで、この固定を無くす。
+  # 負荷分散はなくなる(MASTER の 1 台に集まる)。
+  gateways = [var.core_router_vip]
 
   # Karmada(Soichiro の VM)への経路。Inuyama の BGP(k8s4)が学習する 10.255.10.12/32 を含む範囲を、
   # クラスタLANと同じ next-hop(k8s1/k8s2/k8s4)に向ける。
