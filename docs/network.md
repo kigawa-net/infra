@@ -73,8 +73,10 @@ show running-config | include name-server
 上の3つ以外のエントリがある場合は削除すること。端末側の確認は
 `dig +short k8s.kigawa.net @192.168.1.1` が `10.0.0.100` を返すこと。
 
-なお、`10.0.0.53` を LAN から使うには、ARP に答える機器が必要。#241 の Core Router VIP
-(`192.168.1.200/24`)の実装後に、使えるかを判断する。
+なお、`10.0.0.53` は、スイッチ(`192.168.1.1`)からは使えない。スイッチは `10.0.0.0/24` を `vlan2` の
+直結として持ち、`10.0.0.53`(`lo` の anycast VIP)は ARP に答えないため。#241 の Core Router VIP
+(`192.168.1.200/24`)ができても、スイッチの経路は変えない(下の 2.5 節)ので、状況は同じ。LAN の機器は、
+各ノードの kresd の LAN アドレス(`192.168.1.103` / `.20` / `.120`)を使う。
 
 作業端末など、有線(`192.168.1.1`)と無線(別ルーター)の両方が DefaultRoute の
 場合、無線側の DNS が `k8s.kigawa.net` を公開 IP に解決することがある。
@@ -117,7 +119,10 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
   dig +short +time=2 +tries=1 @10.0.0.53 kigawa.net
   ```
 - 注意: `k8s-worker1` / `k8s-worker4` は現状 `hardware/` に Terraform 定義がなく、同じ経路を
-  手動で設定している。IaC への取り込みは #198 で追跡する。
+  手動で設定している(2026-10-06 に、Core Router VIP 1 本に変更。`/usr/local/bin/cluster-route.sh` と
+  `cluster-route.service`。変更前のスクリプトは各ノードの `/root/cluster-route.sh.bak-20261006`)。
+  `cluster-route.timer`(1 分ごとの再適用)は無いので、経路が消えても自動では復旧しない。
+  IaC への取り込みは #198 で追跡する。
 
 ### 3. 高可用性 (VRRP / Keepalived / kube-vip)
 
@@ -126,6 +131,21 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
     - **VRRP (Virtual Router Redundancy Protocol)** を使用して、特定の物理インターフェース上でVIPを浮動させます。
     - **役割**: 主にゲートウェイや特定のサービスにおけるVIPの冗長化に使用されます。
     - **設定**: `/etc/keepalived/keepalived.conf` にて VRRP インスタンス、優先度（Priority）、仮想ルーターID（Virtual Router ID）、認証パスワード、および管理対象のVIPが定義されます。
+    - **VRRP インスタンス**(k8s1 / k8s2 / k8s4 の3台。同じ優先度の順: k8s1=110、k8s2=100、k8s4=90):
+
+      | インスタンス | VRID | VIP | 用途 |
+      |---|---|---|---|
+      | `VI_1` | 1 | `10.0.0.254/32` | 内部(`10.0.0.0/24`)側のゲートウェイ VIP |
+      | `VI_CORE` | 2 | `192.168.1.200/24` | **Core Router VIP**(#241)。LAN(`192.168.1.0/24`)側の仮想コアルーターの next-hop。worker の `10.0.0.0/24` 宛の経路(2.5 節)が使う |
+
+    - **Core Router VIP のヘルスチェック**: `/etc/keepalived/check-core-router.sh`(IP 転送が有効で、BGP が `:179` で待ち受け中)。失敗すると、`VI_CORE` の優先度が 30 下がり(`weight -30`)、別のノードに VIP が移る。`vrrp_script` には `enable_script_security` が必要で、`VI_CORE` があるときだけ `global_defs` で有効にしている。**kube-proxy の死活は、見ていない**(MASTER のノードで kube-proxy だけが壊れると、VIP は移らない)。
+    - **failover**: MASTER の keepalived を止めると、約1秒で、別のノードが MASTER になる(2026-10-06 の試験。worker3 から DNS・API へ 0.3 秒間隔で 224 回アクセスして、失敗 0 回)。突然ノードが落ちた場合は、`advert_int` の3倍(約3秒)で引き継ぐ想定(未試験)。
+    - **設定の反映**: `systemctl reload-or-restart keepalived`(reload を優先する。既存の `VI_1` の VIP は、reload では外れない)。
+    - **確認**:
+      ```
+      ip -4 addr show | grep -E "192\.168\.1\.200|10\.0\.0\.254"   # MASTER のノードだけに出る
+      journalctl -u keepalived --since "-10min" | grep -E "VI_CORE|VI_1|chk_core"
+      ```
 - **kube-vip**:
     - Kubernetes コントロールプレーンのAPIサーバー VIP (例: 10.0.0.100) を管理します。
     - **BGPモード**: 本環境ではBGPモードを推奨し、ARPモードは利用しません。これにより、レイヤー2の制限を受けずに柔軟なルーティングが可能になります。
