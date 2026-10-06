@@ -89,14 +89,22 @@ workerノードは `192.168.1.0/24` のみに接続され、BGPピアではな�
 VIP `10.0.0.240` に届かず、CoreDNSのforward失敗やadmin-panelのJWKS取得失敗の原因になる。
 
 対策として、全workerに以下の静的経路を入れる。k8s1/k8s2/k8s4 は自宅LAN側にもアドレスを持ち
-`ip_forward=1` のため、これらを next-hop とした ECMP 経路にする。
+`ip_forward=1` のため、これらの keepalived(VRRP)が持つ **Core Router VIP(`192.168.1.200`)** を
+next-hop にする(#241)。
 
 ```
-ip route replace 10.0.0.0/24 \
-  nexthop via 192.168.1.103 weight 1 \
-  nexthop via 192.168.1.20  weight 1 \
-  nexthop via 192.168.1.120 weight 1
+ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
 ```
+
+- **なぜスイッチ(`192.168.1.1`)に任せないか**: スイッチは `10.0.0.0/24` を `vlan2` の直結として持つため、
+  サービスの VIP(LoadBalancer の `10.0.0.50`〜`.62`、`.240`〜`.243`、DNS の `10.0.0.53`)に届かない
+  (ARP に答えない、またはスイッチの `vlan2` から見えない)。これらは、コントロールプレーンの各ノードが
+  ローカルの VIP(`kube-ipvs0` や `lo`)として受け取り、Pod に振り分ける。そのため、コントロールプレーンの
+  ノードをゲートウェイにして、`10.0.0.0/24` を渡す。
+- **なぜ VIP 1 本か**: 以前は k8s1 / k8s2 / k8s4 の 3 台への ECMP だった。ECMP のハッシュ方式が既定
+  (`fib_multipath_hash_policy=0`)のため、あるゲートウェイがダウンすると、そこに振られる通信が常にそこへ
+  流れ続け、`no route to host` になった(2026-10-05、k8s2 のダウン中に worker3 が NotReady になった)。
+  VRRP の failover(約 1 秒)に任せることで、この固定を無くす。負荷分散はなくなる(MASTER の 1 台に集まる)。
 
 - 定義: `hardware/modules/cluster-route`(Terraform。`k8s-worker3` / `k8s-worker5` から利用)
 - 自己修復: `cluster-route.timer` が1分ごとに `cluster-route.service` を再実行する

@@ -44,3 +44,9 @@ variable "sudo_password_bitwarden_id" {
   type    = string
   default = "52b44d60-7cab-429f-929a-b4340139b6d8"
 }
+
+variable "core_router_vip" {
+  description = "Core Router VIP (#241)。k8s1 / k8s2 / k8s4 の keepalived(VRRP)が持つ、LAN(192.168.1.0/24)側の仮想コアルーターの next-hop。prefix なし"
+  type        = string
+  default     = "192.168.1.200"
+}
