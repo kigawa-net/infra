@@ -92,6 +92,12 @@ variable "kube_vip_api_server_ip" {
   default     = "127.0.0.1"
 }
 
+variable "kube_vip_health_peers" {
+  description = "kube-vip のヘルス連動で、止める前に確認する、他の control-plane の apiserver (k8s2 / k8s4 の server_ip)。健全なものが 1 つも無ければ止めない (issue #232)"
+  type        = list(string)
+  default     = ["10.0.0.120", "10.0.0.140"]
+}
+
 variable "kube_vip_enabled" {
   description = "falseにするとこのノードのkube-vipを撤去し、リーダー選出/BGP VIP広報から除外する (ローカルディスクI/O障害等でapiserverがクラッシュループしている間の一時的な緩和策用)"
   type        = bool

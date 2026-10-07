@@ -79,6 +79,12 @@ variable "kube_vip_api_server_ip" {
   default     = "127.0.0.1"
 }
 
+variable "kube_vip_health_peers" {
+  description = "kube-vip のヘルス連動で、止める前に確認する、他の control-plane の apiserver (k8s1 / k8s2 の server_ip)。健全なものが 1 つも無ければ止めない (issue #232)"
+  type        = list(string)
+  default     = ["10.0.0.103", "10.0.0.120"]
+}
+
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string

@@ -150,6 +150,14 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
     - Kubernetes コントロールプレーンのAPIサーバー VIP (例: 10.0.0.100) を管理します。
     - **BGPモード**: 本環境ではBGPモードを推奨し、ARPモードは利用しません。これにより、レイヤー2の制限を受けずに柔軟なルーティングが可能になります。
     - 各コントロールプレーンノード上でスタティックポッドとして動作し、APIサーバーの可用性を担保します。
+    - **ヘルス連動(issue #232)**: 各 CP ノードの systemd timer(`kube-vip-health.timer`、10 秒間隔)が、ローカルの `https://127.0.0.1:6443/livez?exclude=etcd` を確認します。3 回連続で失敗し、**かつ他の control-plane の apiserver(`kube_vip_health_peers`)が 1 つでも健全なとき**に限り、`/etc/kubernetes/manifests/kube-vip.yaml` を `/var/lib/kube-vip-health/` へ退避して kube-vip を止め、VIP を外します(別ノードが引き継ぎます)。他に健全な apiserver が無いとき(全ノードが同時に不調、`kube_vip_health_peers` が空)は、VIP の持ち主がいなくならないよう、止めません。6 回連続で成功すると、マニフェストを戻します。`kube_vip_enabled=false`(Terraform が kube-vip を意図的に外したノード)では、何もせず、退避したコピーも戻しません。OS ごと止まった場合は動かないため、BGP の hold timer が頼りです。`livez` で etcd を除外しているのは、etcd の quorum を失ったときに、etcd だけが理由で止めないためです。
+      ```bash
+      systemctl list-timers kube-vip-health.timer
+      journalctl -t kube-vip-health --since "-1h"
+      ls /var/lib/kube-vip-health/   # kube-vip.yaml があれば退避中
+      ```
+    - 自動適用: `hardware/modules/kube-vip` を変更して main にマージすると、GitHub Actions(`terraform.yml`)が利用元(k8s1・k8s2・k8s4)を 1 台ずつ apply します(`max-parallel: 1`、`fail-fast` なし)。
+    - テスト: `bash hardware/modules/kube-vip/test-kube-vip-health.sh`(偽の curl / ip を使い、実機には触れません)。
 
 ### 4. ゲートウェイ (Alice)
 

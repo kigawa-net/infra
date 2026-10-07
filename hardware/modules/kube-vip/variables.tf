@@ -59,3 +59,33 @@ variable "enabled" {
   type        = bool
   default     = true
 }
+
+variable "health_check_enabled" {
+  description = "ローカルの kube-apiserver の /livez を監視し、応答しないときに kube-vip を一時的に止めて VIP を別ノードへ移す (issue #232)。無効にすると、timer を撤去する"
+  type        = bool
+  default     = true
+}
+
+variable "health_peers" {
+  description = "他の control-plane の apiserver のアドレス(IP またはホスト名)。止める前に、これらの /livez を確認し、健全なものが 1 つも無ければ止めない(全ノードが一斉に kube-vip を止めて VIP の持ち主がいなくなるのを防ぐ)。空のとき、止めることは決してない"
+  type        = list(string)
+  default     = []
+}
+
+variable "health_interval_seconds" {
+  description = "ヘルスチェックの間隔(秒)"
+  type        = number
+  default     = 10
+}
+
+variable "health_fail_threshold" {
+  description = "連続して失敗したら kube-vip を止める回数。間隔と合わせて、検知までの時間(間隔 × 回数)になる"
+  type        = number
+  default     = 3
+}
+
+variable "health_ok_threshold" {
+  description = "止めた後、連続して成功したら kube-vip を戻す回数(フラッピングを避けるため、失敗の閾値より大きくする)"
+  type        = number
+  default     = 6
+}
