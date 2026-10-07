@@ -476,6 +476,7 @@ module "kube_vip" {
   vip_address   = var.kube_vip_address
   interface     = var.kube_vip_interface
   api_server_ip = var.kube_vip_api_server_ip
+  health_peers  = var.kube_vip_health_peers
 }
 
 # kigawa-net/infra#178: 旧名称"alice"(廃止済みの外部VPSゲートウェイ)から

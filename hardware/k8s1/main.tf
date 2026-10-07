@@ -114,6 +114,7 @@ module "kube_vip" {
   interface     = var.kube_vip_interface
   api_server_ip = var.kube_vip_api_server_ip
   enabled       = var.kube_vip_enabled
+  health_peers  = var.kube_vip_health_peers
 }
 
 locals {
