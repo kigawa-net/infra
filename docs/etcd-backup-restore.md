@@ -123,7 +123,13 @@ bash hardware/modules/etcd-backup/test-restore.sh snapshot.db      # .gz も可
 ## 監視
 
 - メトリクス(`etcd_backup_*`、node_exporter の textfile): `etcd_backup_last_success_timestamp_seconds`、`etcd_backup_last_run_success`、`etcd_backup_snapshot_bytes`、`etcd_backup_duration_seconds`。
-- アラート(「最後の成功から 3 時間以上」)は、node_exporter の textfile collector を有効にする別の変更と、一緒に入れる(`platform/monitoring`)。それまでは、`journalctl -t etcd-backup` と `systemctl is-failed etcd-backup.service` で確認する。
+- node_exporter の textfile collector は、k8s2 で有効(`--collector.textfile.directory=/var/lib/node_exporter/textfile`。`hardware/k8s2` の `module "node_exporter"`)。k8s2(`192.168.1.20:9100`)は、すでに Prometheus の `node` ジョブで scrape されている。
+- アラートは、`kigawa01/k8s-system` の `prometheus/etcd-backup-rules.yml`(`PrometheusRule`、ArgoCD で同期)。
+  - `EtcdBackupStale`(critical): 最後の成功から 3 時間以上(10 分継続)。タイマーが止まった・k8s2 が落ちた・失敗が続いた、のいずれでも、これで気づく。
+  - `EtcdBackupFailing`(warning): 直近の実行が失敗で、2 時間以上続いている(毎時なので、2 回連続)。
+  - `EtcdBackupNeverSucceeded`(critical): 一度も成功していないのに、実行は失敗している(有効化の直後の設定ミスを拾う)。
+  - 有効化する前(メトリクスが無い間)は、どのアラートも出ない。
+- 補助: `journalctl -t etcd-backup`、`systemctl is-failed etcd-backup.service`。
 
 ## 注意
 
