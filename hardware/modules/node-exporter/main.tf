@@ -8,7 +8,7 @@ locals {
     User=node_exporter
     Group=node_exporter
     Type=simple
-    ExecStart=/usr/local/bin/node_exporter --web.listen-address=${var.listen_address}
+    ExecStart=/usr/local/bin/node_exporter --web.listen-address=${var.listen_address}${var.textfile_directory != "" ? " --collector.textfile.directory=${var.textfile_directory}" : ""}
     Restart=on-failure
 
     [Install]
@@ -25,6 +25,11 @@ locals {
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     id node_exporter &>/dev/null || useradd --no-create-home --shell /bin/false node_exporter
+    %{if var.textfile_directory != ""~}
+
+    # textfile collector のディレクトリ。メトリクスのファイル(*.prom)は root が書き、node_exporter が読む
+    install -d -m 0755 "${var.textfile_directory}"
+    %{endif~}
 
     cd /tmp
     curl -fsSL https://github.com/prometheus/node_exporter/releases/download/v${var.node_exporter_version}/node_exporter-${var.node_exporter_version}.linux-amd64.tar.gz | tar xz
@@ -41,11 +46,16 @@ locals {
 }
 
 resource "null_resource" "node_exporter" {
-  triggers = {
-    host           = var.host
-    version        = var.node_exporter_version
-    listen_address = var.listen_address
-  }
+  # textfile_directory は、指定したときだけトリガーに入れる(入れると、指定していない他のノードまで、
+  # トリガーのキーが増えて、再作成されてしまうため)。
+  triggers = merge(
+    {
+      host           = var.host
+      version        = var.node_exporter_version
+      listen_address = var.listen_address
+    },
+    var.textfile_directory != "" ? { textfile_directory = var.textfile_directory } : {},
+  )
 
   connection {
     type        = "ssh"

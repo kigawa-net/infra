@@ -27,3 +27,9 @@ variable "listen_address" {
   type        = string
   default     = ":9100"
 }
+
+variable "textfile_directory" {
+  description = "textfile collector のディレクトリ (--collector.textfile.directory)。空のときは、有効にしない。etcd のバックアップの成功・失敗のメトリクス(etcd_backup_*.prom)などを読むのに使う"
+  type        = string
+  default     = ""
+}
