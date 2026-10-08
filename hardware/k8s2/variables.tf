@@ -85,6 +85,30 @@ variable "kube_vip_health_peers" {
   default     = ["10.0.0.103", "10.0.0.140"]
 }
 
+variable "etcd_backup_enabled" {
+  description = "etcd の定期スナップショット(R2 へ、age で暗号化)を有効にする (issue #189)。age の公開鍵と R2 の認証情報が揃うまでは false"
+  type        = bool
+  default     = false
+}
+
+variable "etcd_backup_age_recipient" {
+  description = "スナップショットを暗号化する age の公開鍵(age1...)。秘密鍵は、ノードに置かず、Bitwarden に保管する"
+  type        = string
+  default     = ""
+}
+
+variable "etcd_backup_r2_access_key_bitwarden_id" {
+  description = "etcd-backup バケット限定の R2 アクセスキー ID の Bitwarden Secrets の UUID。空のときは、Bitwarden に触れない"
+  type        = string
+  default     = ""
+}
+
+variable "etcd_backup_r2_secret_bitwarden_id" {
+  description = "etcd-backup バケット限定の R2 シークレットアクセスキーの Bitwarden Secrets の UUID"
+  type        = string
+  default     = ""
+}
+
 variable "dns_vip" {
   description = "DNS VIPのIPアドレス (全control-planeノードからBGP広告)"
   type        = string
