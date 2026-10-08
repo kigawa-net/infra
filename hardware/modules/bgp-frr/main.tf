@@ -11,6 +11,7 @@ locals {
     bgp_router_id      = var.bgp_router_id
     bgp_local_as       = var.bgp_local_as
     bgp_peers          = var.bgp_peers
+    ibgp_timers        = var.ibgp_keepalive_seconds != null && var.ibgp_hold_seconds != null ? "${var.ibgp_keepalive_seconds} ${var.ibgp_hold_seconds}" : ""
     kube_vip_as        = var.kube_vip_as
     advertised_vips    = var.advertised_vips
     external_bgp_peers = var.external_bgp_peers
@@ -141,6 +142,19 @@ resource "null_resource" "frr" {
     config_hash = sha256(local.frr_conf)
     setup_hash  = sha256(local.setup_script)
     vip_hash    = sha256("${local.local_vip_setup}\n${local.local_vip_unit}")
+  }
+
+  # iBGP のタイマーは、keepalive と hold を両方指定するか、両方 null にする。hold は keepalive の 3 倍以上。
+  # (変数の validation は、Terraform 1.9 未満では、ほかの変数を参照できないため、ここで確かめる。)
+  lifecycle {
+    precondition {
+      condition = (
+        (var.ibgp_keepalive_seconds == null && var.ibgp_hold_seconds == null) ||
+        (var.ibgp_keepalive_seconds != null && var.ibgp_hold_seconds != null &&
+        try(var.ibgp_hold_seconds >= 3 * var.ibgp_keepalive_seconds, false))
+      )
+      error_message = "ibgp_keepalive_seconds と ibgp_hold_seconds は、両方とも null か、hold >= 3 * keepalive の両方を指定すること。"
+    }
   }
 
   connection {

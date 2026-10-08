@@ -415,6 +415,11 @@ module "bgp" {
   bgp_peers       = var.bgp_peers
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
 
+  # BGP デーモン/OS が止まった control-plane の経路を、既定(hold 180 秒)より早く撤回する (issue #232)。
+  # iBGP のメッシュ(k8s1/k8s2/k8s4)だけに適用する。外部の eBGP ピアには適用しない。
+  ibgp_keepalive_seconds = 3
+  ibgp_hold_seconds      = 9
+
   # BIRD の protocol direct 相当(許可リスト)。実機(2026-10-06)の BIRD が direct として iBGP / 外部に流していた経路のうち、必要なもの:
   #   10.0.0.0/24      : IONOS・Oracle へ広告するクラスタ LAN
   #   10.0.0.100/32    : API VIP(kube-vip の保持ノードで直結)

@@ -39,6 +39,39 @@ variable "bgp_peers" {
   default     = []
 }
 
+variable "ibgp_keepalive_seconds" {
+  description = <<-EOT
+    iBGP ピア(bgp_peers)の keepalive 間隔(秒)。null のときは timers を設定せず、FRR の既定(60 秒)のまま。
+    ホールドタイム(ibgp_hold_seconds)とセットで指定する。外部の eBGP ピア(external_bgp_peers)には適用しない
+    (WAN の遅延や一時的な揺れでセッションが切れるのを避けるため)。
+  EOT
+  type        = number
+  default     = null
+
+  # 変数の validation は、Terraform 1.9 未満では、ほかの変数を参照できない(CI で失敗した)。
+  # この変数だけで確かめられる範囲に絞り、keepalive と hold の関係は、main.tf の precondition で確かめる。
+  validation {
+    condition     = var.ibgp_keepalive_seconds == null || var.ibgp_keepalive_seconds >= 1
+    error_message = "ibgp_keepalive_seconds は 1 以上にすること(または null)。"
+  }
+}
+
+variable "ibgp_hold_seconds" {
+  description = <<-EOT
+    iBGP ピア(bgp_peers)のホールドタイム(秒)。null のときは timers を設定せず、FRR の既定(180 秒)のまま。
+    BGP デーモンごと、または OS ごと止まったノードの経路を、この時間で撤回する(issue #232)。
+    keepalive の 3 倍以上にする(BGP の慣例)。短くしすぎると、負荷で bgpd が一時的に遅れただけで、
+    セッションが切れて経路が揺れる。
+  EOT
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.ibgp_hold_seconds == null || var.ibgp_hold_seconds >= 3
+    error_message = "ibgp_hold_seconds は 3 以上にすること(または null)。BGP のホールドタイムは 0 か 3 以上。"
+  }
+}
+
 variable "kube_vip_as" {
   description = "kube-vipのAS番号 (FRRと区別するため別ASを使用)"
   type        = number

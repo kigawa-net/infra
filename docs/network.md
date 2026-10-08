@@ -18,6 +18,7 @@
     - **ピアリング設定**: 各ノードの `frr.conf` に、他のコントロールプレーンノードが iBGP の隣接ノードとして定義されています(`next-hop-self`)。
     - **確認**: `vtysh -c 'show bgp ipv4 unicast summary'`、`ip route show proto bgp`
 - **AS番号**: `65000` (Inuyama K8s) を主に使用しています。外部ピア(IONOS・Oracle)とは `local-as 65010 no-prepend replace-as` で接続します。
+- **iBGP のタイマー**: control-plane 3 台の iBGP は `timers 3 9`(keepalive 3 秒 / hold 9 秒)です(issue #232)。BGP デーモンや OS が止まったノードの経路を、既定(最大 180 秒)ではなく 9 秒で撤回します。外部の eBGP ピアは既定のままです。apiserver だけがハングした場合は、BGP では検知できないため、kube-vip のヘルス連動(後述)が担当します。
 - **広告ルート**:
     - **DNS VIP (10.0.0.53)**: 各コントロールプレーンノードが自身の `lo` にこのIPをアサインし、`network` 文でBGP経由で広告します。
     - **直結経路の再配布**: `redistribute connected` を、許可リスト(`redistribute_connected_prefixes`)付きで使います。BIRD の `protocol direct` のように全ての直結経路は流しません。API VIP(`10.0.0.100/32`)とゲートウェイ VIP(`10.0.0.254/32`)は、保持ノードの直結経路として伝搬します。

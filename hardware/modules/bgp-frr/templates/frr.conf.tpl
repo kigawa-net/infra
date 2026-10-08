@@ -60,6 +60,10 @@ router bgp ${bgp_local_as}
 %{ for peer in bgp_peers ~}
  neighbor ${peer} remote-as ${bgp_local_as}
  neighbor ${peer} update-source ${bgp_router_id}
+%{ if ibgp_timers != "" ~}
+ ! BGP デーモン/OS が止まったノードの経路を、既定(hold 180 秒)より早く撤回する (issue #232)。
+ neighbor ${peer} timers ${ibgp_timers}
+%{ endif ~}
 %{ endfor ~}
 %{ if enable_kube_vip_peer ~}
  neighbor 127.0.0.1 remote-as ${kube_vip_as}
