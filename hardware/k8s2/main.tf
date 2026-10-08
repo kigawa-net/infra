@@ -16,6 +16,21 @@ data "external" "sudo_password" {
   ]
 }
 
+# etcd のバックアップ用の R2 の認証情報 (issue #189)。ID が空のときは、Bitwarden に触れない。
+data "external" "etcd_backup_r2" {
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    key_id=""
+    secret=""
+    if [ -n "${var.etcd_backup_r2_access_key_bitwarden_id}" ] && [ -n "${var.etcd_backup_r2_secret_bitwarden_id}" ]; then
+      key_id=$(bws_get_value "${var.etcd_backup_r2_access_key_bitwarden_id}") || exit 1
+      secret=$(bws_get_value "${var.etcd_backup_r2_secret_bitwarden_id}") || exit 1
+    fi
+    jq -n --arg key_id "$key_id" --arg secret "$secret" '{"key_id": $key_id, "secret": $secret}'
+  EOT
+  ]
+}
+
 data "external" "join_info" {
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../../lib/bws-retry.sh"
@@ -123,6 +138,25 @@ module "kube_vip" {
   interface     = var.kube_vip_interface
   api_server_ip = var.kube_vip_api_server_ip
   health_peers  = var.kube_vip_health_peers
+}
+
+# etcd の定期スナップショットを、age で暗号化して R2 に置く (issue #189)。k8s2 は、ディスクの空きが
+# 最も大きい(98 GB)ので、ここで取る。etcd_backup_enabled が false の間は、何も入れない。
+module "etcd_backup" {
+  depends_on = [module.control_plane]
+  source     = "../modules/etcd-backup"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  node_name     = "k8s2"
+  enabled       = var.etcd_backup_enabled
+  age_recipient = var.etcd_backup_age_recipient
+  # data "external" の result は、sensitive にならない(terraform show に出る)ので、ここで包む
+  r2_access_key_id     = sensitive(data.external.etcd_backup_r2.result.key_id)
+  r2_secret_access_key = sensitive(data.external.etcd_backup_r2.result.secret)
 }
 
 locals {
