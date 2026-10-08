@@ -39,6 +39,36 @@ variable "bgp_peers" {
   default     = []
 }
 
+variable "ibgp_keepalive_seconds" {
+  description = <<-EOT
+    iBGP ピア(bgp_peers)の keepalive 間隔(秒)。null のときは timers を設定せず、FRR の既定(60 秒)のまま。
+    ホールドタイム(ibgp_hold_seconds)とセットで指定する。外部の eBGP ピア(external_bgp_peers)には適用しない
+    (WAN の遅延や一時的な揺れでセッションが切れるのを避けるため)。
+  EOT
+  type        = number
+  default     = null
+}
+
+variable "ibgp_hold_seconds" {
+  description = <<-EOT
+    iBGP ピア(bgp_peers)のホールドタイム(秒)。null のときは timers を設定せず、FRR の既定(180 秒)のまま。
+    BGP デーモンごと、または OS ごと止まったノードの経路を、この時間で撤回する(issue #232)。
+    keepalive の 3 倍以上にする(BGP の慣例)。短くしすぎると、負荷で bgpd が一時的に遅れただけで、
+    セッションが切れて経路が揺れる。
+  EOT
+  type        = number
+  default     = null
+
+  validation {
+    condition = (
+      (var.ibgp_keepalive_seconds == null && var.ibgp_hold_seconds == null) ||
+      (var.ibgp_keepalive_seconds != null && var.ibgp_hold_seconds != null &&
+      var.ibgp_hold_seconds >= 3 * var.ibgp_keepalive_seconds && var.ibgp_keepalive_seconds >= 1)
+    )
+    error_message = "ibgp_keepalive_seconds と ibgp_hold_seconds は、両方とも null か、keepalive >= 1 かつ hold >= 3 * keepalive の両方を指定すること。"
+  }
+}
+
 variable "kube_vip_as" {
   description = "kube-vipのAS番号 (FRRと区別するため別ASを使用)"
   type        = number

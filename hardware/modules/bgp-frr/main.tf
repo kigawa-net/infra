@@ -11,6 +11,7 @@ locals {
     bgp_router_id      = var.bgp_router_id
     bgp_local_as       = var.bgp_local_as
     bgp_peers          = var.bgp_peers
+    ibgp_timers        = var.ibgp_keepalive_seconds != null ? "${var.ibgp_keepalive_seconds} ${var.ibgp_hold_seconds}" : ""
     kube_vip_as        = var.kube_vip_as
     advertised_vips    = var.advertised_vips
     external_bgp_peers = var.external_bgp_peers

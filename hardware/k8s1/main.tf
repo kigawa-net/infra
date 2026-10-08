@@ -91,6 +91,11 @@ module "bgp" {
   bgp_peers       = var.bgp_peers
   advertised_vips = var.dns_vip != "" ? [var.dns_vip] : []
 
+  # BGP デーモン/OS が止まった control-plane の経路を、既定(hold 180 秒)より早く撤回する (issue #232)。
+  # iBGP のメッシュ(k8s1/k8s2/k8s4)だけに適用する。外部の eBGP ピアには適用しない。
+  ibgp_keepalive_seconds = 3
+  ibgp_hold_seconds      = 9
+
   # BIRD の protocol direct 相当。API VIP は kube-vip の保持ノードで直結経路になる。
   redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32"]
   # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
