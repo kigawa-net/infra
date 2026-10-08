@@ -669,6 +669,20 @@ module "node_exporter" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
+
+  # manifests-guard(/etc/kubernetes/manifests の余分なファイルの検知、issue #263)のメトリクスを、Prometheus へ出す。
+  # manifests-guard モジュールの textfile_dir(既定は同じ値)と合わせること。
+  textfile_directory = "/var/lib/node_exporter/textfile"
+}
+
+# /etc/kubernetes/manifests の余分なファイル(.bak など)と、pod 名の重複を検知する。検知するだけで、ファイルは触らない (issue #263)。
+module "manifests_guard" {
+  source = "../modules/manifests-guard"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
 }
 
 module "dual_stack_network" {

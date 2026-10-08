@@ -261,9 +261,19 @@ module "node_exporter" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  # etcd のバックアップ(etcd-backup)の成功・失敗のメトリクスを、Prometheus へ出す (issue #189)。
-  # etcd-backup モジュールの textfile_dir(既定は同じ値)と合わせること。
+  # etcd のバックアップ(etcd-backup)と、manifests-guard のメトリクスを、Prometheus へ出す (issue #189、#263)。
+  # etcd-backup / manifests-guard モジュールの textfile_dir(既定は同じ値)と合わせること。
   textfile_directory = "/var/lib/node_exporter/textfile"
+}
+
+# /etc/kubernetes/manifests の余分なファイル(.bak など)と、pod 名の重複を検知する。検知するだけで、ファイルは触らない (issue #263)。
+module "manifests_guard" {
+  source = "../modules/manifests-guard"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
 }
 
 module "dual_stack_network" {
