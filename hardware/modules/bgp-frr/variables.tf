@@ -47,6 +47,13 @@ variable "ibgp_keepalive_seconds" {
   EOT
   type        = number
   default     = null
+
+  # 変数の validation は、Terraform 1.9 未満では、ほかの変数を参照できない(CI で失敗した)。
+  # この変数だけで確かめられる範囲に絞り、keepalive と hold の関係は、main.tf の precondition で確かめる。
+  validation {
+    condition     = var.ibgp_keepalive_seconds == null || var.ibgp_keepalive_seconds >= 1
+    error_message = "ibgp_keepalive_seconds は 1 以上にすること(または null)。"
+  }
 }
 
 variable "ibgp_hold_seconds" {
@@ -60,12 +67,8 @@ variable "ibgp_hold_seconds" {
   default     = null
 
   validation {
-    condition = (
-      (var.ibgp_keepalive_seconds == null && var.ibgp_hold_seconds == null) ||
-      (var.ibgp_keepalive_seconds != null && var.ibgp_hold_seconds != null &&
-      var.ibgp_hold_seconds >= 3 * var.ibgp_keepalive_seconds && var.ibgp_keepalive_seconds >= 1)
-    )
-    error_message = "ibgp_keepalive_seconds と ibgp_hold_seconds は、両方とも null か、keepalive >= 1 かつ hold >= 3 * keepalive の両方を指定すること。"
+    condition     = var.ibgp_hold_seconds == null || var.ibgp_hold_seconds >= 3
+    error_message = "ibgp_hold_seconds は 3 以上にすること(または null)。BGP のホールドタイムは 0 か 3 以上。"
   }
 }
 
