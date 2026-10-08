@@ -88,25 +88,25 @@ variable "kube_vip_health_peers" {
 variable "etcd_backup_enabled" {
   description = "etcd の定期スナップショット(R2 へ、age で暗号化)を有効にする (issue #189)。age の公開鍵と R2 の認証情報が揃うまでは false"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "etcd_backup_age_recipient" {
-  description = "スナップショットを暗号化する age の公開鍵(age1...)。秘密鍵は、ノードに置かず、Bitwarden に保管する"
+  description = "スナップショットを暗号化する age の公開鍵(age1...)。秘密鍵は、ノードに置かず、Bitwarden に保管する(公開鍵は秘密ではない)"
   type        = string
-  default     = ""
+  default     = "age1n5ccnfwjrmd24vruuj4jjlag3lzdglqqv3u8ve3xa0mlqxqhrewsdfwf7a"
 }
 
 variable "etcd_backup_r2_access_key_bitwarden_id" {
-  description = "etcd-backup バケット限定の R2 アクセスキー ID の Bitwarden Secrets の UUID。空のときは、Bitwarden に触れない"
+  description = "etcd-backup バケット限定の R2 アクセスキー ID の Bitwarden Secrets の UUID(etcd-backup-r2-access-key-id)。UUID は秘密ではない。空のときは、Bitwarden に触れない"
   type        = string
-  default     = ""
+  default     = "dcb5a742-001d-4b04-9581-b4dd00263c30"
 }
 
 variable "etcd_backup_r2_secret_bitwarden_id" {
-  description = "etcd-backup バケット限定の R2 シークレットアクセスキーの Bitwarden Secrets の UUID"
+  description = "etcd-backup バケット限定の R2 シークレットアクセスキーの Bitwarden Secrets の UUID(etcd-backup-r2-secret-access-key)"
   type        = string
-  default     = ""
+  default     = "c4779430-503a-4cc0-b4fd-b4dd00263d66"
 }
 
 variable "dns_vip" {

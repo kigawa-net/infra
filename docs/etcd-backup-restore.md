@@ -20,6 +20,8 @@ issue #189。control-plane は 3 台で冗長化されているが、冗長化�
   6. 結果を node_exporter の textfile(`etcd_backup_*`)に書く。
 - 保存先のキー: `k8s2/<UTC のタイムスタンプ>/{etcd-snapshot.db.gz.age, pki.tar.gz.age, snapshot-status.json.age}`。
 - **暗号化は公開鍵だけ**。ノードには公開鍵(`/etc/etcd-backup/env` の `AGE_RECIPIENT`)しか無く、**復号の秘密鍵は Bitwarden に保管する**(ノードや R2 が侵害されても、過去のバックアップは読めない)。スナップショットには、全ての Secret が入っているので、秘密鍵の扱いに注意する。
+  - 秘密鍵: Bitwarden Secrets(プロジェクト `infra`)の `etcd-backup-age-secret-key`(`9e670097-d6fe-45f2-af5b-b4dd00306477`)。公開鍵は `age1n5ccnfwjrmd24vruuj4jjlag3lzdglqqv3u8ve3xa0mlqxqhrewsdfwf7a`。
+  - **注意**: 同じプロジェクトの機械トークンは、CI も使う(SSH の鍵や sudo のパスワードも、同じトークンで読める)。さらに、**Bitwarden Secrets の障害や、プロジェクトの喪失に備えて、秘密鍵の控えを、別の場所(個人の Bitwarden の保管庫、オフラインの媒体など)にも置くこと**。この鍵を失うと、全てのバックアップが復号できなくなる。
 - R2 のトークンは、`etcd-backup` バケット限定(Object Read & Write)。
 
 ## 有効化の手順(初回)
@@ -48,7 +50,9 @@ aws s3 ls s3://etcd-backup/k8s2/ --endpoint-url "$R2_ENDPOINT" | tail
 aws s3 cp s3://etcd-backup/k8s2/<TIMESTAMP>/etcd-snapshot.db.gz.age . --endpoint-url "$R2_ENDPOINT"
 aws s3 cp s3://etcd-backup/k8s2/<TIMESTAMP>/pki.tar.gz.age .           --endpoint-url "$R2_ENDPOINT"
 
-# 復号(秘密鍵は、Bitwarden から、一時ファイルに取り出す。使い終わったら消す)
+# 復号(秘密鍵は、Bitwarden Secrets の etcd-backup-age-secret-key から、一時ファイルに取り出す。使い終わったら消す)
+umask 077
+bws secret get 9e670097-d6fe-45f2-af5b-b4dd00306477 | jq -r .value > etcd-backup.key
 age -d -i etcd-backup.key etcd-snapshot.db.gz.age | gunzip > snapshot.db
 age -d -i etcd-backup.key pki.tar.gz.age | tar -xz        # pki/ と admin.conf
 ```
