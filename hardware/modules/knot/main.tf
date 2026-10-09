@@ -16,6 +16,32 @@ ${local.zone_blocks}
 
 ${var.extra_config}
 CONF
+
+  # kigawa-net/infra#221: zone ファイルを配るだけでは、動いている knot(静的 Pod)は古い zone のままだった
+  # (2026-10-04、#211 / #220 の apply が成功しても、新しい名前が引けなかった。手動の `knotc zone-reload` で反映した)。
+  # 配備した zone を、動いている knot に再読み込みさせる。
+  # - knot のコンテナが無い(初回の構築、Pod の再作成中)ときは、何もしない(新しい Pod は、起動時に zone を読む)。
+  # - 再読み込みに失敗しても、apply は失敗にしない(zone ファイルの配備は済んでいる。警告を出す)。
+  # - knot.conf が変わった場合は、zone の再読み込みでは反映されない(静的 Pod の manifest の更新・再作成が要る)。
+  zone_reload_script = <<-SCRIPT
+    #!/bin/bash
+    set -u
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    export CONTAINER_RUNTIME_ENDPOINT=unix:///run/containerd/containerd.sock
+    cid=$(crictl ps --name '^knot$' -q 2>/dev/null | head -1)
+    if [ -z "$cid" ]; then
+      echo "knot のコンテナが無いため、zone の再読み込みを省略する"
+      exit 0
+    fi
+    for z in ${join(" ", keys(var.zones))}; do
+      if crictl exec "$cid" knotc zone-reload "$z" >/dev/null 2>&1; then
+        echo "zone-reload: $z OK"
+      else
+        echo "WARNING: zone-reload に失敗した: $z"
+      fi
+    done
+    crictl exec "$cid" knotc zone-status 2>/dev/null || true
+  SCRIPT
 }
 
 resource "null_resource" "knot" {
@@ -26,7 +52,8 @@ resource "null_resource" "knot" {
     # the provisioners below that actually deploy zone files only run on resource
     # create/replace, and this trigger set had no reference to zone *content* at all.
     zones          = jsonencode(var.zones)
-    script_version = "4"
+    reload_script  = sha256(local.zone_reload_script)
+    script_version = "5"
   }
 
   connection {
@@ -93,6 +120,18 @@ resource "null_resource" "knot" {
       "echo '${var.sudo_password}' | sudo -S systemctl disable knot.service || true",
       "echo '${var.sudo_password}' | sudo -S systemctl mask knot.service || true",
       "echo 'Knot config/zones deployed; host-native knot.service masked (static pod serves DNS)'",
+    ]
+  }
+
+  provisioner "file" {
+    content     = local.zone_reload_script
+    destination = "/tmp/knot-zone-reload.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${var.sudo_password}' | sudo -S bash /tmp/knot-zone-reload.sh",
+      "rm -f /tmp/knot-zone-reload.sh",
     ]
   }
 
