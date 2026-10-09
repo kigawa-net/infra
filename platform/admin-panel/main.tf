@@ -52,12 +52,24 @@ resource "keycloak_openid_audience_protocol_mapper" "mcp_admin_panel_aud" {
   add_to_access_token      = true
 }
 
-# admin-panel client roles (viewer/operator/admin) を access tokenのrolesへ追加
-resource "keycloak_openid_group_membership_protocol_mapper" "mcp_admin_panel_roles" {
-  realm_id        = var.keycloak_realm
-  name            = "admin-panel roles"
-  client_scope_id = keycloak_openid_client_scope.mcp_admin_panel.id
-  claim_name      = "roles"
+# admin-panel の client roles (viewer/operator/admin) を access token の
+# roles クレームへ追加する。
+#
+# 以前は group membership mapper で group path を入れていたが、
+# admin-panel 側は ROLE_NAMES("viewer"/"operator"/"admin")で照合するため、
+# グループパスでは一切マッチせずロールが無くなり 403 になる。
+# client role を直接マップする user_client_role mapper に正しい。
+resource "keycloak_openid_user_client_role_protocol_mapper" "mcp_admin_panel_roles" {
+  realm_id                    = var.keycloak_realm
+  name                        = "admin-panel client roles"
+  client_scope_id             = keycloak_openid_client_scope.mcp_admin_panel.id
+  client_id_for_role_mappings = "admin-panel"
+  claim_name                  = "roles"
+  claim_value_type            = "String"
+  multivalued                 = true
+  add_to_access_token         = true
+  add_to_id_token             = false
+  add_to_userinfo             = true
 }
 
 # CI(kigawa-net/kinfra#348 のcomposite action経由)がadmin-panelの
