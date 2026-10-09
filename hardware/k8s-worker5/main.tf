@@ -144,6 +144,16 @@ resource "null_resource" "worker_node" {
   }
 }
 
+# journald の上限(/ の枯渇対策、issue #254)。
+module "journald_limit" {
+  source = "../modules/journald-limit"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
+
 module "node_exporter" {
   source = "../modules/node-exporter"
 
