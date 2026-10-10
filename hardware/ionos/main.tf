@@ -394,7 +394,9 @@ module "karmada_cp_member" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
 
-  stage = "prepare"
+  # apiserver: kube-apiserver だけを起動する(他のコンポーネントは起動しない)。
+  # 証明書と鍵(karmada.key を含む)は、この IaC の外で配置済みであること。揃っていなければ、起動せずに中止する。
+  stage = "apiserver"
 
   depends_on = [module.karmada_etcd_member]
 }
