@@ -142,6 +142,36 @@ jobs:
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
           echo "検出されたモジュール: $MODULES"
 
+      # zone ファイルの Serial 検査 (#273)
+      #
+      # knot は Serial が増えたときだけ zone を反映するため、レコードを
+      # 足して Serial を据え置くと apply は success でも DNS は古いままに
+      # なる。ここでは terraform を回さずに検査だけ先に落とす。
+      #
+      # 検出(job)と同じ GitHub-hosted ランナーで行うので、内部ネットワークにも
+      # 資格情報にも依存せず、どの変更でも確実に走る(terraform ジョブが
+      # skip されていても検査は走るため、zone だけの変更でも検出される)。
+      - name: zone の SOA Serial を検査
+        # base の取り方は上の「変更されたモジュールを検出」と同じ規則に揃える。
+        # workflow_dispatch では before が無いので、origin/main を基準にする
+        # (PR は origin/<base_ref>)。
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              ref="origin/$BASE_REF" ;;
+            push)
+              ref="$EVENT_BEFORE HEAD" ;;
+            *)
+              # workflow_dispatch では「何が変わったか」が分からないため、
+              # origin/main との差分を見る
+              ref="origin/main HEAD" ;;
+          esac
+          ./scripts/validate-zone-serial.sh "$ref"
+
   terraform:
     needs: detect-modules
     if: needs.detect-modules.outputs.modules != '[]' && needs.detect-modules.outputs.modules != ''
