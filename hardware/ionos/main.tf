@@ -394,9 +394,11 @@ module "karmada_cp_member" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
 
-  # apiserver: kube-apiserver だけを起動する(他のコンポーネントは起動しない)。
+  # full: kube-apiserver のあと、webhook → aggregated-apiserver → metrics-adapter → scheduler → controller-manager の順に、
+  # 1 つずつ起動して確認する(kube-controller-manager は、CA の鍵を置かないため、動かさない)。
   # 証明書と鍵(karmada.key を含む)は、この IaC の外で配置済みであること。揃っていなければ、起動せずに中止する。
-  stage = "apiserver"
+  # 1 つでも起動に失敗したら、CP のサービスをすべて止める。戻すときは stage を "apiserver" / "prepare" にする。
+  stage = "full"
 
   depends_on = [module.karmada_etcd_member]
 }
