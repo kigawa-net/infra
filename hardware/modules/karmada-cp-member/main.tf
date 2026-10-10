@@ -285,8 +285,18 @@ locals {
   start_units = {
     prepare   = []
     apiserver = ["karmada-apiserver"]
-    full      = keys(local.all_components)
+    # 起動順: apiserver(readyz を確認)→ webhook(Fail の登録があるため、他より先)→ aggregated-apiserver → metrics-adapter
+    # → scheduler → controller-manager。keys() はアルファベット順なので、明示する。残り(kube-controller-manager など)は、最後に足す
+    full = concat(local.full_order, [for k in sort(keys(local.all_components)) : k if !contains(local.full_order, k)])
   }
+  full_order = [
+    "karmada-apiserver",
+    "karmada-webhook",
+    "karmada-aggregated-apiserver",
+    "karmada-metrics-adapter",
+    "karmada-scheduler",
+    "karmada-controller-manager",
+  ]
 }
 
 resource "null_resource" "karmada_cp_member" {
