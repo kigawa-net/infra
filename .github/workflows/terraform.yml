@@ -251,12 +251,18 @@ jobs:
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        # pipefail がないと `terraform plan | tee` の終了コードが tee(常に0)になり、
+        # plan が失敗してもジョブが success になってしまう(#205)。
+        shell: bash -eo pipefail {0}
         run: |
           ./${{ matrix.dir }}/run.sh ${{ matrix.module }} plan -input=false -no-color -out=tfplan \
             2>&1 | tee plan_output.txt
 
       - name: PR にプランをコメント
-        if: github.event_name == 'pull_request'
+        # plan が失敗しても(下の Apply / 後続ステップがskipされても)失敗原因を
+        # PR 上に見せられるよう always() を付ける。#205 で緑チェックに騙された件を
+        # 再発させないため、失敗内容をPlanコメントとして残す。
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
@@ -266,9 +272,15 @@ jobs:
               ? output.slice(0, 60000) + '\n\n...(出力が長いため省略)'
               : output;
             const header = `### Terraform Plan \`${{ matrix.dir }}/${{ matrix.module }}\``;
+            // plan が失敗した場合は plan_output.txt に Error: が含まれるので、
+            // チェックも failure になる。ここでは先頭に明示して目立たせる。
+            const failed = /^.*\bError: /m.test(output);
+            const notice = failed
+              ? '> **この plan は失敗しました。下のログに原因があります。**\n\n'
+              : '';
             // "diff" 言語指定にすると、+/-で始まる行がGitHub上で緑/赤にハイライトされる
             // (planの出力する+/-/~がdiff表記とほぼ一致するため、素の```より読みやすくなる)。
-            const body = `${header}\n\`\`\`diff\n${truncated}\n\`\`\``;
+            const body = `${header}\n${notice}\`\`\`diff\n${truncated}\n\`\`\``;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -301,7 +313,15 @@ jobs:
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
           BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
-        run: ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
+        # 「No changes」では tfplan が作られないため、そのまま apply すると
+        # "Failed to load tfplan as a plan file: no such file" で失敗する(#205)。
+        # 「変更なし」を失敗扱いにしないよう、明示的にスキップする。
+        run: |
+          if [ ! -f tfplan ]; then
+            echo "変更なし(tfplan が生成されていない)のため apply をスキップします。"
+            exit 0
+          fi
+          ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
 
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
         if: always() && matrix.runner == 'ubuntu-latest'
