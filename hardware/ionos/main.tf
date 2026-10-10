@@ -382,3 +382,19 @@ module "karmada_etcd_member" {
 
   depends_on = [null_resource.ionos_gateway]
 }
+
+# Karmada の control plane(CP #3)を、IaC で構成する(kigawa-net/kigawa-net-k8s#268)。
+# stage = "prepare" の間は、バイナリ・ユニット・slice・/etc/hosts・REDIRECT・ufw(5443)を用意するだけで、**Karmada のサービスは、何も起動しない**。
+# apiserver / full に上げるには、証明書と鍵(/etc/karmada/pki/)を、この IaC の外で用意してから、別の PR で stage を変える。
+# etcd #3 が、3 メンバーの voter になってから実行する(kube-apiserver は、etcd の 3 メンバーに接続する)。
+module "karmada_cp_member" {
+  source = "../modules/karmada-cp-member"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+
+  stage = "prepare"
+
+  depends_on = [module.karmada_etcd_member]
+}
