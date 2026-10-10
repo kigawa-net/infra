@@ -375,9 +375,10 @@ module "karmada_etcd_member" {
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
 
-  # 参加は、まだしない(バイナリ・ユニット・環境ファイルの用意だけ)。参加の前提(learner の数の上限と、quorum の手順)が
-  # 決まってから、別の PR で true にする。理由は、モジュールの variables.tf の `join` と、kigawa-net-k8s#272 を参照。
-  join = false
+  # IONOS を learner として参加させる。前提: クラスターの learner が 0 であること(etcd 3.6 の --max-learners の既定は 1。
+  # Soichiro を先に promote しておく)。learner が残っていると、member add が失敗する(登録は、されない)。
+  # promote は、この module では行わない(IONOS が追いついてから、手動で。kigawa-net-k8s#272 の手順)。
+  join = true
 
   depends_on = [null_resource.ionos_gateway]
 }
