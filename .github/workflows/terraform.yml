@@ -347,7 +347,8 @@ jobs:
         # "Failed to load tfplan as a plan file: no such file" で失敗する(#205)。
         # 「変更なし」を失敗扱いにしないよう、明示的にスキップする。
         run: |
-          if [ ! -f tfplan ]; then
+          # tfplan は run.sh の `terraform -chdir=<dir>/<module>` の下に作られる(リポジトリのルートではない)
+          if [ ! -f "${{ matrix.dir }}/${{ matrix.module }}/tfplan" ]; then
             echo "変更なし(tfplan が生成されていない)のため apply をスキップします。"
             exit 0
           fi
