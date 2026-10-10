@@ -364,3 +364,20 @@ resource "null_resource" "ionos_gateway" {
     ]
   }
 }
+
+# Karmada の外部 etcd のメンバー(etcd #3)を、IaC で構成し、learner として参加させる(kigawa-net/kigawa-net-k8s#272)。
+# 参加は learner まで。promote は、しない(quorum の理由は、モジュールの README を参照)。
+# WireGuard のゲートウェイ(wg0 と経路)が整ってから実行する。
+module "karmada_etcd_member" {
+  source = "../modules/karmada-etcd-member"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+
+  # 参加は、まだしない(バイナリ・ユニット・環境ファイルの用意だけ)。参加の前提(learner の数の上限と、quorum の手順)が
+  # 決まってから、別の PR で true にする。理由は、モジュールの variables.tf の `join` と、kigawa-net-k8s#272 を参照。
+  join = false
+
+  depends_on = [null_resource.ionos_gateway]
+}
