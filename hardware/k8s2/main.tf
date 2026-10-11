@@ -122,15 +122,17 @@ module "bgp" {
       import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/soichiro等)への復路
       export_prefixes = ["10.0.0.0/16"]
     },
-    # IONOS との専用リンク(kigawa-net/infra#238、stage 1)。IONOS の予備経路として、10.0.0.0/24 を広告するだけ。
-    # import は空(何も取り込まない): 取り込むと、eBGP の経路(距離 20)が iBGP より優先されて、172.31.254.0/24 宛のトラフィックが
-    # この専用リンクに流れ始める。stage 3(k8s4 の切り替え)で、IONOS の受信経路を有効にする。
+    # IONOS との専用リンク(kigawa-net/infra#238)。IONOS の予備経路として、10.0.0.0/24 を広告する。
+    # ionos_link_import_enabled = true(切り替え後)のとき、IONOS から 172.31.254.0/24 と Soichiro の管理 IP を取り込む。
+    # これは、k8s4 の専用リンクが落ちたときの、Inuyama → IONOS の戻りのフォールバック: k8s4 が取り込んだ経路は local-preference 200、
+    # こちらは既定の 100 なので、k8s1 などの Inuyama のノードは、通常は k8s4 を使い、k8s4 の経路が消えたときだけ、k8s2 を使う
+    # (iBGP で local-preference が伝わる)。k8s2 自身の通信は、この eBGP の経路(距離 20)で、専用リンクから出る。
     {
       local_ip        = trimsuffix(var.ionos_link_address, "/30")
       local_as        = var.inuyama_asn
       neighbor_ip     = var.ionos_link_peer_address
       neighbor_as     = var.ionos_bgp_as
-      import_prefixes = []
+      import_prefixes = var.ionos_link_import_enabled ? ["172.31.254.0/24", "10.255.10.12/32"] : []
       export_prefixes = ["10.0.0.0/24"]
     },
   ]

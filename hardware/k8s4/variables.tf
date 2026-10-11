@@ -182,6 +182,16 @@ variable "ionos_link_endpoint" {
   default     = "74.208.55.86:51821"
 }
 
+variable "ionos_link_primary" {
+  description = <<-DESC
+    k8s4 の IONOS 方面の出口を、専用リンク(wg-ionos-gw)にするか(true)、従来の wg1 のままにするか(false)。
+    true: 専用リンクの eBGP から、172.31.254.0/24 と Soichiro の管理 IP(10.255.10.12/32)を取り込み、wg1 の eBGP からは取り込まない。
+    切り替え(kigawa-net/infra#238 の段階 3)で true にする。**元に戻すときは false にして apply**(FRR は reload。差分だけ適用)。
+  DESC
+  type        = bool
+  default     = true
+}
+
 variable "ionos_bgp_as" {
   type    = number
   default = 65030

@@ -515,6 +515,11 @@ resource "null_resource" "oracle_wireguard" {
 
 # BIRD から FRR へ移行する (#210)。k8s1・k8s2 は移行済み。k8s4 は外部ピア(IONOS・Oracle)を持つので最後。
 # 手順は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。マージ前に必ず手順書を読み、合意した時間に行うこと。
+locals {
+  # IONOS から取り込む prefix: ionos 配下の WireGuard ピア(k8s1 / k8s2 / CI ランナー / Soichiro など)への復路 + Soichiro の管理 IP
+  ionos_import_prefixes = ["172.31.254.0/24", "10.255.10.12/32"]
+}
+
 module "bgp" {
   depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard, null_resource.ionos_gateway_link, null_resource.oracle_wireguard]
   source     = "../modules/bgp-frr"
@@ -550,11 +555,13 @@ module "bgp" {
   external_bgp_peers = concat(
     [
       {
-        local_ip        = trimsuffix(var.ionos_wireguard_address, "/30")
-        local_as        = var.inuyama_asn
-        neighbor_ip     = "172.31.254.2"
-        neighbor_as     = var.ionos_bgp_as
-        import_prefixes = ["172.31.254.0/24", "10.255.10.12/32"] # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路 + Soichiro の管理 IP
+        local_ip    = trimsuffix(var.ionos_wireguard_address, "/30")
+        local_as    = var.inuyama_asn
+        neighbor_ip = "172.31.254.2"
+        neighbor_as = var.ionos_bgp_as
+        # ionos配下のWireGuardピア(k8s1/k8s2/soichiro等)への復路 + Soichiro の管理 IP。専用リンクが主(ionos_link_primary)のときは、
+        # こちら(wg1 の eBGP)からは取り込まない(同じ prefix の経路が 2 つになり、k8s4 の IONOS 方面の出口が、どちらか不定になるため)。
+        import_prefixes = var.ionos_link_primary ? [] : local.ionos_import_prefixes
         # 10.0.0.0/24(クラスタ LAN)。bird のフィルタは完全一致(net = <prefix>)で、k8s4 の経路表に 10.0.0.0/16 という経路は
         # 無いため、以前の "10.0.0.0/16" では、何も広告されていなかった(実機の `birdc show protocols all` で
         # IONOS・Oracle のどちらも `0 exported`。2026-10-05)。
@@ -580,9 +587,9 @@ module "bgp" {
         local_pref = 200
       }
     ] : [],
-    # IONOS との専用リンク(kigawa-net/infra#238、stage 1)。IONOS の予備ではなく、主のリンクの準備として、
-    # 10.0.0.0/24 を広告するだけ。import は空(何も取り込まない): 取り込むと、wg1 の eBGP と同じ prefix の経路が 2 つになり、
-    # 172.31.254.0/24 宛のトラフィックが、このリンクに流れ始める。IONOS の受信経路は、切り替え(stage 3)のときに有効にする。
+    # IONOS との専用リンク(kigawa-net/infra#238)。ionos_link_primary = true(切り替え後)のとき、k8s4 の IONOS 方面の出口は、
+    # このリンクになる(172.31.254.0/24 と Soichiro の管理 IP を、ここから取り込む)。false(切り替え前)のときは、何も取り込まず、
+    # 10.0.0.0/24 を広告するだけ(取り込むと、wg1 の eBGP と同じ prefix の経路が 2 つになり、不定になる)。元に戻すときは false。
     # **必ず、リストの最後に足すこと**: bgp-frr module は、peer ごとに、リストの添字で `EXT-<添字>-IN/OUT` の prefix-list と
     # route-map を作る。既存の peer(Oracle など)より前に入れると、添字がずれて、reload の途中で、既存の peer の import が、
     # 一時的に deny-all になる(Soichiro への主経路が消える)。
@@ -592,8 +599,11 @@ module "bgp" {
         local_as        = var.inuyama_asn
         neighbor_ip     = var.ionos_link_peer_address
         neighbor_as     = var.ionos_bgp_as
-        import_prefixes = []
+        import_prefixes = var.ionos_link_primary ? local.ionos_import_prefixes : []
         export_prefixes = ["10.0.0.0/24"]
+        # k8s2 の専用リンクから取り込む同じ prefix(100)より優先する(iBGP で local-preference が伝わり、k8s1 などの Inuyama の
+        # ノードは、通常は k8s4 を使い、k8s4 の経路が消えたときだけ、k8s2 を使う)
+        local_pref = 200
       }
     ],
   )
@@ -849,8 +859,9 @@ module "dual_stack_network" {
 locals {
   # IONOS 方面のインターフェースは、wg1 と、専用リンク(wg-ionos-gw。kigawa-net/infra#238)。切り替え(段階 3)で、
   # k8s4 の IONOS 方面の出口が専用リンクに移る前に、専用リンクにも MASQUERADE を足しておく(今の通信には影響しない)。
-  # 注意: 専用リンクで MASQUERADE すると、送信元は 172.31.252.2 になる。Soichiro は、172.31.252.0/30 への経路を持たない場合、
-  # 戻りが届かない(Soichiro 宛の etcd は、通常は Oracle 経由。IONOS 経由は、Oracle が使えないときの予備)。
+  # 注意: 専用リンクの出口は、MASQUERADE でなく、wg1 のアドレス(172.31.254.1)への SNAT にする(スクリプトを参照)。MASQUERADE だと
+  # 送信元が 172.31.252.2 になり、Soichiro は 172.31.252.0/30 への経路を持たないので、戻りが届かない(Soichiro 宛の etcd は、
+  # 通常は Oracle 経由。IONOS 経由は、Oracle が使えないときの予備)。
   etcd_peer_masquerade_interfaces = [var.oracle_wireguard_interface, var.ionos_wireguard_interface, var.ionos_link_interface]
 
   etcd_peer_masquerade_script = <<-SCRIPT
@@ -861,8 +872,17 @@ locals {
     SRC="${var.etcd_peer_masquerade_source_cidr}"
     %{for dst in var.etcd_peer_masquerade_destinations~}
     %{for ifc in local.etcd_peer_masquerade_interfaces~}
+    %{if ifc == var.ionos_link_interface~}
+    # 専用リンクの出口は、MASQUERADE(送信元がリンクの主アドレス 172.31.252.2 になる)でなく、wg1 のアドレスに SNAT する。
+    # Soichiro は 172.31.254.0/24(IONOS の wg0 のネットワーク)への経路を持つが、172.31.252.0/30 への経路は持たない。
+    # 先に入れた MASQUERADE のルールがあれば、消す(先に合致して、SNAT が効かないため)。
+    $IPT -t nat -D POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j MASQUERADE 2>/dev/null || true
+    $IPT -t nat -C POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j SNAT --to-source ${split("/", var.ionos_wireguard_address)[0]} 2>/dev/null \
+      || $IPT -t nat -A POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j SNAT --to-source ${split("/", var.ionos_wireguard_address)[0]}
+    %{else~}
     $IPT -t nat -C POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j MASQUERADE 2>/dev/null \
       || $IPT -t nat -A POSTROUTING -s $SRC -d ${dst}/32 -o ${ifc} -p tcp -m multiport --dports 2379,2380 -j MASQUERADE
+    %{endif~}
     %{endfor~}
     %{endfor~}
   SCRIPT

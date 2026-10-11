@@ -7,7 +7,7 @@ PrivateKey = __IONOS_PRIVATE_KEY__
 Table = off
 MTU = ${mtu}
 %{ for r in l.static_routes ~}
-PostUp = ip route replace ${r} via ${l.peer_address} dev ${l.name} metric 100 || true
+PostUp = ip route replace ${r} via ${l.peer_address} dev ${l.name} metric 100 src ${local_src} || true
 PostDown = ip route del ${r} via ${l.peer_address} dev ${l.name} metric 100 2>/dev/null || true
 %{ endfor ~}
 
