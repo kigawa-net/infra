@@ -11,6 +11,24 @@ provider "cloudflare" {
   api_token = data.external.api_token.result.value
 }
 
+# ゾーン全体のSSL/TLSモードをIaCで固定する。
+#
+# min_tls_version は「現状値を取り込む」だけの目的で1.0のままにしない。
+# Cloudflareの既定はTLS1.0だが、TLS1.0/1.1はRFC8996(2019)で正式に
+# 廃止された規格で、現在のブラウザ・OS・TLSライブラリはほぼ1.2を要求する。
+# 1.0を受け入れていても相互運用上の利点は無く、セキュリティ上の負債だけ
+# が残るため desired state は1.2とする。
+resource "cloudflare_zone_settings_override" "kigawa_net" {
+  zone_id = var.zone_id
+
+  settings {
+    ssl              = "full"
+    min_tls_version  = "1.2"
+    always_use_https = "on"
+    tls_1_3          = "on"
+  }
+}
+
 # --- A records ---
 
 resource "cloudflare_record" "base" {
