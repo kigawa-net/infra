@@ -249,3 +249,21 @@ module "node_dns" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+# journald の上限(/run の ramdisk 圧迫対策、k8s-system#259)。
+# k8s1/k8s2/k8s4/k8s-worker5 には適用済みだが、この3台には未適用だった。
+# worker3 は 2026-10-05 時点で /run の tmpfs 6.3G に対し 6.2G 使用(98
+# journald の上限(/run の ramdisk 圧迫対策、k8s-system#259)。
+# k8s1/k8s2/k8s4/k8s-worker5 には適用済みだが、この3台には未適用だった。
+# worker3 は 2026-10-05 時点で /run の tmpfs 6.3G に対し 6.2G 使用(98%)で
+# DiskPressure が発生していた(infra#243 参照)。journald は既定で
+# ファイルシステムの 10%(最大 4GB)まで log を ramdisk に書けるため、
+# 小さな tmpfs を持つノードでは他の用途(sandbox/shm)を圧迫する。
+module "journald_limit" {
+  source = "../modules/journald-limit"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
