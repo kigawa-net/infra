@@ -222,11 +222,22 @@ locals {
     # 一瞬切れる。FRR や ufw だけの変更で、wg0 を巻き込まない)。
     sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" /tmp/ionos-wg0.conf.tpl > /etc/wireguard/${var.wireguard_interface}.conf.new
     chmod 600 /etc/wireguard/${var.wireguard_interface}.conf.new
-    # 設定を置いてから再起動するまでに、後ろの手順が失敗しても、次の実行で再起動が飛ばされないよう、保留のマーカーを残す
-    if ! cmp -s /etc/wireguard/${var.wireguard_interface}.conf.new /etc/wireguard/${var.wireguard_interface}.conf; then
-      touch /etc/wireguard/.${var.wireguard_interface}-restart-pending
+    # 設定を置いてから反映するまでに、後ろの手順が失敗しても、次の実行で反映が飛ばされないよう、保留のマーカーを残す。
+    # [Interface] の部分(Address・ListenPort・MTU・PrivateKey など)が同じで、[Peer] だけが変わったときは、再起動せず、
+    # `wg syncconf`(systemctl reload)で差分だけを適用する(peer の追加・鍵の更新で、他の peer のセッションを切らない)。
+    # [Interface] が変わったときは、従来どおり再起動する。
+    wg_conf=/etc/wireguard/${var.wireguard_interface}.conf
+    if ! cmp -s "$wg_conf.new" "$wg_conf"; then
+      awk '/^\[Peer\]/ { exit } { print }' "$wg_conf.new" > "$wg_conf.new.iface"
+      awk '/^\[Peer\]/ { exit } { print }' "$wg_conf" > "$wg_conf.old.iface" 2> /dev/null || true
+      if [ -s "$wg_conf.old.iface" ] && cmp -s "$wg_conf.new.iface" "$wg_conf.old.iface"; then
+        touch /etc/wireguard/.${var.wireguard_interface}-reload-pending
+      else
+        touch /etc/wireguard/.${var.wireguard_interface}-restart-pending
+      fi
+      rm -f "$wg_conf.new.iface" "$wg_conf.old.iface"
     fi
-    mv -f /etc/wireguard/${var.wireguard_interface}.conf.new /etc/wireguard/${var.wireguard_interface}.conf
+    mv -f "$wg_conf.new" "$wg_conf"
 
     # ゲートウェイごとの専用リンク(wg-gw*。kigawa-net/infra#238)。鍵は wg0 と同じ(ionos_private.key)。
     # 各リンクは独立したインターフェースなので、wg0 には触れない。設定が変わったとき、または起動していないときだけ、再起動する。
@@ -286,7 +297,16 @@ locals {
     systemctl enable wg-quick@${var.wireguard_interface}
     if [ -e /etc/wireguard/.${var.wireguard_interface}-restart-pending ] || ! systemctl is-active --quiet wg-quick@${var.wireguard_interface}; then
       systemctl restart wg-quick@${var.wireguard_interface}
-      rm -f /etc/wireguard/.${var.wireguard_interface}-restart-pending
+      rm -f /etc/wireguard/.${var.wireguard_interface}-restart-pending /etc/wireguard/.${var.wireguard_interface}-reload-pending
+    elif [ -e /etc/wireguard/.${var.wireguard_interface}-reload-pending ]; then
+      # peer だけの変更: 差分だけ適用する(他の peer のセッションは切れない)。失敗したら、従来どおり再起動する
+      if systemctl reload wg-quick@${var.wireguard_interface}; then
+        echo "wg0: peer の変更を、wg syncconf で適用しました(再起動していません)"
+      else
+        echo "wg0: reload に失敗したので、再起動します"
+        systemctl restart wg-quick@${var.wireguard_interface}
+      fi
+      rm -f /etc/wireguard/.${var.wireguard_interface}-reload-pending
     fi
 
     # FRR: 設定が変わらず、動いているときは何もしない。変わったときは、まず再読み込み(frr-reload.py。差分だけを適用し、
