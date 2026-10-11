@@ -159,7 +159,7 @@ variable "k8s2_wireguard_address" {
 variable "k8s2_wireguard_public_key" {
   description = "k8s2 の WireGuard 公開鍵(IONOS 用)。静的な値で持つ(公開鍵は変わらない公開情報)。空文字にすると、ピアと BGP neighbor を無効化する。以前は、CI から k8s2 に SSH して取得し、失敗すると空文字になって、ピアが黙って外れた(2026-10-05、k8s2 のダウン中の apply で、k8s2 のピアが外れ、CI の経路が壊れた)。値は、k8s2 の /etc/wireguard/publickey と、IONOS の wg show で一致を確認した"
   type        = string
-  default     = "+PuboGsR5IW7ODJ+h7tKXfaeQeTZyC9dsGJPBKos+iY="
+  default     = "+KoPyNaB89BSLsyDFsKPz4+SsAGjQW1LpbXqSiTeigI="
 
   validation {
     condition     = var.k8s2_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.k8s2_wireguard_public_key))
@@ -323,7 +323,7 @@ variable "gateway_links" {
       name            = "wg-gw2"
       address         = "172.31.252.5/30"
       listen_port     = 51822
-      peer_public_key = "+PuboGsR5IW7ODJ+h7tKXfaeQeTZyC9dsGJPBKos+iY=" # k8s2(var.k8s2_wireguard_public_key と同じ。鍵は共有する)
+      peer_public_key = "+KoPyNaB89BSLsyDFsKPz4+SsAGjQW1LpbXqSiTeigI=" # k8s2(var.k8s2_wireguard_public_key と同じ。鍵は共有する)
       peer_address    = "172.31.252.6"
       peer_asn        = 65010
     },
