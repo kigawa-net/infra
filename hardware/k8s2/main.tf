@@ -225,8 +225,15 @@ module "wireguard_ionos" {
   # AllowedIPs(172.31.254.0/24)から wg-quick が作る `172.31.254.0/24 dev wg1` を、ノード / wg-quick の再起動後も作らせない。
   # この経路を bird が kernel から取り込んで iBGP に広告すると、k8s1 / k8s4 が k8s2 経由を選び、IONOS の k8s2 ピア(AllowedIPs は
   # 172.31.254.12/32 のみ)で戻りが破棄された(2026-10-05)。IONOS 本体への経路は PostUp で足す(eBGP の到達性)。
-  table_off     = true
-  extra_post_up = ["ip route add 172.31.254.2/32 dev %i"]
+  table_off = true
+  extra_post_up = [
+    "ip route add 172.31.254.2/32 dev %i",
+    # LAN 発(送信元 10.0.0.0/24)で IONOS 宛の通信だけ、k8s4 経由にする(戻りの経路。詳細は variables.tf の ionos_return_gateway)。
+    # k8s2 の eBGP(送信元 172.31.254.12)には、影響しない。PostUp が失敗すると wg1 が上がらなくなるため、すべて `|| true`。
+    "ip rule del from 10.0.0.0/24 to 172.31.254.2/32 lookup 200 priority 100 2>/dev/null || true",
+    "ip route replace 172.31.254.2/32 via ${var.ionos_return_gateway} dev ${var.kube_vip_interface} table 200 || true",
+    "ip rule add from 10.0.0.0/24 to 172.31.254.2/32 lookup 200 priority 100 || true",
+  ]
 }
 
 module "keepalived" {

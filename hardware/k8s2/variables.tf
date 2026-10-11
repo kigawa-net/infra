@@ -73,6 +73,18 @@ variable "kube_vip_interface" {
   default = "enp0s31f6"
 }
 
+variable "ionos_return_gateway" {
+  description = <<-DESC
+    LAN(10.0.0.0/24)発で IONOS(172.31.254.2)宛の通信の、next-hop(k8s4 の LAN アドレス)。
+    k8s2 は IONOS と専用の wg1(172.31.254.12/32)を持ち、172.31.254.2/32 を wg1 に向けている(eBGP の到達性のため)。
+    その結果、LAN 経由で来た要求(IONOS → 10.0.0.120 / VIP)への返信も、送信元 10.0.0.x のまま wg1 で IONOS に返り、
+    IONOS の wg0(k8s2 の peer の AllowedIPs は 172.31.254.12/32 のみ)で破棄される。送信元が LAN のときだけ、k8s4 経由で返す。
+    IONOS が 10.0.0.0/24 宛に使う peer(k8s4)と同じ経路になるため、往復が揃う。
+  DESC
+  type        = string
+  default     = "10.0.0.140"
+}
+
 variable "kube_vip_api_server_ip" {
   description = "kube-vipがリーダー選出で参照するAPIサーバーIP (VIP喪失時の自己参照デッドロックを避けるため、kube_vip_addressとは別の到達可能なアドレスにすること)。127.0.0.1(自ノードのローカルAPIサーバー)を指定し、外部LB(旧: host1のhaproxy VM)への単一障害点依存を避ける"
   type        = string
