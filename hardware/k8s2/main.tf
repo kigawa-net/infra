@@ -121,7 +121,18 @@ module "bgp" {
       neighbor_as     = var.ionos_bgp_as
       import_prefixes = ["172.31.254.0/24"] # ionos配下のWireGuardピア(k8s1/soichiro等)への復路
       export_prefixes = ["10.0.0.0/16"]
-    }
+    },
+    # IONOS との専用リンク(kigawa-net/infra#238、stage 1)。IONOS の予備経路として、10.0.0.0/24 を広告するだけ。
+    # import は空(何も取り込まない): 取り込むと、eBGP の経路(距離 20)が iBGP より優先されて、172.31.254.0/24 宛のトラフィックが
+    # この専用リンクに流れ始める。stage 3(k8s4 の切り替え)で、IONOS の受信経路を有効にする。
+    {
+      local_ip        = trimsuffix(var.ionos_link_address, "/30")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = var.ionos_link_peer_address
+      neighbor_as     = var.ionos_bgp_as
+      import_prefixes = []
+      export_prefixes = ["10.0.0.0/24"]
+    },
   ]
 }
 
@@ -234,6 +245,29 @@ module "wireguard_ionos" {
     "ip route replace 172.31.254.2/32 via ${var.ionos_return_gateway} dev ${var.kube_vip_interface} table 200 || true",
     "ip rule add from 10.0.0.0/24 to 172.31.254.2/32 lookup 200 priority 100 || true",
   ]
+}
+
+# IONOS との専用リンク(kigawa-net/infra#238)。peer は IONOS の 1 つだけ、AllowedIPs = 0.0.0.0/0、Table = off(経路は BGP に任せる)。
+# stage 1: 経路は広告するだけで、IONOS の経路は取り込まない(import なし)。IONOS のカーネルの経路(wg0)が主のままで、データには影響しない。
+# wireguard module は /tmp/wireguard-setup.sh を共有するので、他の wireguard module(wg0 / wg1)の後に直列で実行する。
+module "wireguard_ionos_link" {
+  count      = var.wireguard_ionos_server_public_key != "" ? 1 : 0
+  source     = "../modules/wireguard"
+  depends_on = [module.wireguard, module.wireguard_ionos]
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  wireguard_interface = var.ionos_link_interface
+  wireguard_address   = var.ionos_link_address
+  server_public_key   = var.wireguard_ionos_server_public_key
+  server_endpoint     = var.ionos_link_endpoint
+  server_allowed_ips  = ["0.0.0.0/0"]
+
+  # AllowedIPs = 0.0.0.0/0 から、wg-quick が既定経路を作らないようにする(経路は BGP が決める)
+  table_off = true
 }
 
 module "keepalived" {

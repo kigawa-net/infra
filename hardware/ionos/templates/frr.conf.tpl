@@ -7,7 +7,7 @@ router bgp ${ionos_asn}
  bgp router-id ${bgp_router_id}
 %{ for peer in gateway_bgp_peers ~}
  neighbor ${peer.wg_address} remote-as ${peer.asn}
- neighbor ${peer.wg_address} update-source ${wireguard_interface}
+ neighbor ${peer.wg_address} update-source ${peer.interface}
 %{ endfor ~}
  !
  address-family ipv4 unicast

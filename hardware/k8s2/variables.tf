@@ -193,6 +193,34 @@ variable "wireguard_ionos_server_allowed_ips" {
   default     = ["172.31.254.0/24"]
 }
 
+# --- IONOS との専用リンク(kigawa-net/infra#238) ---------------------------------------------------
+# wg1(上)は IONOS の wg0 に載っていて、IONOS 側の k8s2 の peer の AllowedIPs は 172.31.254.12/32 だけ。そのため、送信元が 10.0.0.x の
+# パケットを IONOS が破棄する。専用のリンク(peer は 1 つ、AllowedIPs = 0.0.0.0/0)なら、この制約がない。
+# 鍵は新しく作らない(wg1 と同じ /etc/wireguard/privatekey を使う。IONOS 側の peer の公開鍵も、そのまま使える)。
+variable "ionos_link_interface" {
+  description = "IONOS との専用リンクのインターフェース名"
+  type        = string
+  default     = "wg-ionos"
+}
+
+variable "ionos_link_address" {
+  description = "IONOS との専用リンクの、k8s2 側のアドレス(172.31.252.4/30 の .6)"
+  type        = string
+  default     = "172.31.252.6/30"
+}
+
+variable "ionos_link_peer_address" {
+  description = "IONOS との専用リンクの、IONOS 側のアドレス(BGP の neighbor)"
+  type        = string
+  default     = "172.31.252.5"
+}
+
+variable "ionos_link_endpoint" {
+  description = "IONOS の、このリンク専用の待ち受けポート(hardware/ionos の gateway_links の listen_port と同じ)"
+  type        = string
+  default     = "74.208.55.86:51822"
+}
+
 variable "ionos_bgp_as" {
   description = "ionosのAS番号(eBGP用)"
   type        = number
