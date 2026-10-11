@@ -44,7 +44,7 @@ jobs:
     outputs:
       modules: ${{ steps.detect.outputs.modules }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -193,26 +193,15 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install dependencies
         run: sudo apt-get update -q && sudo apt-get install -y -q jq unzip curl
 
+      # version 固定 + checksum 検証(#190)。以前は releases API から
+      # 「最新の bws-v*」を動的に解決していた。
       - name: Install bws CLI
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # bitwarden/sdk-sm hosts releases for multiple SDKs (bws, python, napi, ...) in one
-          # repo, so /releases/latest can return a non-bws release (e.g. python-v2.1.0) depending
-          # on publish order. Find the most recent release actually tagged bws-v* instead.
-          BWS_VERSION=$(curl -s --retry 5 --retry-delay 3 --retry-all-errors -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/bitwarden/sdk-sm/releases?per_page=30" \
-            | jq -r '[.[] | select(.tag_name | startswith("bws-v"))][0].tag_name')
-          BWS_TAG=${BWS_VERSION#bws-v}
-          curl -L --retry 5 --retry-delay 3 --retry-all-errors -o bws.zip "https://github.com/bitwarden/sdk-sm/releases/download/${BWS_VERSION}/bws-x86_64-unknown-linux-gnu-${BWS_TAG}.zip"
-          unzip bws.zip bws
-          sudo mv bws /usr/local/bin/
-          bws --version
+        run: ./scripts/install-bws.sh
 
       # k8s1/k8s2/k8s4はプライベートIP(10.0.0.0/24)のみでubuntu-latestから
       # 直接到達できないため、ionosに事前登録した専用WireGuardピア
@@ -258,7 +247,7 @@ jobs:
           done
           sudo wg show
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: "~1.6"
           # The default Node-based CLI wrapper isn't usable here — this self-hosted
@@ -293,7 +282,7 @@ jobs:
         # PR 上に見せられるよう always() を付ける。#205 で緑チェックに騙された件を
         # 再発させないため、失敗内容をPlanコメントとして残す。
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fs = require('fs');
