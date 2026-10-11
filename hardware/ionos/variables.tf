@@ -303,19 +303,27 @@ variable "inuyama_gateway_link" {
       address      : IONOS 側のアドレス(/30)
       listen_port  : IONOS の待ち受けポート(51821 以上。gateway_links の listen_port と別)
       peer_address : k8s4 側のトンネル内アドレス(BGP の neighbor)
+      static_routes: k8s4 経由で届く、固定のホスト(/32)。リンクの PostUp で、`via <peer_address> dev <name> metric 100` の
+                     静的経路として、事前に置く。今は、wg0 の k8s4 の peer の AllowedIPs 由来のカーネルの経路(メトリクス 0)が優先され、
+                     影響しない。切り替え(段階 3)で、wg0 側の経路を消すと、この経路に移る。
+                     wireguard_peer_allowed_ips の /32(GitHub Actions から worker への SSH の経路)と、必ず揃えること
+                     (hardware/k8s4 の ci_ssh_forward_targets とも)。10.0.0.0/24 は、BGP で学ぶので、ここには書かない。
     ポートは、IONOS の VPS のクラウドパネルのファイアウォールでも許可すること(IaC の管理外。51821–51822/udp は許可済み)。
   DESC
   type = object({
-    name         = string
-    address      = string
-    listen_port  = number
-    peer_address = string
+    name          = string
+    address       = string
+    listen_port   = number
+    peer_address  = string
+    static_routes = optional(list(string), [])
   })
   default = {
     name         = "wg-gw4"
     address      = "172.31.252.1/30"
     listen_port  = 51821
     peer_address = "172.31.252.2"
+    # worker1(228)・worker3(130)・worker4(121)・worker5(150): GitHub Actions(ubuntu-latest)からの terraform apply の SSH の経路
+    static_routes = ["192.168.1.130/32", "192.168.1.150/32", "192.168.1.228/32", "192.168.1.121/32"]
   }
 
   validation {
@@ -327,10 +335,11 @@ variable "inuyama_gateway_link" {
       cidrhost(var.inuyama_gateway_link.address, 0) == cidrhost("${var.inuyama_gateway_link.peer_address}/30", 0) &&
       split("/", var.inuyama_gateway_link.address)[0] != var.inuyama_gateway_link.peer_address &&
       var.inuyama_gateway_link.listen_port >= 51821 && var.inuyama_gateway_link.listen_port <= 51899 &&
-      var.inuyama_gateway_link.listen_port == floor(var.inuyama_gateway_link.listen_port),
+      var.inuyama_gateway_link.listen_port == floor(var.inuyama_gateway_link.listen_port) &&
+      alltrue([for r in var.inuyama_gateway_link.static_routes : can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/32$", r))]),
       false
     )
-    error_message = "inuyama_gateway_link は、name が wg-gw*、address が /30、peer_address が同じ /30 の別のアドレス、listen_port が 51821〜51899 の整数にしてください。"
+    error_message = "inuyama_gateway_link は、name が wg-gw*、address が /30、peer_address が同じ /30 の別のアドレス、listen_port が 51821〜51899 の整数、static_routes が /32 の IPv4 のリストにしてください。"
   }
   # gateway_links との name / listen_port の重複は、Terraform 1.9 未満では、validation から他の変数を参照できないため、
   # null_resource.ionos_gateway の precondition で確かめる。
@@ -358,6 +367,7 @@ variable "gateway_links" {
     peer_public_key = string
     peer_address    = string
     peer_asn        = number
+    static_routes   = optional(list(string), [])
   }))
   default = [
     {
