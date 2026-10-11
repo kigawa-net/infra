@@ -289,3 +289,70 @@ variable "etcd_allowed_sources" {
     "10.255.10.12",  # Soichiro(管理 IP)
   ]
 }
+
+# --- ゲートウェイごとの専用リンク(kigawa-net/infra#238) -----------------------------------------
+# wg0 は 1 つのインターフェースに多数の peer を載せるため、同じプレフィックスを複数の peer の AllowedIPs に割り当てられない
+# (k8s4 が 10.0.0.0/24 を持つと、k8s2 は IONOS 宛に 10.0.0.x を送信元にできない)。ゲートウェイごとに専用のインターフェース
+# (peer は 1 つ、AllowedIPs = 0.0.0.0/0、Table = off)を作り、経路は BGP(FRR)に任せる。
+# 鍵は新しく作らない。IONOS の既存の鍵(/etc/wireguard/ionos_private.key)を共有し、peer も既存の公開鍵を使う。
+variable "gateway_links" {
+  description = <<-DESC
+    ゲートウェイ(Inuyama の k8s4 / k8s2)との専用リンク。
+      name            : WireGuard のインターフェース名(wg-gw で始まる。例: wg-gw2)
+      address         : IONOS 側のアドレス(CIDR。/30 の点対点)
+      listen_port     : IONOS の待ち受けポート(リンクごとに別。ufw で許可する)
+      peer_public_key : 対向の公開鍵(既存の鍵と同じ)
+      peer_address    : 対向のトンネル内アドレス(BGP の neighbor)
+      peer_asn        : 対向の AS 番号
+    stage 1: k8s2(予備)のリンクだけを足す。カーネルの経路(wg0)が主のままなので、データには影響しない。
+    アドレスは 172.31.252.0/24(リポジトリ内で未使用)から /30 ずつ: k8s2 = .4/30(IONOS .5、k8s2 .6)、k8s4 = .0/30(IONOS .1、k8s4 .2。stage 3)。
+    ポート: k8s4 = 51821、k8s2 = 51822。
+    注意: リンクをこのリストから外しても、IONOS 上のインターフェース・設定・ufw のルールは、自動では消えない(手動で
+    `systemctl disable --now wg-quick@<name>` と、`/etc/wireguard/<name>.conf` の削除、ufw のルールの削除が要る)。
+  DESC
+  type = list(object({
+    name            = string
+    address         = string
+    listen_port     = number
+    peer_public_key = string
+    peer_address    = string
+    peer_asn        = number
+  }))
+  default = [
+    {
+      name            = "wg-gw2"
+      address         = "172.31.252.5/30"
+      listen_port     = 51822
+      peer_public_key = "+PuboGsR5IW7ODJ+h7tKXfaeQeTZyC9dsGJPBKos+iY=" # k8s2(var.k8s2_wireguard_public_key と同じ。鍵は共有する)
+      peer_address    = "172.31.252.6"
+      peer_asn        = 65010
+    },
+  ]
+
+  validation {
+    condition     = alltrue([for l in var.gateway_links : can(regex("^wg-gw[a-z0-9]{1,8}$", l.name))])
+    error_message = "name は wg-gw で始まる英小文字・数字(例: wg-gw2)にしてください。"
+  }
+  validation {
+    condition = alltrue([
+      for l in var.gateway_links :
+      can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/30$", l.address)) &&
+      can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", l.peer_address)) &&
+      try(cidrhost(l.address, 0) == cidrhost("${l.peer_address}/30", 0), false) &&
+      try(split("/", l.address)[0] != l.peer_address, false)
+    ])
+    error_message = "address は /30 の CIDR、peer_address は同じ /30 に入る、address とは別の IPv4 アドレスにしてください。"
+  }
+  validation {
+    condition     = alltrue([for l in var.gateway_links : can(regex("^[A-Za-z0-9+/]{43}=$", l.peer_public_key))])
+    error_message = "peer_public_key は、WireGuard の公開鍵(44 文字の base64)にしてください。"
+  }
+  validation {
+    condition     = alltrue([for l in var.gateway_links : l.listen_port >= 51821 && l.listen_port <= 51899 && l.listen_port == floor(l.listen_port)])
+    error_message = "listen_port は 51821〜51899 にしてください(wg0 の 51820 とは別)。"
+  }
+  validation {
+    condition     = length(distinct([for l in var.gateway_links : l.name])) == length(var.gateway_links) && length(distinct([for l in var.gateway_links : l.listen_port])) == length(var.gateway_links)
+    error_message = "name と listen_port は、リンクごとに別にしてください。"
+  }
+}
