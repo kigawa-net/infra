@@ -106,16 +106,26 @@ locals {
   gateway_bgp_peers = concat(
     [{
       wg_address = var.inuyama_wireguard_address
+      interface  = var.wireguard_interface
       asn        = var.inuyama_asn
       in_list    = "INUYAMA-IN"
       out_list   = "IONOS-OUT"
     }],
     var.k8s2_wireguard_public_key != "" ? [{
       wg_address = var.k8s2_wireguard_address
+      interface  = var.wireguard_interface
       asn        = var.inuyama_asn
       in_list    = "INUYAMA-IN"
       out_list   = "IONOS-OUT"
     }] : [],
+    # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。peer は直結の /30 なので、next-hop が直結になる。
+    [for l in var.gateway_links : {
+      wg_address = l.peer_address
+      interface  = l.name
+      asn        = l.peer_asn
+      in_list    = "INUYAMA-IN"
+      out_list   = "IONOS-OUT"
+    }],
     # Oracle Cloud(バックアップハブ、AS65040)。IONOS-OUT/INUYAMA-INの既存
     # prefix-listがそのまま適用されるため、IONOSは172.31.254.0/24をOracleへ
     # 広告し、Oracle経由で学習した10.0.0.0/24(Inuyama<->Oracle間で既に確立
@@ -123,6 +133,7 @@ locals {
     # 自動的に構成される。
     var.oracle_wireguard_public_key != "" ? [{
       wg_address = var.oracle_wireguard_address
+      interface  = var.wireguard_interface
       asn        = var.oracle_asn
       in_list    = "INUYAMA-IN"
       out_list   = "IONOS-OUT"
@@ -130,6 +141,7 @@ locals {
     # Soichiro(AS65040とは別、AS65020)。専用の prefix-list を使う(管理 IP の /32 だけを受け取る)。
     var.soichiro_wireguard_public_key != "" ? [{
       wg_address = var.soichiro_wireguard_address
+      interface  = var.wireguard_interface
       asn        = var.soichiro_asn
       in_list    = "SOICHIRO-IN"
       out_list   = "SOICHIRO-OUT"
@@ -146,6 +158,13 @@ locals {
       endpoint             = var.inuyama_wireguard_endpoint
       persistent_keepalive = var.wireguard_persistent_keepalive
     }], local.k8s_wireguard_peers)
+  })
+
+  # ゲートウェイごとの専用リンクの設定(`#### <name>` で区切って 1 つのファイルにまとめる。スクリプトが分割して置く)
+  wg_links_config = templatefile("${path.module}/templates/wg-links.conf.tpl", {
+    links     = var.gateway_links
+    mtu       = var.wireguard_mtu
+    keepalive = var.wireguard_persistent_keepalive
   })
 
   frr_config = templatefile("${path.module}/templates/frr.conf.tpl", {
@@ -199,8 +218,50 @@ locals {
     chmod 600 /etc/wireguard/ionos_private.key
     ionos_private_key=$(cat /etc/wireguard/ionos_private.key)
 
-    sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" /tmp/ionos-wg0.conf.tpl > /etc/wireguard/${var.wireguard_interface}.conf
-    chmod 600 /etc/wireguard/${var.wireguard_interface}.conf
+    # 設定が変わったときだけ、wg0 を再起動する(再起動すると、wg0 に載っている全 peer(Soichiro・CI・etcd・HAProxy など)が、
+    # 一瞬切れる。FRR や ufw だけの変更で、wg0 を巻き込まない)。
+    sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" /tmp/ionos-wg0.conf.tpl > /etc/wireguard/${var.wireguard_interface}.conf.new
+    chmod 600 /etc/wireguard/${var.wireguard_interface}.conf.new
+    # 設定を置いてから再起動するまでに、後ろの手順が失敗しても、次の実行で再起動が飛ばされないよう、保留のマーカーを残す
+    if ! cmp -s /etc/wireguard/${var.wireguard_interface}.conf.new /etc/wireguard/${var.wireguard_interface}.conf; then
+      touch /etc/wireguard/.${var.wireguard_interface}-restart-pending
+    fi
+    mv -f /etc/wireguard/${var.wireguard_interface}.conf.new /etc/wireguard/${var.wireguard_interface}.conf
+
+    # ゲートウェイごとの専用リンク(wg-gw*。kigawa-net/infra#238)。鍵は wg0 と同じ(ionos_private.key)。
+    # 各リンクは独立したインターフェースなので、wg0 には触れない。設定が変わったとき、または起動していないときだけ、再起動する。
+    if [ -s /tmp/ionos-wg-links.conf ]; then
+      rm -rf /tmp/ionos-wg-links.d
+      mkdir -m 700 /tmp/ionos-wg-links.d
+      awk -v d=/tmp/ionos-wg-links.d '/^#### / { f = d "/" $2 ".conf"; next } f != "" { print > f }' /tmp/ionos-wg-links.conf
+      for f in /tmp/ionos-wg-links.d/*.conf; do
+        [ -e "$f" ] || continue
+        link=$(basename "$f" .conf)
+        case "$link" in
+          wg-gw*[!a-z0-9]*|wg-gw)
+            echo "unsupported link name: $link"
+            exit 1
+            ;;
+          wg-gw*) ;;
+          *)
+            echo "unsupported link name: $link"
+            exit 1
+            ;;
+        esac
+        sed "s|__IONOS_PRIVATE_KEY__|$ionos_private_key|g" "$f" > "/etc/wireguard/$link.conf.new"
+        chmod 600 "/etc/wireguard/$link.conf.new"
+        link_changed=0
+        if ! cmp -s "/etc/wireguard/$link.conf.new" "/etc/wireguard/$link.conf"; then
+          link_changed=1
+        fi
+        mv -f "/etc/wireguard/$link.conf.new" "/etc/wireguard/$link.conf"
+        systemctl enable "wg-quick@$link"
+        if [ "$link_changed" = 1 ] || ! systemctl is-active --quiet "wg-quick@$link"; then
+          systemctl restart "wg-quick@$link"
+        fi
+      done
+      rm -rf /tmp/ionos-wg-links.d
+    fi
 
     cat > /etc/sysctl.d/99-ionos-gateway.conf <<SYSCTL
     net.ipv4.ip_forward = 1
@@ -223,19 +284,42 @@ locals {
 
     systemctl daemon-reload
     systemctl enable wg-quick@${var.wireguard_interface}
-    systemctl restart wg-quick@${var.wireguard_interface}
+    if [ -e /etc/wireguard/.${var.wireguard_interface}-restart-pending ] || ! systemctl is-active --quiet wg-quick@${var.wireguard_interface}; then
+      systemctl restart wg-quick@${var.wireguard_interface}
+      rm -f /etc/wireguard/.${var.wireguard_interface}-restart-pending
+    fi
 
+    # FRR: 設定が変わらず、動いているときは何もしない。変わったときは、まず再読み込み(frr-reload.py。差分だけを適用し、
+    # 既存の BGP セッションを切らない)を試し、失敗したときだけ、従来どおり再起動する(どちらも、最終的な設定は同じ)。
+    frr_conf_changed=1
+    if cmp -s /tmp/ionos-frr.conf /etc/frr/frr.conf; then
+      frr_conf_changed=0
+    fi
     install -m 640 -o frr -g frr /tmp/ionos-frr.conf /etc/frr/frr.conf
     sed -i 's/^zebra=.*/zebra=yes/' /etc/frr/daemons
     sed -i 's/^bgpd=.*/bgpd=yes/' /etc/frr/daemons
     systemctl enable frr
-    systemctl restart frr
+    if ! systemctl is-active --quiet frr; then
+      systemctl restart frr
+    elif [ "$frr_conf_changed" = 1 ]; then
+      if ! systemctl reload frr; then
+        echo "frr reload failed; restarting frr"
+        systemctl restart frr
+      fi
+    fi
 
+    # HAProxy: 設定が変わったとき、または動いていないときだけ、再起動する(再起動すると、接続中の Minecraft などが切れる)
+    haproxy_conf_changed=1
+    if cmp -s /tmp/ionos-haproxy.cfg /etc/haproxy/haproxy.cfg; then
+      haproxy_conf_changed=0
+    fi
     install -m 644 /tmp/ionos-haproxy.cfg /etc/haproxy/haproxy.cfg
     if [ "$haproxy_enabled" = "true" ]; then
       haproxy -c -f /etc/haproxy/haproxy.cfg
       systemctl enable haproxy
-      systemctl restart haproxy
+      if [ "$haproxy_conf_changed" = 1 ] || ! systemctl is-active --quiet haproxy; then
+        systemctl restart haproxy
+      fi
     else
       systemctl disable --now haproxy || true
     fi
@@ -246,20 +330,32 @@ locals {
       ufw allow 443/tcp
       ufw allow 25565/tcp
       ufw allow ${var.wireguard_listen_port}/udp
+      # ゲートウェイごとの専用リンク(wg-gw*)の待ち受けポート
+      %{for l in var.gateway_links~}
+      ufw allow ${l.listen_port}/udp
+      %{endfor~}
       # eBGPゲートウェイ(inuyama/k8s4、および冗長化用のk8s2)からの
       # BGP(179)・node-exporter(9100)接続を許可する。k8s2用のルールが
       # 無いと、k8s2からのBGP接続(TCP SYN)がUFWのdefault-denyで
       # 暗黙にドロップされ、external0セッションがIdleのまま進まない
       # 問題が起きる。
       %{for peer in local.gateway_bgp_peers~}
-      ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 179 proto tcp
-      ufw allow in on ${var.wireguard_interface} from ${peer.wg_address} to any port 9100 proto tcp
+      # `insert 1`: すでに provisioning 済みの host では、あとから足す allow が、下の `ufw deny 179/tcp` の後ろに付いて効かない
+      # (k8s2 起点の BGP の接続が、拒否される)。先頭に入れる(同じルールが既にあれば、何もしない)。
+      ufw insert 1 allow in on ${peer.interface} from ${peer.wg_address} to any port 179 proto tcp
+      ufw insert 1 allow in on ${peer.interface} from ${peer.wg_address} to any port 9100 proto tcp
       %{endfor~}
       # UFWのデフォルトforward(routed)ポリシーはDROPのため、ip_forward=1と
       # BGP/ルーティングが正しくてもWireGuardピア間の中継(soichiro/CI runner等の
       # クライアントからk8s4(inuyama)経由でクラスタLANへの通信)がずっと
       # 暗黙にブロックされていた。wg0インターフェース間の転送を明示的に許可する。
       ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
+      # wg0 ↔ ゲートウェイごとの専用リンク(wg-gw*)の転送。stage 3 で経路をリンクに切り替えるとき、routed の既定(DROP)で
+      # 落ちないよう、先に許可しておく(通信が無い間は、何も起きない)。
+      %{for l in var.gateway_links~}
+      ufw route allow in on ${var.wireguard_interface} out on ${l.name}
+      ufw route allow in on ${l.name} out on ${var.wireguard_interface}
+      %{endfor~}
       # Karmada の etcd #3(2379/2380)。下の `deny 2379:2380/tcp`(公開インターネット向け)より前に、
       # WireGuard 内の特定の送信元だけを許可する。ufw は順序で評価するため、`insert 1` で先頭に入れる
       # (すでに同じルールがあれば、スキップされる)。
@@ -322,6 +418,7 @@ resource "null_resource" "ionos_gateway" {
     inuyama_wireguard_publickey_id = var.inuyama_wireguard_public_key_bitwarden_id
     inuyama_wireguard_publickey    = sha256(data.external.inuyama_wireguard_public_key.result.value)
     wireguard_config               = sha256(local.wireguard_config)
+    wireguard_links                = sha256(local.wg_links_config)
     k8s1_wireguard_public_key      = sha256(var.k8s1_wireguard_public_key)
     k8s2_wireguard_public_key      = sha256(var.k8s2_wireguard_public_key)
     frr_config                     = sha256(local.frr_config)
@@ -344,6 +441,11 @@ resource "null_resource" "ionos_gateway" {
   }
 
   provisioner "file" {
+    content     = local.wg_links_config
+    destination = "/tmp/ionos-wg-links.conf"
+  }
+
+  provisioner "file" {
     content     = local.frr_config
     destination = "/tmp/ionos-frr.conf"
   }
@@ -360,7 +462,7 @@ resource "null_resource" "ionos_gateway" {
 
   provisioner "remote-exec" {
     inline = [
-      "if [ \"$(id -u)\" -eq 0 ]; then bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; else echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; fi",
+      "if [ \"$(id -u)\" -eq 0 ]; then bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; else echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; fi",
     ]
   }
 }
