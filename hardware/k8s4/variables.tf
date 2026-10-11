@@ -153,6 +153,35 @@ variable "ionos_wireguard_allowed_ips" {
   default = ["172.31.254.0/24", "10.255.10.12/32"]
 }
 
+# --- IONOS との専用リンク(kigawa-net/infra#238) ---------------------------------------------------
+# wg1(上)は IONOS の wg0 に載っていて、IONOS 側で k8s4 の peer が 10.0.0.0/24 などの AllowedIPs を独占している。そのため、
+# k8s2(予備のゲートウェイ)は IONOS 宛に 10.0.0.x を送信元にできず、データプレーンの冗長化が成立しない。
+# ゲートウェイごとの専用リンク(peer は IONOS の 1 つだけ、AllowedIPs = 0.0.0.0/0、Table = off)にして、経路は BGP に任せる。
+# 鍵は新しく作らない(wg1 と同じ /etc/wireguard/inuyama_private.key。IONOS 側の peer の公開鍵も、そのまま使える)。
+variable "ionos_link_interface" {
+  description = "IONOS との専用リンクのインターフェース名"
+  type        = string
+  default     = "wg-ionos-gw"
+}
+
+variable "ionos_link_address" {
+  description = "IONOS との専用リンクの、k8s4 側のアドレス(172.31.252.0/30 の .2)"
+  type        = string
+  default     = "172.31.252.2/30"
+}
+
+variable "ionos_link_peer_address" {
+  description = "IONOS との専用リンクの、IONOS 側のアドレス(BGP の neighbor)"
+  type        = string
+  default     = "172.31.252.1"
+}
+
+variable "ionos_link_endpoint" {
+  description = "IONOS の、このリンク専用の待ち受けポート(hardware/ionos の inuyama_gateway_link の listen_port と同じ。IONOS のクラウドパネルのファイアウォールでも許可すること)"
+  type        = string
+  default     = "74.208.55.86:51821"
+}
+
 variable "ionos_bgp_as" {
   type    = number
   default = 65030

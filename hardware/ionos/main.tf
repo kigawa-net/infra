@@ -101,6 +101,22 @@ locals {
     }] : [],
   )
 
+  # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。var.gateway_links(k8s2 など、公開鍵を静的に持てるもの)に、
+  # k8s4(Inuyama)のリンクを足す。k8s4 の公開鍵は Bitwarden 由来(data.external)なので、変数の既定値には書けない。
+  # k8s4 のリンクは、wg0 の k8s4 の peer(var.wireguard_peer_allowed_ips)と並行して動く。stage 2 までは、経路を変えない
+  # (IONOS のカーネルの経路 10.0.0.0/24 dev wg0 が主のまま)。
+  gateway_links = concat(
+    var.gateway_links,
+    var.inuyama_gateway_link != null ? [{
+      name            = var.inuyama_gateway_link.name
+      address         = var.inuyama_gateway_link.address
+      listen_port     = var.inuyama_gateway_link.listen_port
+      peer_public_key = data.external.inuyama_wireguard_public_key.result.value
+      peer_address    = var.inuyama_gateway_link.peer_address
+      peer_asn        = var.inuyama_asn
+    }] : [],
+  )
+
   # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
   # 同じAS(inuyama_asn)で2本目のeBGPセッションを張り、冗長化する。
   gateway_bgp_peers = concat(
@@ -119,7 +135,7 @@ locals {
       out_list   = "IONOS-OUT"
     }] : [],
     # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。peer は直結の /30 なので、next-hop が直結になる。
-    [for l in var.gateway_links : {
+    [for l in local.gateway_links : {
       wg_address = l.peer_address
       interface  = l.name
       asn        = l.peer_asn
@@ -162,7 +178,7 @@ locals {
 
   # ゲートウェイごとの専用リンクの設定(`#### <name>` で区切って 1 つのファイルにまとめる。スクリプトが分割して置く)
   wg_links_config = templatefile("${path.module}/templates/wg-links.conf.tpl", {
-    links     = var.gateway_links
+    links     = local.gateway_links
     mtu       = var.wireguard_mtu
     keepalive = var.wireguard_persistent_keepalive
   })
@@ -206,7 +222,9 @@ locals {
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y
-    apt-get install -y ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
+    # `--no-upgrade`: すでに入っているパッケージは、新しい版があっても上げない。`apt-get install <名前>` は、既存のパッケージを
+    # 最新に上げ、frr・haproxy の postinst が、サービスを再起動する(BGP・接続中の通信が切れる)。足りないものを入れるだけにする。
+    apt-get install -y --no-upgrade ca-certificates frr haproxy iproute2 iptables prometheus-node-exporter ufw wireguard
 
     install -d -m 700 /etc/wireguard
 
@@ -351,7 +369,7 @@ locals {
       ufw allow 25565/tcp
       ufw allow ${var.wireguard_listen_port}/udp
       # ゲートウェイごとの専用リンク(wg-gw*)の待ち受けポート
-      %{for l in var.gateway_links~}
+      %{for l in local.gateway_links~}
       ufw allow ${l.listen_port}/udp
       %{endfor~}
       # eBGPゲートウェイ(inuyama/k8s4、および冗長化用のk8s2)からの
@@ -372,7 +390,7 @@ locals {
       ufw route allow in on ${var.wireguard_interface} out on ${var.wireguard_interface}
       # wg0 ↔ ゲートウェイごとの専用リンク(wg-gw*)の転送。stage 3 で経路をリンクに切り替えるとき、routed の既定(DROP)で
       # 落ちないよう、先に許可しておく(通信が無い間は、何も起きない)。
-      %{for l in var.gateway_links~}
+      %{for l in local.gateway_links~}
       ufw route allow in on ${var.wireguard_interface} out on ${l.name}
       ufw route allow in on ${l.name} out on ${var.wireguard_interface}
       %{endfor~}
@@ -432,6 +450,20 @@ data "external" "inuyama_wireguard_public_key" {
 }
 
 resource "null_resource" "ionos_gateway" {
+  lifecycle {
+    # ゲートウェイごとの専用リンクの name・listen_port・アドレスが、重複していないこと(var.gateway_links と inuyama_gateway_link の合成後)
+    precondition {
+      condition = (
+        length(distinct([for l in local.gateway_links : l.name])) == length(local.gateway_links) &&
+        length(distinct([for l in local.gateway_links : l.listen_port])) == length(local.gateway_links) &&
+        # アドレスは、文字列ではなく、/30 のネットワーク(正規化)で比べる(同じ /30 の別アドレスを、重複として拒否する)
+        length(distinct([for l in local.gateway_links : cidrhost(l.address, 0)])) == length(local.gateway_links) &&
+        length(distinct([for l in local.gateway_links : l.peer_address])) == length(local.gateway_links)
+      )
+      error_message = "gateway_links(inuyama_gateway_link を含む)の name・listen_port・/30 のネットワーク・peer_address が重複しています。"
+    }
+  }
+
   triggers = {
     setup_version                  = "3"
     host                           = var.host

@@ -295,6 +295,47 @@ variable "etcd_allowed_sources" {
 # (k8s4 が 10.0.0.0/24 を持つと、k8s2 は IONOS 宛に 10.0.0.x を送信元にできない)。ゲートウェイごとに専用のインターフェース
 # (peer は 1 つ、AllowedIPs = 0.0.0.0/0、Table = off)を作り、経路は BGP(FRR)に任せる。
 # 鍵は新しく作らない。IONOS の既存の鍵(/etc/wireguard/ionos_private.key)を共有し、peer も既存の公開鍵を使う。
+variable "inuyama_gateway_link" {
+  description = <<-DESC
+    k8s4(Inuyama の主のゲートウェイ)との専用リンク(`wg-gw4`)。公開鍵は、`wg0` の k8s4 の peer と同じ(Bitwarden 由来の
+    data.external.inuyama_wireguard_public_key)。null にすると、リンクを作らない。
+      name         : WireGuard のインターフェース名(wg-gw で始まる)
+      address      : IONOS 側のアドレス(/30)
+      listen_port  : IONOS の待ち受けポート(51821 以上。gateway_links の listen_port と別)
+      peer_address : k8s4 側のトンネル内アドレス(BGP の neighbor)
+    ポートは、IONOS の VPS のクラウドパネルのファイアウォールでも許可すること(IaC の管理外。51821–51822/udp は許可済み)。
+  DESC
+  type = object({
+    name         = string
+    address      = string
+    listen_port  = number
+    peer_address = string
+  })
+  default = {
+    name         = "wg-gw4"
+    address      = "172.31.252.1/30"
+    listen_port  = 51821
+    peer_address = "172.31.252.2"
+  }
+
+  validation {
+    # `||` は、右辺の評価エラー(null の属性の参照)を短絡しない。null のときは、try で、条件を評価せずに通す
+    condition = var.inuyama_gateway_link == null || try(
+      can(regex("^wg-gw[a-z0-9]{1,8}$", var.inuyama_gateway_link.name)) &&
+      can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/30$", var.inuyama_gateway_link.address)) &&
+      can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.inuyama_gateway_link.peer_address)) &&
+      cidrhost(var.inuyama_gateway_link.address, 0) == cidrhost("${var.inuyama_gateway_link.peer_address}/30", 0) &&
+      split("/", var.inuyama_gateway_link.address)[0] != var.inuyama_gateway_link.peer_address &&
+      var.inuyama_gateway_link.listen_port >= 51821 && var.inuyama_gateway_link.listen_port <= 51899 &&
+      var.inuyama_gateway_link.listen_port == floor(var.inuyama_gateway_link.listen_port),
+      false
+    )
+    error_message = "inuyama_gateway_link は、name が wg-gw*、address が /30、peer_address が同じ /30 の別のアドレス、listen_port が 51821〜51899 の整数にしてください。"
+  }
+  # gateway_links との name / listen_port の重複は、Terraform 1.9 未満では、validation から他の変数を参照できないため、
+  # null_resource.ionos_gateway の precondition で確かめる。
+}
+
 variable "gateway_links" {
   description = <<-DESC
     ゲートウェイ(Inuyama の k8s4 / k8s2)との専用リンク。
