@@ -115,33 +115,45 @@ locals {
       peer_address    = var.inuyama_gateway_link.peer_address
       peer_asn        = var.inuyama_asn
       static_routes   = var.inuyama_gateway_link.static_routes
+      local_pref      = var.inuyama_gateway_link.local_pref
     }] : [],
   )
 
   # k8s4(inuyama)は唯一のeBGPゲートウェイで単一障害点だったため、k8s2にも
   # 同じAS(inuyama_asn)で2本目のeBGPセッションを張り、冗長化する。
   gateway_bgp_peers = concat(
+    # wg0 経由の k8s4 / k8s2 の neighbor は、local-preference を最も低くする(専用リンク経由の経路を、必ず優先する。
+    # 切り替え後に、wg0 経由の古い経路が best になって、wg0 に戻ることを防ぐ)。経路は、カーネルの経路(距離 0)が優先なので、
+    # 切り替え(wg0 のカーネルの経路の削除)までは、この設定は、経路の選択に影響しない。
     [{
-      wg_address = var.inuyama_wireguard_address
-      interface  = var.wireguard_interface
-      asn        = var.inuyama_asn
-      in_list    = "INUYAMA-IN"
-      out_list   = "IONOS-OUT"
+      wg_address  = var.inuyama_wireguard_address
+      interface   = var.wireguard_interface
+      asn         = var.inuyama_asn
+      in_list     = "INUYAMA-IN"
+      out_list    = "IONOS-OUT"
+      local_pref  = var.wg0_inuyama_local_pref
+      fast_timers = false
     }],
     var.k8s2_wireguard_public_key != "" ? [{
-      wg_address = var.k8s2_wireguard_address
-      interface  = var.wireguard_interface
-      asn        = var.inuyama_asn
-      in_list    = "INUYAMA-IN"
-      out_list   = "IONOS-OUT"
+      wg_address  = var.k8s2_wireguard_address
+      interface   = var.wireguard_interface
+      asn         = var.inuyama_asn
+      in_list     = "INUYAMA-IN"
+      out_list    = "IONOS-OUT"
+      local_pref  = var.wg0_inuyama_local_pref
+      fast_timers = false
     }] : [],
     # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。peer は直結の /30 なので、next-hop が直結になる。
+    # local-preference: k8s4 の専用リンク(200)が主、k8s2 の専用リンク(150)が予備。k8s4 のリンクが落ちると、BGP が k8s2 に移る。
+    # timers 3 9: 障害の検出を約 9 秒にする(eBGP の既定は keepalive 60 秒 / hold 180 秒)。hold は、双方の小さい方で決まる。
     [for l in local.gateway_links : {
-      wg_address = l.peer_address
-      interface  = l.name
-      asn        = l.peer_asn
-      in_list    = "INUYAMA-IN"
-      out_list   = "IONOS-OUT"
+      wg_address  = l.peer_address
+      interface   = l.name
+      asn         = l.peer_asn
+      in_list     = "INUYAMA-IN"
+      out_list    = "IONOS-OUT"
+      local_pref  = l.local_pref
+      fast_timers = true
     }],
     # Oracle Cloud(バックアップハブ、AS65040)。IONOS-OUT/INUYAMA-INの既存
     # prefix-listがそのまま適用されるため、IONOSは172.31.254.0/24をOracleへ
@@ -149,19 +161,23 @@ locals {
     # 済みのeBGPセッション経由で学習されたもの)を受け入れる、という迂回経路が
     # 自動的に構成される。
     var.oracle_wireguard_public_key != "" ? [{
-      wg_address = var.oracle_wireguard_address
-      interface  = var.wireguard_interface
-      asn        = var.oracle_asn
-      in_list    = "INUYAMA-IN"
-      out_list   = "IONOS-OUT"
+      wg_address  = var.oracle_wireguard_address
+      interface   = var.wireguard_interface
+      asn         = var.oracle_asn
+      in_list     = "INUYAMA-IN"
+      out_list    = "IONOS-OUT"
+      local_pref  = 0
+      fast_timers = false
     }] : [],
     # Soichiro(AS65040とは別、AS65020)。専用の prefix-list を使う(管理 IP の /32 だけを受け取る)。
     var.soichiro_wireguard_public_key != "" ? [{
-      wg_address = var.soichiro_wireguard_address
-      interface  = var.wireguard_interface
-      asn        = var.soichiro_asn
-      in_list    = "SOICHIRO-IN"
-      out_list   = "SOICHIRO-OUT"
+      wg_address  = var.soichiro_wireguard_address
+      interface   = var.wireguard_interface
+      asn         = var.soichiro_asn
+      in_list     = "SOICHIRO-IN"
+      out_list    = "SOICHIRO-OUT"
+      local_pref  = 0
+      fast_timers = false
     }] : [],
   )
 
@@ -182,6 +198,8 @@ locals {
     links     = local.gateway_links
     mtu       = var.wireguard_mtu
     keepalive = var.wireguard_persistent_keepalive
+    # 静的経路の送信元アドレス(IONOS 発の通信の送信元を、専用リンクの主アドレスでなく、wg0 のアドレスに固定する)
+    local_src = split("/", var.wireguard_address)[0]
   })
 
   frr_config = templatefile("${path.module}/templates/frr.conf.tpl", {
@@ -189,6 +207,8 @@ locals {
     ionos_asn                = var.ionos_asn
     bgp_router_id            = var.bgp_router_id
     gateway_bgp_peers        = local.gateway_bgp_peers
+    local_src                = split("/", var.wireguard_address)[0]
+    local_prefs              = sort(distinct([for p in local.gateway_bgp_peers : tostring(p.local_pref) if p.local_pref > 0]))
     wireguard_interface      = var.wireguard_interface
     inuyama_prefix_list      = join("\n", local.inuyama_prefix_list_rules)
     ionos_prefix_list        = join("\n", local.ionos_prefix_list_rules)
@@ -462,6 +482,16 @@ resource "null_resource" "ionos_gateway" {
         length(distinct([for l in local.gateway_links : l.peer_address])) == length(local.gateway_links)
       )
       error_message = "gateway_links(inuyama_gateway_link を含む)の name・listen_port・/30 のネットワーク・peer_address が重複しています。"
+    }
+
+    # local-preference の順序: 専用リンクは、wg0 経由(wg0_inuyama_local_pref)より大きく、k8s4 のリンク(inuyama_gateway_link)は、
+    # 他の専用リンク(k8s2 など)より大きいこと。逆になると、切り替え後に、wg0 経由の古い経路や、予備の経路が、主になる。
+    precondition {
+      condition = (
+        alltrue([for l in local.gateway_links : l.local_pref > var.wg0_inuyama_local_pref && l.local_pref == floor(l.local_pref) && l.local_pref <= 4000000000]) &&
+        (var.inuyama_gateway_link == null || alltrue([for l in var.gateway_links : var.inuyama_gateway_link.local_pref > l.local_pref]))
+      )
+      error_message = "local-preference は、専用リンク(gateway_links の local_pref)が wg0_inuyama_local_pref より大きい整数で、k8s4 のリンク(inuyama_gateway_link)が他のリンクより大きくなければなりません。"
     }
   }
 

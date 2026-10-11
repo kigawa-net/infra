@@ -295,6 +295,21 @@ variable "etcd_allowed_sources" {
 # (k8s4 が 10.0.0.0/24 を持つと、k8s2 は IONOS 宛に 10.0.0.x を送信元にできない)。ゲートウェイごとに専用のインターフェース
 # (peer は 1 つ、AllowedIPs = 0.0.0.0/0、Table = off)を作り、経路は BGP(FRR)に任せる。
 # 鍵は新しく作らない。IONOS の既存の鍵(/etc/wireguard/ionos_private.key)を共有し、peer も既存の公開鍵を使う。
+variable "wg0_inuyama_local_pref" {
+  description = <<-DESC
+    wg0 経由の k8s4 / k8s2 の neighbor(172.31.254.1、172.31.254.12)から学ぶ経路の BGP の local-preference。
+    専用リンク(gateway_links の local_pref。200 / 150)より小さくして、専用リンク経由の経路を、必ず優先する
+    (wg0 のカーネルの経路を消したとき、古い wg0 経由の経路が best になって、wg0 に戻ることを防ぐ)。Oracle・Soichiro は設定しない(既定の 100)。
+  DESC
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.wg0_inuyama_local_pref >= 1 && var.wg0_inuyama_local_pref < 100 && var.wg0_inuyama_local_pref == floor(var.wg0_inuyama_local_pref)
+    error_message = "wg0_inuyama_local_pref は、1〜99 の整数(専用リンクの local_pref より小さく)にしてください。"
+  }
+}
+
 variable "inuyama_gateway_link" {
   description = <<-DESC
     k8s4(Inuyama の主のゲートウェイ)との専用リンク(`wg-gw4`)。公開鍵は、`wg0` の k8s4 の peer と同じ(Bitwarden 由来の
@@ -303,6 +318,7 @@ variable "inuyama_gateway_link" {
       address      : IONOS 側のアドレス(/30)
       listen_port  : IONOS の待ち受けポート(51821 以上。gateway_links の listen_port と別)
       peer_address : k8s4 側のトンネル内アドレス(BGP の neighbor)
+      local_pref   : このリンクから学ぶ経路の BGP の local-preference(既定 200。k8s2 のリンクは 150 の予備。大きいほど優先)
       static_routes: k8s4 経由で届く、固定のホスト(/32)。リンクの PostUp で、`via <peer_address> dev <name> metric 100` の
                      静的経路として、事前に置く。今は、wg0 の k8s4 の peer の AllowedIPs 由来のカーネルの経路(メトリクス 0)が優先され、
                      影響しない。切り替え(段階 3)で、wg0 側の経路を消すと、この経路に移る。
@@ -316,6 +332,7 @@ variable "inuyama_gateway_link" {
     listen_port   = number
     peer_address  = string
     static_routes = optional(list(string), [])
+    local_pref    = optional(number, 200)
   })
   default = {
     name         = "wg-gw4"
@@ -336,7 +353,9 @@ variable "inuyama_gateway_link" {
       split("/", var.inuyama_gateway_link.address)[0] != var.inuyama_gateway_link.peer_address &&
       var.inuyama_gateway_link.listen_port >= 51821 && var.inuyama_gateway_link.listen_port <= 51899 &&
       var.inuyama_gateway_link.listen_port == floor(var.inuyama_gateway_link.listen_port) &&
-      alltrue([for r in var.inuyama_gateway_link.static_routes : can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/32$", r))]),
+      alltrue([for r in var.inuyama_gateway_link.static_routes : can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}/32$", r))]) &&
+      var.inuyama_gateway_link.local_pref >= 1 && var.inuyama_gateway_link.local_pref <= 4000000000 &&
+      var.inuyama_gateway_link.local_pref == floor(var.inuyama_gateway_link.local_pref),
       false
     )
     error_message = "inuyama_gateway_link は、name が wg-gw*、address が /30、peer_address が同じ /30 の別のアドレス、listen_port が 51821〜51899 の整数、static_routes が /32 の IPv4 のリストにしてください。"
@@ -368,6 +387,7 @@ variable "gateway_links" {
     peer_address    = string
     peer_asn        = number
     static_routes   = optional(list(string), [])
+    local_pref      = optional(number, 100)
   }))
   default = [
     {
@@ -377,6 +397,7 @@ variable "gateway_links" {
       peer_public_key = "+KoPyNaB89BSLsyDFsKPz4+SsAGjQW1LpbXqSiTeigI=" # k8s2(var.k8s2_wireguard_public_key と同じ。鍵は共有する)
       peer_address    = "172.31.252.6"
       peer_asn        = 65010
+      local_pref      = 150 # 予備(k8s4 の専用リンクが 200。k8s4 のリンクが落ちると、BGP がこちらに移る)
     },
   ]
 

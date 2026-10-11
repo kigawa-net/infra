@@ -215,6 +215,16 @@ variable "ionos_link_peer_address" {
   default     = "172.31.252.5"
 }
 
+variable "ionos_link_import_enabled" {
+  description = <<-DESC
+    k8s2 の IONOS との専用リンク(wg-ionos)の eBGP から、IONOS の経路(172.31.254.0/24 と Soichiro の管理 IP)を取り込むか。
+    true: k8s4 の専用リンクが落ちたときの、Inuyama → IONOS の戻りのフォールバックになる(k8s4 は local-preference 200、こちらは 100)。
+    false: 何も取り込まない(切り替え前の状態)。**元に戻すときは false にして apply**(FRR は reload)。
+  DESC
+  type        = bool
+  default     = true
+}
+
 variable "ionos_link_endpoint" {
   description = "IONOS の、このリンク専用の待ち受けポート(hardware/ionos の gateway_links の listen_port と同じ)"
   type        = string
