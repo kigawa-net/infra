@@ -321,6 +321,109 @@ resource "null_resource" "ionos_wireguard" {
   }
 }
 
+# IONOS との専用リンク(kigawa-net/infra#238、案 D)。peer は IONOS の 1 つだけ、AllowedIPs = 0.0.0.0/0、Table = off(経路は BGP に任せる)。
+# stage 2 まで: 経路を変えない。k8s4 は、このリンクから IONOS の経路を取り込まない(import なし)。IONOS のカーネルの経路(wg0)が
+# 主のままで、既存の wg1 のセッションにも触れない。設定が変わったとき、または停止しているときだけ、このインターフェースを再起動する。
+locals {
+  ionos_gateway_link_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    umask 077
+    exec > >(tee -a /tmp/ionos-gateway-link-setup.log) 2>&1
+
+    case "${var.ionos_link_interface}" in
+      ""|*[!a-zA-Z0-9._-]*)
+        echo "ionos_link_interface contains unsupported characters"
+        exit 1
+        ;;
+    esac
+
+    if [ ! -f /etc/wireguard/inuyama_private.key ]; then
+      echo "/etc/wireguard/inuyama_private.key not found"
+      exit 1
+    fi
+    inuyama_private_key=$(cat /etc/wireguard/inuyama_private.key)
+
+    conf=/etc/wireguard/${var.ionos_link_interface}.conf
+    cat > "$conf.new" <<WGCONF
+    [Interface]
+    Address = ${var.ionos_link_address}
+    PrivateKey = $inuyama_private_key
+    Table = off
+    MTU = ${var.wireguard_mtu}
+
+    [Peer]
+    PublicKey = ${var.ionos_wireguard_public_key}
+    AllowedIPs = 0.0.0.0/0
+    Endpoint = ${var.ionos_link_endpoint}
+    PersistentKeepalive = 25
+    WGCONF
+    chmod 600 "$conf.new"
+    # 設定を置いてから再起動するまでに、後ろの手順が失敗しても、次の実行で再起動が飛ばされないよう、保留のマーカーを残す
+    marker=/etc/wireguard/.${var.ionos_link_interface}-restart-pending
+    if ! cmp -s "$conf.new" "$conf"; then
+      touch "$marker"
+    fi
+    mv -f "$conf.new" "$conf"
+
+    systemctl enable wg-quick@${var.ionos_link_interface}
+    if [ -e "$marker" ] || ! systemctl is-active --quiet wg-quick@${var.ionos_link_interface}; then
+      systemctl restart wg-quick@${var.ionos_link_interface}
+      rm -f "$marker"
+    fi
+    wg show ${var.ionos_link_interface}
+  SCRIPT
+}
+
+resource "null_resource" "ionos_gateway_link" {
+  depends_on = [null_resource.ionos_wireguard]
+
+  lifecycle {
+    # 稼働中のトンネル(wg1・wg-oracle など)を、誤って上書き・再起動しないこと(Terraform 1.6 では、variable の validation から
+    # 他の変数を参照できないため、ここで確かめる)
+    precondition {
+      condition = (
+        var.ionos_link_interface != var.ionos_wireguard_interface &&
+        var.ionos_link_interface != var.oracle_wireguard_interface &&
+        var.ionos_link_interface != var.inuyama_wireguard_interface &&
+        can(regex("^wg-[a-z0-9-]{1,11}$", var.ionos_link_interface)) &&
+        can(cidrhost(var.ionos_link_address, 0)) && can(cidrhost("${var.ionos_link_peer_address}/30", 0)) &&
+        cidrhost(var.ionos_link_address, 0) == cidrhost("${var.ionos_link_peer_address}/30", 0) &&
+        cidrhost(var.ionos_link_address, 0) != cidrhost(var.ionos_wireguard_address, 0) &&
+        cidrhost(var.ionos_link_address, 0) != cidrhost(var.oracle_wireguard_address, 0)
+      )
+      error_message = "ionos_link_interface は wg- で始まり、wg1・wg-oracle など既存のインターフェースと別に、ionos_link_address と ionos_link_peer_address は同じ /30 で、既存のトンネルのネットワークと別にしてください。"
+    }
+  }
+
+  triggers = {
+    host             = var.server_ip
+    interface        = var.ionos_link_interface
+    address          = var.ionos_link_address
+    ionos_public_key = sha256(var.ionos_wireguard_public_key)
+    endpoint         = var.ionos_link_endpoint
+    setup_script     = sha256(local.ionos_gateway_link_script)
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.server_ip
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  provisioner "file" {
+    content     = local.ionos_gateway_link_script
+    destination = "/tmp/ionos-gateway-link-setup.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/ionos-gateway-link-setup.sh && rm -f /tmp/ionos-gateway-link-setup.sh",
+    ]
+  }
+}
 
 # Oracle Cloud (計画中のバックアップネットワークハブ) 向け WireGuard トンネル (既定interface: wg-oracle)。
 # 外部ランブックで計画されている経路のスキャフォールドであり、Oracle Cloud側のホスト自体の
@@ -402,7 +505,7 @@ resource "null_resource" "oracle_wireguard" {
 # BIRD から FRR へ移行する (#210)。k8s1・k8s2 は移行済み。k8s4 は外部ピア(IONOS・Oracle)を持つので最後。
 # 手順は hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md。マージ前に必ず手順書を読み、合意した時間に行うこと。
 module "bgp" {
-  depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard, null_resource.oracle_wireguard]
+  depends_on = [module.control_plane, null_resource.inuyama_wireguard, null_resource.ionos_wireguard, null_resource.ionos_gateway_link, null_resource.oracle_wireguard]
   source     = "../modules/bgp-frr"
 
   host            = var.server_ip
@@ -465,7 +568,23 @@ module "bgp" {
         # IONOS 経由は、Oracle が使えないときの予備(既定の 100)。
         local_pref = 200
       }
-    ] : []
+    ] : [],
+    # IONOS との専用リンク(kigawa-net/infra#238、stage 1)。IONOS の予備ではなく、主のリンクの準備として、
+    # 10.0.0.0/24 を広告するだけ。import は空(何も取り込まない): 取り込むと、wg1 の eBGP と同じ prefix の経路が 2 つになり、
+    # 172.31.254.0/24 宛のトラフィックが、このリンクに流れ始める。IONOS の受信経路は、切り替え(stage 3)のときに有効にする。
+    # **必ず、リストの最後に足すこと**: bgp-frr module は、peer ごとに、リストの添字で `EXT-<添字>-IN/OUT` の prefix-list と
+    # route-map を作る。既存の peer(Oracle など)より前に入れると、添字がずれて、reload の途中で、既存の peer の import が、
+    # 一時的に deny-all になる(Soichiro への主経路が消える)。
+    [
+      {
+        local_ip        = trimsuffix(var.ionos_link_address, "/30")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = var.ionos_link_peer_address
+        neighbor_as     = var.ionos_bgp_as
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24"]
+      }
+    ],
   )
 }
 
