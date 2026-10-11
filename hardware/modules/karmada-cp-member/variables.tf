@@ -77,6 +77,24 @@ variable "wireguard_interface" {
   }
 }
 
+variable "extra_hosts" {
+  description = <<-DESC
+    /etc/hosts の管理ブロックに足す名前解決(ホスト名 → IPv4)。
+    メンバークラスタ(inuyama)の apiEndpoint(k8s.kigawa.net)が、この host では公開 IP に解決されて届かないため、
+    クラスターの VIP に向ける。
+  DESC
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for h, ip in var.extra_hosts :
+      can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", h)) && can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", ip))
+    ])
+    error_message = "extra_hosts は、小文字のホスト名 → IPv4 アドレスにすること。"
+  }
+}
+
 variable "service_cluster_ip_range" {
   description = "Inuyama の apiserver と同じ値にすること(全 control plane で揃える)"
   type        = string

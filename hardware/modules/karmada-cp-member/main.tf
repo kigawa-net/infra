@@ -232,7 +232,11 @@ locals {
 
   # 3 つの名前 -> ループバック、REDIRECT の対応。スクリプトが読む(`name ip port`)
   redirect_table = join("\n", concat([for n in local.names : "${n.ip} ${n.port}"], [""]))
-  hosts_block    = join("\n", concat([for n in local.names : "${n.ip}  ${n.name}"], [""]))
+  hosts_block = join("\n", concat(
+    [for n in local.names : "${n.ip}  ${n.name}"],
+    [for h in sort(keys(var.extra_hosts)) : "${var.extra_hosts[h]}  ${h}"],
+    [""],
+  ))
 
   # kubeconfig には、鍵の中身を書かない(パスだけ)。client 証明書と鍵は、この IaC の外で用意する。
   kubeconfig_text = join("\n", [
