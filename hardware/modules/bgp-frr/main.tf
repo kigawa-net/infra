@@ -65,7 +65,24 @@ locals {
       echo 'FRR is already running with the same configuration; skipping install/restart'
     fi
 
-    if ! "$already_running"; then
+    # FRR が動いていて、設定だけが変わったとき(peer・prefix-list・route-map の追加など)は、まず再読み込み(frr-reload.py)を試す。
+    # 差分だけを適用するので、既存の BGP セッションと、zebra が持つ経路が消えない(停止・起動だと、iBGP・eBGP が数十秒切れ、
+    # 経路が一時的に消える。主のゲートウェイでは、Inuyama ↔ IONOS / Soichiro / Oracle の通信が切れる)。
+    # reload が失敗したときだけ、従来どおりの停止・起動に進む(設定ファイルは、すでに置いてあるので、最終的な設定は同じ)。
+    reloaded=false
+    if ! "$already_running" \
+      && systemctl is-active --quiet frr.service \
+      && grep -q '^bgpd=yes' /etc/frr/daemons; then
+      install -o frr -g frr -m 0640 /tmp/frr-module.conf /etc/frr/frr.conf
+      if systemctl reload frr.service; then
+        reloaded=true
+        echo 'FRR was reloaded with the new configuration (no restart; BGP sessions are kept)'
+      else
+        echo 'FRR reload failed; falling back to stop/start' >&2
+      fi
+    fi
+
+    if ! "$already_running" && ! "$reloaded"; then
     # Never override an administrator's mask. Block package postinst auto-start
     # until configuration is installed and BIRD's listener has disappeared.
     case "$(systemctl is-enabled frr.service 2>/dev/null || true)" in
@@ -111,7 +128,7 @@ locals {
     systemctl enable --now local-vip.service
     systemctl restart local-vip.service
 
-    if ! "$already_running"; then
+    if ! "$already_running" && ! "$reloaded"; then
     # Only an explicit migration request may remove the BIRD manifest.
     %{if var.stop_bird~}
     rm -f /etc/kubernetes/manifests/bird.yaml
