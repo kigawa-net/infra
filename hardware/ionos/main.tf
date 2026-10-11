@@ -114,6 +114,7 @@ locals {
       peer_public_key = data.external.inuyama_wireguard_public_key.result.value
       peer_address    = var.inuyama_gateway_link.peer_address
       peer_asn        = var.inuyama_asn
+      static_routes   = var.inuyama_gateway_link.static_routes
     }] : [],
   )
 

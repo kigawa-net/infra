@@ -156,16 +156,56 @@ resource "null_resource" "inuyama_wireguard" {
 # 経路を持たないため、送信元NATがないと返信が戻らない)。
 # k8s4のufwはinactiveでFORWARDは暗黙ACCEPTのため、専用チェーン末尾のDROPで
 # CIランナー発の他のLAN宛通信を明示的に遮断する。
+#
+# IONOS からの通信を受けるインターフェース: wg1(IONOS の wg0 の k8s4 の peer)と、専用リンク(wg-ionos-gw。kigawa-net/infra#238)。
+# 切り替え(段階 3)で、IONOS からの通信が専用リンクに入るようになる前に、専用リンクにも同じルールを足しておく
+# (wg1 のルールは、そのまま残す。ルールを足すだけで、今の通信には影響しない)。
+locals {
+  ci_ssh_forward_interfaces = [var.ionos_wireguard_interface, var.ionos_link_interface]
+
+  ci_ssh_forward_script = <<-SCRIPT
+    #!/bin/bash
+    set -eo pipefail
+    export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    IPT="iptables -w 5"
+    LAN_IF="${var.lan_interface}"
+    CI="${var.ci_runner_wireguard_address}"
+    CHAIN=CI-WG-SSH
+
+    # 専用チェーンを作り直す(再実行しても重複しない)
+    $IPT -N $CHAIN 2>/dev/null || $IPT -F $CHAIN
+    %{for t in var.ci_ssh_forward_targets~}
+    $IPT -A $CHAIN -d ${t}/32 -p tcp --dport 22 -j ACCEPT
+    %{endfor~}
+    $IPT -A $CHAIN -j DROP
+
+    %{for ifc in local.ci_ssh_forward_interfaces~}
+    # ${ifc} から入る、CIランナー発のLAN宛通信は専用チェーンで評価(SSH以外は破棄)
+    $IPT -C FORWARD -i ${ifc} -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN 2>/dev/null \
+      || $IPT -I FORWARD 1 -i ${ifc} -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN
+    # 復路(確立済みのみ)
+    $IPT -C FORWARD -i $LAN_IF -o ${ifc} -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
+      || $IPT -I FORWARD 1 -i $LAN_IF -o ${ifc} -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    %{endfor~}
+
+    # 送信元NAT(許可した宛先のtcp/22のみ)。出力インターフェースは LAN なので、IONOS 側のインターフェースによらない
+    %{for t in var.ci_ssh_forward_targets~}
+    $IPT -t nat -C POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE 2>/dev/null \
+      || $IPT -t nat -A POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE
+    %{endfor~}
+  SCRIPT
+}
+
 resource "null_resource" "ci_ssh_forward" {
   depends_on = [null_resource.ionos_wireguard]
 
   triggers = {
     host    = var.server_ip
-    wg_if   = var.ionos_wireguard_interface
+    wg_ifs  = join(",", local.ci_ssh_forward_interfaces)
     lan_if  = var.lan_interface
     ci_addr = var.ci_runner_wireguard_address
     targets = join(",", var.ci_ssh_forward_targets)
-    version = "1"
+    version = "2"
   }
 
   connection {
@@ -176,44 +216,15 @@ resource "null_resource" "ci_ssh_forward" {
   }
 
   provisioner "file" {
-    content     = <<-SCRIPT
-      #!/bin/bash
-      set -eo pipefail
-      export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      IPT="iptables -w 5"
-      WG_IF="${var.ionos_wireguard_interface}"
-      LAN_IF="${var.lan_interface}"
-      CI="${var.ci_runner_wireguard_address}"
-      CHAIN=CI-WG-SSH
-
-      # 専用チェーンを作り直す(再実行しても重複しない)
-      $IPT -N $CHAIN 2>/dev/null || $IPT -F $CHAIN
-      %{for t in var.ci_ssh_forward_targets~}
-      $IPT -A $CHAIN -d ${t}/32 -p tcp --dport 22 -j ACCEPT
-      %{endfor~}
-      $IPT -A $CHAIN -j DROP
-
-      # CIランナー発のLAN宛通信は専用チェーンで評価(SSH以外は破棄)
-      $IPT -C FORWARD -i $WG_IF -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN 2>/dev/null \
-        || $IPT -I FORWARD 1 -i $WG_IF -o $LAN_IF -s $CI -d 192.168.1.0/24 -j $CHAIN
-      # 復路(確立済みのみ)
-      $IPT -C FORWARD -i $LAN_IF -o $WG_IF -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null \
-        || $IPT -I FORWARD 1 -i $LAN_IF -o $WG_IF -s 192.168.1.0/24 -d $CI -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-      # 送信元NAT(許可した宛先のtcp/22のみ)
-      %{for t in var.ci_ssh_forward_targets~}
-      $IPT -t nat -C POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE 2>/dev/null \
-        || $IPT -t nat -A POSTROUTING -s $CI/32 -d ${t}/32 -o $LAN_IF -p tcp --dport 22 -j MASQUERADE
-      %{endfor~}
-    SCRIPT
+    content     = local.ci_ssh_forward_script
     destination = "/tmp/ci-ssh-forward.sh"
   }
 
   provisioner "file" {
     content     = <<-UNIT
       [Unit]
-      Description=Allow CI runner SSH to LAN workers via wg1 (forward + MASQUERADE, tcp/22 only)
-      After=network-online.target wg-quick@${var.ionos_wireguard_interface}.service
+      Description=Allow CI runner SSH to LAN workers via wg1 / wg-ionos-gw (forward + MASQUERADE, tcp/22 only)
+      After=network-online.target wg-quick@${var.ionos_wireguard_interface}.service wg-quick@${var.ionos_link_interface}.service
       Wants=network-online.target
 
       [Service]
@@ -836,7 +847,11 @@ module "dual_stack_network" {
 # Soichiro 宛の etcd(tcp/2379,2380)だけを、WireGuard の出口で MASQUERADE し、送信元を k8s4 のトンネルのアドレス
 # (wg-oracle: 172.31.253.1、wg1: 172.31.254.1)にする。k8s4 の FORWARD は暗黙 ACCEPT のため、FORWARD は触らない。
 locals {
-  etcd_peer_masquerade_interfaces = [var.oracle_wireguard_interface, var.ionos_wireguard_interface]
+  # IONOS 方面のインターフェースは、wg1 と、専用リンク(wg-ionos-gw。kigawa-net/infra#238)。切り替え(段階 3)で、
+  # k8s4 の IONOS 方面の出口が専用リンクに移る前に、専用リンクにも MASQUERADE を足しておく(今の通信には影響しない)。
+  # 注意: 専用リンクで MASQUERADE すると、送信元は 172.31.252.2 になる。Soichiro は、172.31.252.0/30 への経路を持たない場合、
+  # 戻りが届かない(Soichiro 宛の etcd は、通常は Oracle 経由。IONOS 経由は、Oracle が使えないときの予備)。
+  etcd_peer_masquerade_interfaces = [var.oracle_wireguard_interface, var.ionos_wireguard_interface, var.ionos_link_interface]
 
   etcd_peer_masquerade_script = <<-SCRIPT
     #!/bin/bash
@@ -854,7 +869,7 @@ locals {
 }
 
 resource "null_resource" "etcd_peer_masquerade" {
-  depends_on = [null_resource.ionos_wireguard, null_resource.oracle_wireguard]
+  depends_on = [null_resource.ionos_wireguard, null_resource.ionos_gateway_link, null_resource.oracle_wireguard]
 
   triggers = {
     host         = var.server_ip
@@ -880,7 +895,7 @@ resource "null_resource" "etcd_peer_masquerade" {
     content     = <<-UNIT
       [Unit]
       Description=MASQUERADE Karmada etcd traffic (worker LAN -> Soichiro) at the WireGuard egress
-      After=network-online.target wg-quick@${var.oracle_wireguard_interface}.service wg-quick@${var.ionos_wireguard_interface}.service
+      After=network-online.target wg-quick@${var.oracle_wireguard_interface}.service wg-quick@${var.ionos_wireguard_interface}.service wg-quick@${var.ionos_link_interface}.service
       Wants=network-online.target
 
       [Service]
