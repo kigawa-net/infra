@@ -1,0 +1,51 @@
+# third-party GitHub Actions を commit SHA で pin している (#190)。
+#
+# Dependabot の `github-actions` ecosystem は `uses:` の version tag を
+# そのまま Dependabot PR で更新するため、pin を維持したまま更新できる。
+# (tag を major のまま固定する運用ではないため、Dependabot 側で
+#  minor/patch を追従してくれる)
+#
+# 注意:
+#   - SHA コメント(例 `# v4.4.0`)を Dependabot が更新してくれるかは
+#     リポジトリの既存コメント形式による。壊れた場合は
+#     `scripts/check-action-pins.sh` で「SHA とバージョンが一致しているか」を
+#     検証し、Dependencies の Dependabot で "Update comment" を有効にする。
+#   - major 跨ぎの更新(major が上がるもの)は人手で確認する。
+
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # bws CLI は releases API からではなく、固定バージョンの
+  # scripts/install-bws.sh で導入する(#190)。version bump は
+  # このファイルの BWS_VERSION を手で書き換えるか、以下の
+  # regex manager で自動化する。
+  - package-ecosystem: "regex"
+    directory: "/"
+    managers:
+      - custom.regexManagers
+    schedule:
+      interval: "weekly"
+    customManagers:
+      - customType: "regex"
+        datasourceTemplate: github-releases
+        packageNameTemplate: "bitwarden/sdk-sm"
+        currentValueTemplate: "bws-v[0-9]+\\.[0-9]+\\.[0-9]+"
+        depTypeTemplate: "version"
+        fileMatchTemplate: "^scripts/install-bws\\.sh$"
+        datasource:
+          release:
+            tagNameTemplate: "bws-v{{currentValue#bws-v}}"
