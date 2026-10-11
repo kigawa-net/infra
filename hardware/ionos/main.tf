@@ -400,5 +400,11 @@ module "karmada_cp_member" {
   # 1 つでも起動に失敗したら、CP のサービスをすべて止める。戻すときは stage を "apiserver" / "prepare" にする。
   stage = "full"
 
+  # メンバークラスタ(inuyama)の apiEndpoint(https://k8s.kigawa.net:6443)は、IONOS では公開 IP(IONOS 自身)に解決され、
+  # 6443 を待ち受けていないため拒否される。クラスターの VIP(kube-vip)に向ける(kigawa-net/infra#281)。
+  extra_hosts = {
+    "k8s.kigawa.net" = "10.0.0.100"
+  }
+
   depends_on = [module.karmada_etcd_member]
 }
