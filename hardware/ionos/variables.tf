@@ -62,23 +62,32 @@ variable "wireguard_mtu" {
 }
 
 variable "wireguard_peer_allowed_ips" {
-  # wg0 の k8s4(Inuyama)の peer の AllowedIPs。kigawa-net/infra#238 の切り替え(2026-10-12)で、10.0.0.0/24 と worker の /32 は、
-  # 専用リンク(wg-gw4。BGP と静的経路)に移したので、ここには、k8s4 自身のトンネルのアドレス(172.31.254.1/32)だけを残す。
-  # wg0 の AllowedIPs に 10.0.0.0/24 などを置くと、wg-quick が、`10.0.0.0/24 dev wg0` のカーネルの経路(距離 0)を作り、
-  # BGP の経路(距離 20)に勝って、通信が wg0 に戻ってしまう(wg0 の再起動で、勝手に切り替え前に戻る)。
+  # wg0 の k8s4(Inuyama)の peer の AllowedIPs。
   #
-  # worker の /32(192.168.1.130/.150/.228/.121)は、GitHub Actions(ubuntu-latest)から k8s-worker3/5/1/4 へ SSH(terraform apply)する
-  # ための経路(issue #193関連)。専用リンクの静的経路(inuyama_gateway_link.static_routes)で運ぶ。そちらと、k8s4 側
-  # (hardware/k8s4 ci_ssh_forward_targets)の tcp/22 限定の forward + MASQUERADE と、必ず揃えること。
-  # (terraform.yml の CI ランナー自身の AllowedIPs は、ランナー → IONOS(wg0 の別の peer)の設定で、別。変えない。)
+  # **縮めないこと**(kigawa-net/infra#238、2026-10-12 の障害): 10.0.0.0/24 と worker の /32 を外して `172.31.254.1/32` だけに縮めると、
+  # IONOS → Inuyama の通信が、片方向になる。理由: IONOS 発の通信は、BGP の経路(専用リンク wg-gw4)で k8s4 に届くが、k8s4 の
+  # 戻りは、`172.31.254.2` への直結の経路(`172.31.254.0/30 dev wg1`、BGP の `/24` より長いプレフィックス)で、wg1 から出る。
+  # IONOS は、wg1 から届いた、送信元 10.0.0.x のパケットを、wg0 の k8s4 の peer の AllowedIPs で受け入れるかを判定するので、
+  # AllowedIPs に 10.0.0.0/24 が無いと、WireGuard が破棄する(非対称経路。約 33 分間、IONOS の HAProxy・etcd #3・Karmada の
+  # Inuyama 向けの通信が、返信を受け取れなかった)。つまり、wg0 の AllowedIPs は、「経路」ではなく「受信の許可」としても必要。
   #
-  # **元に戻すとき**(wg0 に戻すとき): この既定値を、["172.31.254.1/32", "10.0.0.0/24", "192.168.1.130/32", "192.168.1.150/32",
-  # "192.168.1.228/32", "192.168.1.121/32"] にして apply する(wg0 の peer だけの変更なので、`wg syncconf` で適用され、
-  # wg0 は再起動されない。AllowedIPs の復活だけでは、kernel の経路は戻らないので、`ip route replace` も要る:
-  # 手元の cutover_ionos.sh の rollback と同じ)。
+  # 経路(カーネル)だけを BGP に移すには、AllowedIPs を縮めず、wg-quick が AllowedIPs から作る `10.0.0.0/24 dev wg0` などの
+  # カーネルの経路(距離 0。BGP の距離 20 に勝つ)だけを消す: 切り替え済み(2026-10-12。cutover_ionos.sh)。ただし、wg0 を
+  # **再起動すると、これらの経路が復活し、経路が wg0 に戻る**(疎通は維持される。BGP の経路は壊れない)。恒久的に防ぐには、
+  # wg0 に `Table = off` を入れて、AllowedIPs 由来の経路を作らせない(wg0 の再起動と、必要な経路の PostUp での追加が要る。別の変更)。
+  #
+  # 192.168.1.130/32, .150/32, .228/32, .121/32: GitHub Actions(ubuntu-latest)から k8s-worker3/5/1/4 へ SSH(terraform apply)する
+  # ための経路(issue #193関連)。切り替え後は、専用リンクの静的経路(inuyama_gateway_link.static_routes)で運ぶ。そちらと、
+  # k8s4 側(hardware/k8s4 ci_ssh_forward_targets)の tcp/22 限定の forward + MASQUERADE と、terraform.yml の AllowedIPs と
+  # 必ず揃えること。
   type = list(string)
   default = [
     "172.31.254.1/32",
+    "10.0.0.0/24",
+    "192.168.1.130/32",
+    "192.168.1.150/32",
+    "192.168.1.228/32", # k8s-worker1(2026-10-05: node-dns を IaC で適用するため)
+    "192.168.1.121/32", # k8s-worker4(同上)
   ]
 }
 
