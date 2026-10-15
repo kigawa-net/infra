@@ -31,6 +31,22 @@ data "external" "sudo_password" {
   ]
 }
 
+# workerノードから内部ネットワーク(10.0.0.0/24)への静的経路と、1 分ごとの再適用タイマー(issue #193 / #198)。
+# worker4 は手動で経路を入れていた(cluster-route.service は 1 回実行されるだけ)ため、経路が消えると自動では
+# 戻らなかった。2026-10-16 に、worker4 だけ 10.0.0.0/24 の経路が無く(default の 192.168.1.1 に出て届かない)、
+# 同じ worker4 に載った CoreDNS の 10.0.0.53 向け forward が失敗し、kivra のログインが落ちた。
+# k8s-worker3 / k8s-worker5 と同じ構成にする。既存の /usr/local/bin/cluster-route.sh と同じ内容を入れ直すだけ。
+module "cluster_route" {
+  source = "../modules/cluster-route"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
+  gateways = [var.core_router_vip]
+}
+
 # 内部ドメイン(kigawa.net など)を、kresd に向ける。ノードは、自宅ルーターで k8s.kigawa.net を引いており、
 # ルーターの上流(k8s2)が止まると、kubelet が API に繋がらなくなった(2026-10-04)。
 module "node_dns" {
