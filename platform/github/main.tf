@@ -173,3 +173,13 @@ resource "github_team_repository" "dev_team" {
 #     secret_name     = "EXAMPLE_SECRET"
 #     plaintext_value = data.external.example_secret.result.value # from bws
 #   }
+
+# kigawa-net/infra#295 で kivra を var.repositories に足したところ、github_repository.delete_branch_on_merge["kivra"] が
+# 状態に無く、既存のリポジトリを「新規作成」しようとして、422 name already exists で apply が失敗した
+# (ブランチ保護 github_branch_protection.default["kivra"] は、先に作成できている)。
+# このリソースは、既存のリポジトリを import して delete_branch_on_merge の 1 属性だけを管理する設計なので、
+# kivra を import する。1 回 apply して状態に取り込まれたら、この import ブロックは削除してよい(残しても害は無い)。
+import {
+  to = github_repository.delete_branch_on_merge["kivra"]
+  id = "kivra"
+}
