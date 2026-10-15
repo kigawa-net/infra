@@ -119,9 +119,11 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
   systemctl list-timers cluster-route.timer
   dig +short +time=2 +tries=1 @10.0.0.53 kigawa.net
   ```
-- 注意: `k8s-worker1` / `k8s-worker4` は現状 `hardware/` に Terraform 定義がなく、同じ経路を
-  手動で設定している(2026-10-06 に、Core Router VIP 1 本に変更。`/usr/local/bin/cluster-route.sh` と
-  `cluster-route.service`。変更前のスクリプトは各ノードの `/root/cluster-route.sh.bak-20261006`)。
+- `k8s-worker4` も、`hardware/k8s-worker4` から、同じ `cluster-route` モジュール(タイマー付き)で管理する(#193。
+  2026-10-16 に、手動設定の経路が消えたまま戻らず、worker4 上の CoreDNS が `10.0.0.53` に届かなくなった)。
+- 注意: `k8s-worker1` は現状 `hardware/` に Terraform 定義がなく、同じ経路を手動で設定している
+  (2026-10-06 に、Core Router VIP 1 本に変更。`/usr/local/bin/cluster-route.sh` と `cluster-route.service`。
+  変更前のスクリプトは `/root/cluster-route.sh.bak-20261006`)。
   `cluster-route.timer`(1 分ごとの再適用)は無いので、経路が消えても自動では復旧しない。
   IaC への取り込みは #198 で追跡する。
 
