@@ -61,7 +61,7 @@ variable "repositories" {
     "mc-manifest", "k8s-builders", "kest", "hakoniwa-core-plugin",
     "auth-server", "kweb", ".github", "server-chat", "keimvus",
     "RTPlugin", "config", "keimvus-maven-plugin", "craft-tools",
-    "studilay-bot", "exkes",
+    "studilay-bot", "exkes", "kivra",
   ]
 }
 
@@ -112,5 +112,6 @@ variable "default_branches" {
     "craft-tools"           = "main"
     "studilay-bot"          = "main"
     exkes                   = "main"
+    kivra                   = "main"
   }
 }
