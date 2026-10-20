@@ -92,6 +92,11 @@
   - 3.6 では、`maas-apiserver` と `maas-temporal` 系が、独立したサービスとして増えている(メモリが増える可能性)。
 - k8s の `region.yaml` の cgroup の hostPath と、`--cgroupns=host` の要否は、試作では private で動いたので、検証していない。
 
+## `pg_dump` と restore の確認(2026-10-20)
+- 本番の DB から `pg_dump -Fc` を取得できた(3.6MB)。使い捨ての `postgres:14` に `pg_restore`(`--no-owner --no-privileges --exit-on-error`)して、**エラー無し(exit 0)、件数が本番と一致**した(machine 0、rack / region ノード 44、subnet 5、ユーザー 3、最新の migration `0330_bootresourcefile_filename_on_disk`)。
+- 本番の DB サイズは 340MB、restore 後は 30MB。**本番の DB は、膨らんでいる**(不要領域とみられる。Ceph の遅い fsync と再起動の繰り返しの影響かもしれないが、原因は未調査)。
+- 取得の手順(Pod の中の `POSTGRES_USER` を使い、パスワードを外に出さない): `kubectl -n kigawa-net-maas exec maas-postgres-0 -- sh -c 'pg_dump -U "$POSTGRES_USER" -d maas -Fc' > maas-<日時>.dump`。ダンプには、ユーザーの認証情報などが入るので、権限 0600 のディレクトリに置く。**Region を 3.6 に上げる sync の直前に、取り直す。**
+
 ## 未検証の点
 - Region を 3.6 にして、既存の DB が migration できるか。Ubuntu 22.04 の PPA に 3.6 があるか。
 - Rack の導入が、control-plane の既存サービス(kresd、HAProxy、時刻同期)に影響しないか。**実機に入れる前に、同じ OS の使い捨ての VM かコンテナで、サービスの起動を含めて確認する。**
