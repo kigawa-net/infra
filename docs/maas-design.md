@@ -67,6 +67,14 @@
 - Rack を k8s に載せなくなったので、#220(k8s 上の MAAS の privileged / hostNetwork の隔離)の対象は、無くなる。**判断を記録して、close する(not planned)。**
 - k8s の Region の `privileged` の理由(systemd と cgroup)を、docs に書く。
 
+## 段階 0 の確認結果(2026-10-20、読み取りのみ)
+- OS: k8s2 は Ubuntu 24.04.2、k8s4 は 24.04.3。
+- **時刻同期:** 2 台とも `systemd-timesyncd` が active で、同期済み。`chrony` は inactive。**Rack の導入で `chrony` に置き換わる**(上記)。導入後に、同期の状態を確認する。
+- **`:80`:** k8s2 は空き。**k8s4 は nginx(Ubuntu 標準の `default` サイトのみ、`conf.d` は空、`localhost:80` が 200)が動いている。** 独自の用途は無いので、Rack の導入時に `default` サイトを無効にして、`:80` を空ける(MAAS の Rack は、`:5248` を使う)。
+- `bind9`・`avahi-daemon`:2 台とも inactive(入っていない)。
+- **ファイアウォール:** k8s2 は `ufw` が active、**k8s4 は inactive**。k8s2 には、Rack のポート(67/69 udp、123 udp、5247 udp、5248/8000 tcp)と、failover のポート(647/7911 tcp)の許可が要る。k8s4 は、ufw が無効なので、ポートは開いている(iptables の INPUT の既定は、確認できなかった)。**k8s2 と k8s4 で、ufw の状態が違う点は、揃えるかを別途判断する。**
+- failover のポート(647/7911)は、Rack が未導入なので、どちらも closed(想定どおり)。導入後に、k8s2 ↔ k8s4 の通信を確認する。
+
 ## 未検証の点
 - Region を 3.6 にして、既存の DB が migration できるか。Ubuntu 22.04 の PPA に 3.6 があるか。
 - Rack の導入が、control-plane の既存サービス(kresd、HAProxy、時刻同期)に影響しないか。**実機に入れる前に、同じ OS の使い捨ての VM かコンテナで、サービスの起動を含めて確認する。**
