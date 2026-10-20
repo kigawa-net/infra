@@ -75,6 +75,13 @@
 - **ファイアウォール:** k8s2 は `ufw` が active、**k8s4 は inactive**。k8s2 には、Rack のポート(67/69 udp、123 udp、5247 udp、5248/8000 tcp)と、failover のポート(647/7911 tcp)の許可が要る。k8s4 は、ufw が無効なので、ポートは開いている(iptables の INPUT の既定は、確認できなかった)。**k8s2 と k8s4 で、ufw の状態が違う点は、揃えるかを別途判断する。**
 - failover のポート(647/7911)は、Rack が未導入なので、どちらも closed(想定どおり)。導入後に、k8s2 ↔ k8s4 の通信を確認する。
 
+## 段階 1 の事前確認の結果(2026-10-20、読み取りのみ)
+- **Region のバージョン:** `maas-region-api` / `maas-common` は 3.5.10(Ubuntu 22.04.5 のイメージ、`main-54b26e7a…`)。
+- **MAAS 3.6 の PPA は、Ubuntu 22.04(jammy)用のリリースも無い**(使い捨ての 22.04 コンテナで確認。`jammy Release` が無い)。**Region のイメージのベースを、Ubuntu 24.04 に変える必要がある**(`Dockerfile_region` の `FROM ubuntu:22.04` と、systemd をコンテナ内で動かす部分を、24.04 で作り直す)。Region を 3.6 に上げる作業は、「`MAAS_VERSION` を変える」だけでは済まない。
+- **DB の中身:** machine 0 件、rack / region ノード 44 件(Pod の再起動のたびに、別のホスト名で登録された古い登録とみられる)、subnet 5、ユーザー 3、DB サイズ 340MB、最新の migration は `maasserver` の `0330_bootresourcefile_filename_on_disk`。**machine が 0 件なので、DB に守るべき運用データはほぼ無い。** 万一の時は、DB を作り直しても、失うものは少ない(ユーザーと設定は、作り直しになる)。それでも `pg_dump` は、先に取る。
+- **migration の仕組み:** `migrate-job.yaml` は、ArgoCD の **PreSync フック**で、sync のたびに実行される。Region のイメージを 3.6 に変えて sync すると、**DB の migration が、自動で、先に走る**(戻せない)。**`pg_dump` を、sync の前に取る**こと。なお、このジョブの image のタグ(`main-0d1ce1f…`)は、Region(`main-54b26e7a…`)と、違っている。揃っているか、確認が要る。
+- **PostgreSQL:** worker1(I/O 飽和のノード、#240)に載っていて、再起動が 54 回(10/10 まで。liveness の `pg_isready` のタイムアウト 1 秒が、遅い Ceph で失敗するとみられる。10/10 19:45 以降は、安定)。段階 1 で DB を触る前に、liveness の設定(タイムアウト、失敗の閾値)を緩める。Ceph のままにする決定なので、配置も、worker1 を避ける。
+
 ## 未検証の点
 - Region を 3.6 にして、既存の DB が migration できるか。Ubuntu 22.04 の PPA に 3.6 があるか。
 - Rack の導入が、control-plane の既存サービス(kresd、HAProxy、時刻同期)に影響しないか。**実機に入れる前に、同じ OS の使い捨ての VM かコンテナで、サービスの起動を含めて確認する。**
