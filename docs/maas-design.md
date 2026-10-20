@@ -82,6 +82,16 @@
 - **migration の仕組み:** `migrate-job.yaml` は、ArgoCD の **PreSync フック**で、sync のたびに実行される。Region のイメージを 3.6 に変えて sync すると、**DB の migration が、自動で、先に走る**(戻せない)。**`pg_dump` を、sync の前に取る**こと。なお、このジョブの image のタグ(`main-0d1ce1f…`)は、Region(`main-54b26e7a…`)と、違っている。揃っているか、確認が要る。
 - **PostgreSQL:** worker1(I/O 飽和のノード、#240)に載っていて、再起動が 54 回(10/10 まで。liveness の `pg_isready` のタイムアウト 1 秒が、遅い Ceph で失敗するとみられる。10/10 19:45 以降は、安定)。段階 1 で DB を触る前に、liveness の設定(タイムアウト、失敗の閾値)を緩める。Ceph のままにする決定なので、配置も、worker1 を避ける。
 
+## Region 3.6(Ubuntu 24.04)の試作の結果(2026-10-20、手元の Docker のみ。本番には触れていない)
+- **`Dockerfile_region` の変更は、ほぼ「ベースを `ubuntu:24.04`、`MAAS_VERSION` を `3.6`」だけで、ビルドと systemd での起動が通る。** `entrypoint-region.sh` は、変更不要(`/etc/maas/regiond.conf` のキーも、3.5 と同じ)。インストールされたのは 3.6.6。
+- **3.5 → 3.6 の DB の migration は、通る**(3.5.14 で作った DB を `pg_dump` → restore し、24.04 + 3.6.6 で `maas-region dbupgrade`、`maasserver` の 0323〜0340 の 14 件が適用されて exit 0。再実行は "No migrations to apply." で冪等)。本番の 3.5.10 から直接上がるかは、本番の DB では試していない。**PostgreSQL は 14 で検証した**(3.6 の対応バージョンは、未確認)。
+- Region の `maas-apiserver`・`maas-http`・`maas-proxy`・`maas-regiond`・`maas-temporal`・`maas-temporal-worker` が active。`GET /MAAS/` は 301 → `/MAAS/r/`(200)。`/MAAS/api/2.0/version/` が 200 で `3.6.6`。**k8s の probe の `httpGet /MAAS/` は 301 を返す**(kubelet は、リダイレクトを追わず、2xx/3xx を成功とするので、通るはずだが、要確認)。
+- **注意点:**
+  - 起動直後に `maas-apiserver` が、証明書の準備前に落ちる(`TypeError … get_maas_cluster_cert_paths`)。自動再起動(10 秒後)で回復するので、初回は、エラーログが出る。startupProbe に余裕を持たせる。
+  - **`maas-syslog`(rsyslogd)が、ホストの AppArmor のプロファイルで拒否されて失敗する**(`apparmor="DENIED" … profile="rsyslogd" name="/var/lib/maas/rsyslog.conf"`)。試作のホストで起きた。**k8s のノードで同じことが起きるかは、未確認**(ノードの AppArmor の状態による)。regiond 本体は動く。
+  - 3.6 では、`maas-apiserver` と `maas-temporal` 系が、独立したサービスとして増えている(メモリが増える可能性)。
+- k8s の `region.yaml` の cgroup の hostPath と、`--cgroupns=host` の要否は、試作では private で動いたので、検証していない。
+
 ## 未検証の点
 - Region を 3.6 にして、既存の DB が migration できるか。Ubuntu 22.04 の PPA に 3.6 があるか。
 - Rack の導入が、control-plane の既存サービス(kresd、HAProxy、時刻同期)に影響しないか。**実機に入れる前に、同じ OS の使い捨ての VM かコンテナで、サービスの起動を含めて確認する。**
