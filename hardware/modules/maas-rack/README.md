@@ -14,18 +14,21 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 |---|---|
 | パッケージ | `ppa:maas/3.6` を追加し、`apt-get install --no-upgrade maas-rack-controller`。約 208 パッケージが入る。**既存パッケージのアップグレードが計画に含まれるときは、中止する** |
 | 事前チェック | メモリの空きが `min_available_mb`(既定 2000)未満なら、中止する |
-| 時刻同期 | **`systemd-timesyncd` が削除され、`chrony` に置き換わる**(パッケージの依存)。導入後に、時刻のずれを確認する |
+| 時刻同期 | **`systemd-timesyncd` が削除され、`chrony` に置き換わる**(パッケージの依存)。**MAAS の rackd は、登録の際に `chrony.conf` を書き換え、上流の `server` / `pool` を消す**(`/etc/chrony/maas.conf` は、`local stratum 9 orphan` と `allow` だけ。Region の NTP の設定が空のため)。そのため、**`chrony` の起動と、MAAS が書き換えない `/etc/chrony/sources.d/ubuntu-pool.sources`(Ubuntu の pool。導入前と同じ上流)の設置を、最優先**にする(登録などの失敗で、時刻同期が無い状態に、ならないように) |
 | bind9 | 入るが、**mask** する(`:53` は kresd が使う) |
 | nginx | default サイトを外す(`:80` を空ける)。Rack の HTTP は、別の設定(`/var/lib/maas/http/nginx.conf`) |
 | avahi | disable する |
 | DHCP | `maas-dhcpd` / `maas-dhcpd6` は、パッケージの preset で enable になるので、**明示的に disable** する |
-| 登録 | `maas-rack register --url <Region の URL>`。**secret は stdin で渡す**(引数に出さない)。登録済み(`rackd.conf` に同じ URL)なら、やり直さない |
+| 登録 | `maas-rack register --url <Region の URL>`。**secret は stdin で渡す**(引数に出さない)。**登録済みと判定するのは、`rackd.conf` に同じ URL があり、かつ、共有 secret のファイル(`/var/lib/maas/secret`)があるとき**(URL だけだと、登録が途中で失敗した状態を、見逃す)。登録の失敗では、後続を止めず、最後に失敗として終わる。**`maas-rack register` は `maas-rackd` を停止させる**ので、登録の後に、必ず、起動する |
 | サービス | `maas-rackd`・`maas-http`・`maas-proxy`・`maas-syslog`・`maas-agent`・`chrony` を enable / start(`maas-http` 以下は、Region への登録まで起動しない) |
 
 ## secret の扱い
 
-- Region との共有 secret は、Bitwarden(kigawa-net-k8s の `maas-secret` と同じもの)から、`data "external"` で取得する(ノードの `main.tf`)。値は、ログにも、引数にも出さない。
+- 共有 secret は、**Region の `/var/lib/maas/secret` と同じ、32 桁の 16 進数**。Bitwarden の項目 **`maas-rack-shared-secret`**(プロジェクト `infra`)に保管した。ID は、ノードの変数 `maas_secret_bitwarden_id`(値ではなく ID)。
+- **kigawa-net-k8s の `maas-secret`(Bitwarden の別の項目。88 文字)は、MAAS の共有 secret ではない**(`maas-rack register` が `Secret could not be decoded: Non-hexadecimal digit found` で失敗する)。取り違えない。
+- 値は、ログにも、引数にも出さない(ノードの `main.tf` が `data "external"` で取得し、`sensitive()` で包んで module に渡す)。
 - host に置くファイル `/tmp/maas-rack-secret` は、`0600` で作り、導入の成功・失敗にかかわらず、削除する。
+- **Region の Pod を作り直しても、secret は変わらない**(MAAS が DB に保管する)。DB を作り直したときは、secret が変わるので、Bitwarden の項目を更新して、Rack を登録し直す。
 
 ## 失敗したとき・戻すとき
 
@@ -36,7 +39,8 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 ## 未検証(コンテナでは、確認できないこと)
 
 - ホストの AppArmor のプロファイル(dhcpd、squid、rackd、nginx、rsyslogd)。**`maas-syslog` は、Region(worker4)で、ホストの rsyslogd のプロファイルに拒否された**(Rack でも起きうる)。
-- k8s2 の `ufw`(active)で、Rack のポート(67/68・69 udp、5247 udp、5248・8000 tcp)と、failover のポート(647・7911 tcp)の許可が要る。**この module は、ufw を変更しない。** 登録後に `ss` で待ち受けを確認してから、別の PR で足す。
+- **k8s2 の `ufw` は、サービスは active だが、ファイアウォールは無効(`ufw status` は inactive)。** 導入後の k8s2 では、次が **LAN から届く**状態になる: TFTP(udp 69)は、**k8s2 の全アドレス(API の VIP、LB の VIP、クラスタのサービス IP の数百個)にバインドされる**、`maas-proxy`(tcp 8000)は `*:8000`、Rack の HTTP(tcp 5247 / 5248)、NTP(udp 123。MAAS の `maas.conf` の `allow` により、LAN に時刻を配る)。**この module は、ファイアウォールを変更しない。** 待ち受けの絞り込みは、DHCP の切り替えの前に、別の PR で行う。
+- **Region の RPC(tcp 5250〜5253)が、Rack から届くこと**が前提。Region の Pod は、PID 1 の環境変数 `container=docker` が無いと、`/rpc/` に loopback だけを広告する(kigawa-net-k8s#401)。Rack は、Pod の IP(Flannel の `172.16.x.x`)の 5250〜5253 に直接 TCP で接続する(k8s のノードから届く)。
 - `chrony` への切り替えで、host の時刻が飛ばないか。
 - k8s4 の nginx は、標準の default サイトだけで、他の用途は無い(確認済み)。
 

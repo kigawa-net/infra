@@ -250,7 +250,7 @@ variable "maas_rack_enabled" {
 }
 
 variable "maas_secret_bitwarden_id" {
-  description = "MAAS の Region との共有 secret の Bitwarden の ID(kigawa-net-k8s の maas/maas-secret-bws.yaml と同じもの。値ではなく ID)。maas_rack_enabled が true のときだけ使う"
+  description = "MAAS の共有 secret(Region の /var/lib/maas/secret と同じ、32 桁の 16 進数)の Bitwarden の ID(項目名 maas-rack-shared-secret。値ではなく ID)。kigawa-net-k8s の maas-secret(88 文字。MAAS の secret ではない)とは別物。maas_rack_enabled が true のときだけ使う"
   type        = string
-  default     = "7c6fddef-9255-49c7-808d-b41500d36842"
+  default     = "a7ce1226-55cd-4565-9b61-b4ea00f130f0"
 }
