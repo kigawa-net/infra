@@ -244,9 +244,9 @@ variable "inuyama_asn" {
 }
 
 variable "maas_rack_enabled" {
-  description = "true にすると、この host(k8s2)に MAAS の Rack コントローラーを導入する(kigawa-net/infra#207、docs/maas-design.md。DHCP の primary の予定)。既定は false(何もしない)。1 台ずつ、別の PR で true にする"
+  description = "true にすると、この host(k8s2)に MAAS の Rack コントローラーを導入する(kigawa-net/infra#207、docs/maas-design.md。DHCP の primary の予定)。DHCP は有効にしない(別の段階)。**戻すときは、host の /var/lib/maas-rack-module/maas-rack-rollback.sh を root で実行してから false にする**(false にするだけでは、パッケージは消えない)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "maas_secret_bitwarden_id" {
