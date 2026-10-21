@@ -97,14 +97,27 @@
 - 本番の DB サイズは 340MB、restore 後は 30MB。**本番の DB は、膨らんでいる**(不要領域とみられる。Ceph の遅い fsync と再起動の繰り返しの影響かもしれないが、原因は未調査)。
 - 取得の手順(Pod の中の `POSTGRES_USER` を使い、パスワードを外に出さない): `kubectl -n kigawa-net-maas exec maas-postgres-0 -- sh -c 'pg_dump -U "$POSTGRES_USER" -d maas -Fc' > maas-<日時>.dump`。ダンプには、ユーザーの認証情報などが入るので、権限 0600 のディレクトリに置く。**Region を 3.6 に上げる sync の直前に、取り直す。**
 
+## Region 3.6 への移行の実施結果(2026-10-20 〜 21。**完了**)
+- **PR:** kigawa-net-k8s#386(PostgreSQL の probe の緩和)、#388(`Dockerfile_region` を Ubuntu 24.04 + 3.6)、#390(migrate Job のタグを Region に揃える)、#394(Pod の hostname の固定)。
+- **結果:** DB は `0340_drop_keysource_table` まで上がり(3.5.10 → 3.6.6)、Region の Pod(3.6.6、Ubuntu 24.04.5)は Ready。API の `version` は `3.6.6`。マージ前に取った `pg_dump`(restore と件数の一致を確認)を、`~/backups/maas/` に置いた(手順は `dump-and-verify.sh`)。
+- **落とし穴(次回の更新のために):**
+  - **ArgoCD の PreSync フックは、sync が走る時だけ動く。** `migrate-job.yaml` の image だけを変えても、アプリが OutOfSync にならず、自動 sync が起きない(migration が走らない)。`argocd app sync kigawa-net-maas-app --grpc-web` で手動に sync する(**DB の migration は戻せない**ので、先に `pg_dump`)。
+  - `maas-build` は `region.yaml` のタグだけを自動更新する。**`migrate-job.yaml` のタグは、手で Region に揃える**(コメントで明記した)。揃っていないと、Region が新しい schema を要求し、Ready にならない。
+  - CI の `dry-run`(server)は、TTL(300 秒)内に残った `maas-db-migrate` Job と衝突して失敗する(Job の `spec.template` は変更できない)。Job が消えてから再実行する。
+  - **API の `version` は、DB の `controllerinfo` で最も多いバージョンを返す**(`get_maas_version()`)。Pod 名が hostname のままだと、Pod の再作成のたびに region コントローラーが増え、古い 3.5.10 が 44 件残って、移行後も `3.5.10` と表示された。**`spec.hostname: maas-region` で固定**(#394。固定した hostname なら、`maas_id` が無くても、同じコントローラーに紐づく)。古い 44 件は、`maas-region shell` から `as_self().delete(force=False)` で削除した(稼働中の自分自身は、MAAS が拒否する)。
+  - PostgreSQL は worker1 上で、liveness の `pg_isready`(timeout 1 秒)が、遅い Ceph で失敗し、10/10 までに 54 回再起動していた。probe を緩めた(#386)。**再起動が止まったかは、観察中。**
+- **未解決:** `maas-syslog`(rsyslogd)が失敗する。Region の Pod が載る worker4 で AppArmor が active で、`/etc/apparmor.d/usr.sbin.rsyslogd` のプロファイルがあり、**ホストの rsyslog も動いている**。パスで効くプロファイルが、コンテナ内の `/usr/sbin/rsyslogd` にも効いているとみられる(`maas` ユーザーが、644 の設定ファイルを開けず `Permission denied`)。machine が 0 件の今は、影響が無い(機械が送るログを受けられなくなる)。対策の候補: (a) rsyslogd のバイナリを別のパスにコピーして使う、(b) ノードのプロファイルを無効にする(ホストの保護が下がる)、(c) `maas-syslog` を無効にする。
+- 終了済みの Pod の登録(`maas-region-c56899c57-zcwnb`)が 1 件残っている(バージョン表示に、影響は無い)。
+
 ## 未検証の点
-- Region を 3.6 にして、既存の DB が migration できるか。Ubuntu 22.04 の PPA に 3.6 があるか。
 - Rack の導入が、control-plane の既存サービス(kresd、HAProxy、時刻同期)に影響しないか。**実機に入れる前に、同じ OS の使い捨ての VM かコンテナで、サービスの起動を含めて確認する。**
+- 2 台の DHCP の failover の通信(647/7911 tcp)が、k8s2 の ufw と経路で通るか。
 - スイッチの DHCP の設定と、無効にする手順。試験機と BMC の有無。
+- 固定した hostname で、Region の Pod の再起動時に、登録が増えないことの、本番での確認(手元の Docker では確認済み)。
 
 ## 段階
-0. **読み取り:** スイッチの DHCP の設定を控える。k8s2 の `:80` と時刻同期の状態を確認する。試験機と BMC の有無。
-1. **Region を 3.6 へ:** `pg_dump` → イメージの更新 → migration → Region の動作確認。
+0. **読み取り(一部済み):** k8s2 の `:80` と時刻同期の状態は、確認済み。**未了:** スイッチの DHCP の設定を控える。試験機と BMC の有無。
+1. **Region を 3.6 へ(完了。2026-10-21):** 上の「実施結果」。
 2. **Rack の導入(DHCP は無効のまま)。1 台ずつ:** module を作り、まず **k8s2**、次に **k8s4** に入れる。1 台ごとに、Region への登録、TFTP / HTTP の応答、kresd・時刻同期・etcd・kube-vip・BGP に異常が無いことを確認する。
 3. **DHCP の切り替え(LAN に影響。時間帯を決める):** VLAN に primary(k8s2)と secondary(k8s4)を割り当て、failover の通信を確認する。その後、スイッチの DHCP を止め、MAAS の DHCP を有効にする。失敗したら戻す。**片方の Rack を止めて、もう片方が DHCP を継続することも確認する。**
 4. **試験機 1 台:** PXE → enlist → commission → deploy。
