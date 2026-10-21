@@ -13,6 +13,8 @@ POLICY=${POLICY:-/usr/sbin/policy-rc.d}
 APT_SOURCES_DIR=${APT_SOURCES_DIR:-/etc/apt/sources.list.d}
 NGINX_SITES_DIR=${NGINX_SITES_DIR:-/etc/nginx/sites-enabled}
 MAAS_ETC_DIR=${MAAS_ETC_DIR:-/etc/maas}
+MAAS_VAR_DIR=${MAAS_VAR_DIR:-/var/lib/maas}
+CHRONY_DIR=${CHRONY_DIR:-/etc/chrony}
 MIN_AVAILABLE_MB=${MIN_AVAILABLE_MB:-2000}
 : "${MAAS_URL:?MAAS_URL が未設定}"
 mkdir -p "$LOG_DIR"
@@ -66,6 +68,23 @@ rm -f "$POLICY"
 systemctl stop systemd-timesyncd.service >/dev/null 2>&1 || true
 systemctl daemon-reload
 
+# 4''. **時刻同期を最優先で用意する**(control-plane。etcd は時刻のずれに弱い)。
+#      timesyncd は削除済みなので、この時点で、時刻同期のサービスが無い。登録など、後続の失敗に左右されないよう、先に、chrony を起動する。
+#      MAAS の rackd は、登録の際に chrony.conf を書き換え、上流の server / pool を消し、/etc/chrony/maas.conf(local stratum 9 orphan と allow だけ)を include する
+#      (Region の NTP の設定が空のため)。MAAS が書き換えない sources.d に、Ubuntu の pool(導入前の chrony.conf と同じ)を置く。
+install -d -m 0755 "$CHRONY_DIR/sources.d"
+cat > "$CHRONY_DIR/sources.d/ubuntu-pool.sources" <<'EOF'
+# Ubuntu の既定の NTP(Rack の導入前の chrony.conf と同じ)。MAAS の rackd は chrony.conf と maas.conf を書き換え、
+# 上流の server / pool を消すので、MAAS が触らない sources.d に置く(kigawa-net/infra#207)。
+pool ntp.ubuntu.com        iburst maxsources 4
+pool 0.ubuntu.pool.ntp.org iburst maxsources 1
+pool 1.ubuntu.pool.ntp.org iburst maxsources 1
+pool 2.ubuntu.pool.ntp.org iburst maxsources 2
+EOF
+chmod 0644 "$CHRONY_DIR/sources.d/ubuntu-pool.sources"
+systemctl enable --now chrony.service
+chronyc reload sources >/dev/null 2>&1 || true
+
 # 5. 後処理
 # bind9(named)は Rack では使わない。:53 は kresd が持つので mask する。
 systemctl mask named.service bind9.service >/dev/null 2>&1 || true
@@ -81,13 +100,20 @@ systemctl disable --now avahi-daemon.service avahi-daemon.socket >/dev/null 2>&1
 systemctl disable --now maas-dhcpd.service maas-dhcpd6.service >/dev/null 2>&1 || true
 systemctl disable --now isc-dhcp-server.service isc-dhcp-server6.service >/dev/null 2>&1 || true
 
-# 6. Region への登録。secret は stdin で渡す(argv に出さない)。登録済み(rackd.conf に同じ URL)なら、やり直さない。
+# 6. Region への登録。secret は stdin で渡す(argv に出さない)。
+#    「登録済み」は、rackd.conf に同じ URL があり、**かつ、共有 secret のファイルがある**ときだけ(URL だけだと、登録が途中で失敗した状態を、見逃す)。
+#    登録の失敗では、後続(サービスの起動)を止めない。最後に、失敗として、終了コードに反映する。
+register_rc=0
 if [ -n "${SECRET_FILE:-}" ] && [ -s "$SECRET_FILE" ]; then
-    if grep -qsF "$MAAS_URL" "$MAAS_ETC_DIR/rackd.conf" 2>/dev/null; then
-        echo "register: 登録済み($MAAS_URL)。スキップ"
+    if grep -qsF "$MAAS_URL" "$MAAS_ETC_DIR/rackd.conf" 2>/dev/null && [ -s "$MAAS_VAR_DIR/secret" ]; then
+        echo "register: 登録済み($MAAS_URL、secret あり)。スキップ"
     else
-        maas-rack register --url "$MAAS_URL" < "$SECRET_FILE"
-        echo "register: done"
+        if maas-rack register --url "$MAAS_URL" < "$SECRET_FILE"; then
+            echo "register: done"
+        else
+            register_rc=$?
+            echo "register: 失敗(終了コード $register_rc)。後続のサービスの起動は続ける" >&2
+        fi
     fi
     shred -u "$SECRET_FILE" 2>/dev/null || rm -f "$SECRET_FILE"
 else
@@ -96,9 +122,14 @@ fi
 
 # 7. Rack に必要なサービスだけ enable / start する。
 #    maas-http / maas-proxy / maas-syslog / maas-agent は ConditionPathExists により、Region への登録までは起動しない。
+#    **maas-rack register は maas-rackd を停止させる**ので、登録の後に、必ず、起動する。
 systemctl enable maas-rackd.service maas-http.service maas-proxy.service maas-syslog.service maas-agent.service
-systemctl enable --now chrony.service
 systemctl start maas-rackd.service || true
 systemctl start maas-http.service maas-proxy.service maas-syslog.service maas-agent.service || true
 
+echo "time: chrony=$(systemctl is-active chrony.service 2>/dev/null || true) sources=$(chronyc -n sources 2>/dev/null | grep -c '^\^' || true)"
+if [ "$register_rc" != 0 ]; then
+    echo "maas-rack-install.sh: 登録に失敗(他の手順は完了)" >&2
+    exit "$register_rc"
+fi
 echo "maas-rack-install.sh: done"

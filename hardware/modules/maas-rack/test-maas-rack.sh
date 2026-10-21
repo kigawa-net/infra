@@ -17,7 +17,7 @@ SECRET_VALUE="s3cr3t-DO-NOT-LEAK-$$"
 # 使い捨てのサンドボックスと、偽のコマンドを作る。$1 = apt の計画に「アップグレード」を含めるか(1 なら含める)
 mksb() {
   sb=$(mktemp -d)
-  mkdir -p "$sb/bin" "$sb/apt" "$sb/nginx" "$sb/maas" "$sb/log" "$sb/sbin"
+  mkdir -p "$sb/bin" "$sb/apt" "$sb/nginx" "$sb/maas" "$sb/log" "$sb/sbin" "$sb/var" "$sb/chrony"
   : > "$sb/calls"
   touch "$sb/nginx/default"
   printf 'MemAvailable:    %s kB\n' "${MEM_KB:-4000000}" > "$sb/meminfo"
@@ -51,7 +51,16 @@ EOF
 #!/bin/bash
 echo "maas-rack \$*" >> "$sb/calls"
 cat > "$sb/maas-rack.stdin"
+# 実機の maas-rack register と同じく、先に rackd.conf を書く。secret のファイルは、成功したときだけ作る
 echo "url: \$3" > "$sb/maas/rackd.conf"
+[ "\${REGISTER_FAIL:-0}" = 1 ] && { echo "Secret could not be decoded" >&2; exit 1; }
+echo ok > "$sb/var/secret"
+exit 0
+EOF
+  cat > "$sb/bin/chronyc" <<EOF
+#!/bin/bash
+echo "chronyc \$*" >> "$sb/calls"
+exit 0
 EOF
   cat > "$sb/bin/shred" <<'EOF'
 #!/bin/bash
@@ -63,7 +72,7 @@ EOF
 
 run_install() { # 引数: 追加の環境変数(KEY=VAL ...)
   env EXTRA_PATH="$sb/bin" LOG_DIR="$sb/log" POLICY="$sb/sbin/policy-rc.d" APT_SOURCES_DIR="$sb/apt" \
-    NGINX_SITES_DIR="$sb/nginx" MAAS_ETC_DIR="$sb/maas" MEMINFO="$sb/meminfo" \
+    NGINX_SITES_DIR="$sb/nginx" MAAS_ETC_DIR="$sb/maas" MAAS_VAR_DIR="$sb/var" CHRONY_DIR="$sb/chrony" MEMINFO="$sb/meminfo" \
     MAAS_URL="https://maas.example/MAAS" SECRET_FILE="$sb/secret" "$@" bash "$INSTALL" > "$sb/out" 2>&1
 }
 
@@ -83,6 +92,10 @@ chk "正常: 登録した(--url のみ。secret は引数に無い)" 'grep -q "^
 chk "正常: secret は stdin で渡った" 'grep -qF "$SECRET_VALUE" "$sb/maas-rack.stdin"'
 chk "正常: secret が、どのコマンドの引数にも、出力にも出ていない" '! grep -qF "$SECRET_VALUE" "$sb/calls" && ! grep -qF "$SECRET_VALUE" "$sb/out"'
 chk "正常: secret のファイルが消えた" '[ ! -e "$sb/secret" ]'
+chk "正常: chrony を enable --now する" 'grep -q "^systemctl enable --now chrony.service" "$sb/calls"'
+chk "正常: chrony の起動が、Region への登録より前(時刻同期を最優先)" '[ "$(grep -n "^systemctl enable --now chrony" "$sb/calls" | head -1 | cut -d: -f1)" -lt "$(grep -n "^maas-rack register" "$sb/calls" | head -1 | cut -d: -f1)" ]'
+chk "正常: sources.d に、上流の pool を置いた" 'grep -q "^pool ntp.ubuntu.com" "$sb/chrony/sources.d/ubuntu-pool.sources"'
+chk "正常: 登録の後に、maas-rackd を start する(register は rackd を止めるため)" '[ "$(grep -n "^maas-rack register" "$sb/calls" | head -1 | cut -d: -f1)" -lt "$(grep -n "^systemctl start maas-rackd" "$sb/calls" | tail -1 | cut -d: -f1)" ]'
 chk "正常: 導入前のスナップショットを保存" '[ -s "$sb/log/pre-installed.txt" ] && [ -f "$sb/log/pre-ppa.txt" ]'
 
 # ---- 2. 冪等: 2 回目は、登録をやり直さない ----
@@ -92,6 +105,22 @@ run_install; rc=$?
 chk "冪等: 2 回目も終了コード 0" '[ "$rc" = 0 ]'
 chk "冪等: 登録済みなら、maas-rack register を呼ばない" '! grep -q "^maas-rack register" "$sb/calls"'
 chk "冪等: PPA を二重に追加しない" '! grep -q "^add-apt-repository" "$sb/calls"'
+# 登録が途中で失敗した状態(rackd.conf に URL はあるが、secret が無い)は、登録済みとみなさず、登録し直す
+rm -f "$sb/var/secret"
+printf '%s\n' "$SECRET_VALUE" > "$sb/secret"
+: > "$sb/calls"
+run_install; rc=$?
+chk "URL だけで secret が無い: 登録し直す" 'grep -q "^maas-rack register" "$sb/calls" && [ "$rc" = 0 ]'
+rm -rf "$sb"
+
+# ---- 2b. 登録の失敗: 後続(chrony・サービスの起動)を止めず、最後に、失敗として終わる ----
+MEM_KB=4000000 UPGRADE=0 mksb
+run_install REGISTER_FAIL=1; rc=$?
+chk "登録の失敗: 終了コードは非 0(失敗を、apply に伝える)" '[ "$rc" != 0 ]'
+chk "登録の失敗: chrony は起動済み" 'grep -q "^systemctl enable --now chrony.service" "$sb/calls"'
+chk "登録の失敗: maas-rackd の start まで進んだ" 'grep -q "^systemctl start maas-rackd" "$sb/calls"'
+chk "登録の失敗: secret のファイルを残さない" '[ ! -e "$sb/secret" ]'
+chk "登録の失敗: secret が、出力にも、引数にも出ない" '! grep -qF "$SECRET_VALUE" "$sb/out" && ! grep -qF "$SECRET_VALUE" "$sb/calls"'
 rm -rf "$sb"
 
 # ---- 3. 中止する条件 ----
