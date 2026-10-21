@@ -321,3 +321,15 @@ variable "etcd_peer_masquerade_destinations" {
   type        = list(string)
   default     = ["10.255.10.12"]
 }
+
+variable "maas_rack_enabled" {
+  description = "true にすると、この host(k8s4)に MAAS の Rack コントローラーを導入する(kigawa-net/infra#207、docs/maas-design.md。DHCP の secondary の予定)。既定は false(何もしない)。1 台ずつ、別の PR で true にする"
+  type        = bool
+  default     = false
+}
+
+variable "maas_secret_bitwarden_id" {
+  description = "MAAS の Region との共有 secret の Bitwarden の ID(kigawa-net-k8s の maas/maas-secret-bws.yaml と同じもの。値ではなく ID)。maas_rack_enabled が true のときだけ使う"
+  type        = string
+  default     = "7c6fddef-9255-49c7-808d-b41500d36842"
+}
