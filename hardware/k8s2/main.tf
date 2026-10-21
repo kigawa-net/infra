@@ -306,6 +306,30 @@ module "journald_limit" {
   sudo_password   = data.external.sudo_password.result.value
 }
 
+# MAAS の Rack コントローラー(kigawa-net/infra#207、docs/maas-design.md)。maas_rack_enabled = false(既定)のときは、何もしない。
+# data "external" の result は sensitive にならない(terraform show に出る)ので、module に渡すときに sensitive() で包む。
+data "external" "maas_secret" {
+  count = var.maas_rack_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.maas_secret_bitwarden_id}") || exit 1
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+module "maas_rack" {
+  source = "../modules/maas-rack"
+
+  enabled         = var.maas_rack_enabled
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  maas_secret     = var.maas_rack_enabled ? sensitive(data.external.maas_secret[0].result.value) : ""
+}
+
 module "node_exporter" {
   source = "../modules/node-exporter"
 
