@@ -293,6 +293,10 @@ resource "null_resource" "ionos_wireguard" {
       Address = ${var.ionos_wireguard_address}
       PrivateKey = $inuyama_private_key
       MTU = ${var.wireguard_mtu}
+      # AllowedIPs からの経路の自動追加を止める。wg1 の AllowedIPs の 10.255.10.12/32 は、wg-oracle(Oracle 経由が主経路)の AllowedIPs にもあり、
+      # 再起動の起動順で wg1 が先に経路を取ると、wg-oracle の wg-quick が File exists で失敗した(2026-10-18、4 日間)。
+      # 172.31.254.0/24 の on-link の経路(BGP の経路より優先される誤った経路)も、再起動のたびに復活していた。必要な経路は BGP が学習する。
+      Table = off
 
       [Peer]
       PublicKey = ${var.ionos_wireguard_public_key}
@@ -490,6 +494,11 @@ resource "null_resource" "oracle_wireguard" {
       Address = ${var.oracle_wireguard_address}
       PrivateKey = $inuyama_private_key
       MTU = ${var.wireguard_mtu}
+      # AllowedIPs からの経路の自動追加を止め(wg1 との起動順の競合を避ける。上の wg1 のコメント)、必要な経路だけを、衝突しない replace で入れる。
+      Table = off
+      %{for r in var.oracle_wireguard_routes~}
+      PostUp = ip route replace ${r} dev %i
+      %{endfor~}
 
       [Peer]
       PublicKey = ${var.oracle_wireguard_public_key}
@@ -510,6 +519,26 @@ resource "null_resource" "oracle_wireguard" {
     inline = [
       "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/oracle-wireguard-setup.sh && rm -f /tmp/oracle-wireguard-setup.sh",
     ]
+  }
+}
+
+# 稼働中の wg1 / wg-oracle の設定(/etc/wireguard/*.conf)に、`Table = off` と PostUp を、**インターフェースを再起動せずに**追記する(kigawa-net/infra#238)。
+# 上の null_resource の生成元には、同じ内容を入れてあるが、triggers が変わらないので、稼働中の設定には、再実行されない(再実行すると wg1 が再起動し、
+# IONOS との接続と、CI の SSH 経路が切れる)。次に wg-quick が起動するとき(ノードの再起動)から効く。
+module "wg_conf_table_off" {
+  depends_on = [null_resource.ionos_wireguard, null_resource.oracle_wireguard]
+  source     = "../modules/wg-conf-table-off"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  interfaces = {
+    (var.ionos_wireguard_interface) = { post_up = [] }
+    (var.oracle_wireguard_interface) = {
+      post_up = [for r in var.oracle_wireguard_routes : "ip route replace ${r} dev %i"]
+    }
   }
 }
 
@@ -805,6 +834,18 @@ module "keepalived" {
 # journald の上限(/ の枯渇対策、issue #254)。
 module "journald_limit" {
   source = "../modules/journald-limit"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
+
+# systemd-networkd が、外部のポリシールールと経路を、再起動のたびに消さないようにする(kigawa-net/infra#238)。
+# 2026-10-21、k8s2 の networkd の再起動で、wg1 の PostUp のポリシールール(#282)が消え、IONOS から VIP と k8s2 に届かなくなった。
+# networkd は再起動しない(次の起動から有効)。
+module "networkd_keep_foreign" {
+  source = "../modules/networkd-keep-foreign"
 
   host            = var.server_ip
   ssh_user        = var.ssh_user
