@@ -237,6 +237,12 @@ variable "oracle_wireguard_allowed_ips" {
   default = ["172.31.253.0/24", "10.255.10.12/32"]
 }
 
+variable "oracle_wireguard_routes" {
+  description = "wg-oracle の起動時(PostUp)に、`ip route replace` で、wg-oracle 経由に固定する経路。Soichiro の管理 IP を、Oracle 経由(約 12 ms。IONOS 経由は約 354 ms の予備)で送る。wg-quick の AllowedIPs からの自動経路(Table = off で止めてある)の代わり。replace なので、wg1 の AllowedIPs に同じ 10.255.10.12/32 があっても、起動順で衝突しない(2026-10-18、wg1 が先に経路を取り、wg-oracle が 4 日間、起動できなかった)"
+  type        = list(string)
+  default     = ["10.255.10.12/32"]
+}
+
 variable "oracle_bgp_as" {
   description = "Oracle Cloud hub のAS番号"
   type        = number

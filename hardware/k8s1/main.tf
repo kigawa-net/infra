@@ -220,6 +220,18 @@ module "journald_limit" {
   sudo_password   = data.external.sudo_password.result.value
 }
 
+# systemd-networkd が、外部のポリシールールと経路を、再起動のたびに消さないようにする(kigawa-net/infra#238)。
+# 2026-10-21、k8s2 の networkd の再起動で、wg1 の PostUp のポリシールール(#282)が消え、IONOS から VIP と k8s2 に届かなくなった。
+# networkd は再起動しない(次の起動から有効)。
+module "networkd_keep_foreign" {
+  source = "../modules/networkd-keep-foreign"
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+}
+
 module "node_exporter" {
   source = "../modules/node-exporter"
 
