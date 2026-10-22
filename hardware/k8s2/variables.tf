@@ -254,3 +254,9 @@ variable "maas_secret_bitwarden_id" {
   type        = string
   default     = "a7ce1226-55cd-4565-9b61-b4ea00f130f0"
 }
+
+variable "maas_rack_lan_address" {
+  description = "このホスト(k8s2)の、LAN(192.168.1.0/24)側のアドレス。Rack のポート(TFTP・proxy・NTP・HTTP・syslog)は、この宛先への LAN からの接続だけを許可し、それ以外(VIP 宛て、クラスタのサービス IP 宛て)は DROP する。server_ip(クラスタの LAN のアドレス)とは別"
+  type        = string
+  default     = "192.168.1.20"
+}

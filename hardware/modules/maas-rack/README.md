@@ -17,6 +17,7 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 | 時刻同期 | **`systemd-timesyncd` が削除され、`chrony` に置き換わる**(パッケージの依存)。**MAAS の rackd は、登録の際に `chrony.conf` を書き換え、上流の `server` / `pool` を消す**(`/etc/chrony/maas.conf` は、`local stratum 9 orphan` と `allow` だけ。Region の NTP の設定が空のため)。そのため、**`chrony` の起動と、MAAS が書き換えない `/etc/chrony/sources.d/ubuntu-pool.sources`(Ubuntu の pool。導入前と同じ上流)の設置を、最優先**にする(登録などの失敗で、時刻同期が無い状態に、ならないように) |
 | bind9 | 入るが、**mask** する(`:53` は kresd が使う) |
 | nginx | default サイトを外す(`:80` を空ける)。Rack の HTTP は、別の設定(`/var/lib/maas/http/nginx.conf`) |
+| ファイアウォール | **Rack のポートを、LAN の送信元かつ、このホストの LAN のアドレス宛てだけに絞る**(専用の chain `MAAS-RACK`を `INPUT` の先頭から呼ぶ。`ufw` は使わない。systemd の oneshot `maas-rack-firewall.service` で、再起動後も適用)。詳細は、下の「待ち受けの絞り込み」 |
 | avahi | disable する |
 | DHCP | `maas-dhcpd` / `maas-dhcpd6` は、パッケージの preset で enable になるので、**明示的に disable** する |
 | 登録 | `maas-rack register --url <Region の URL>`。**secret は stdin で渡す**(引数に出さない)。**登録済みと判定するのは、`rackd.conf` に同じ URL があり、かつ、共有 secret のファイル(`/var/lib/maas/secret`)があるとき**(URL だけだと、登録が途中で失敗した状態を、見逃す)。登録の失敗では、後続を止めず、最後に失敗として終わる。**`maas-rack register` は `maas-rackd` を停止させる**ので、登録の後に、必ず、起動する |
@@ -30,6 +31,32 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 - host に置くファイル `/tmp/maas-rack-secret` は、`0600` で作り、導入の成功・失敗にかかわらず、削除する。
 - **Region の Pod を作り直しても、secret は変わらない**(MAAS が DB に保管する)。DB を作り直したときは、secret が変わるので、Bitwarden の項目を更新して、Rack を登録し直す。
 
+## 待ち受けの絞り込み(ファイアウォール)
+
+Rack を入れると、次が、ホストの**全アドレス**(API の VIP、LB の VIP、`kube-ipvs0` のサービス IP の数百個を含む)で待ち受ける。control-plane の `INPUT` は `ACCEPT` で、**`ufw` は、サービスは active でも、ファイアウォールは無効**(`ufw status` が inactive)なので、LAN から全部届く。
+
+| ポート | プロセス | 用途 |
+|---|---|---|
+| udp 69 | rackd(TFTP。全アドレスにバインド) | PXE のブート |
+| tcp 5248 | nginx(Rack の HTTP) | ブートイメージ |
+| tcp/udp 5247 | rsyslogd | 機械のログ |
+| tcp 3128 / 8000 | squid(maas-proxy) | 機械のパッケージの取得 |
+| udp 123 | chronyd(MAAS の `maas.conf` の `allow`) | 機械への時刻の配布 |
+| tcp 5249 | rackd の内部 HTTP | **nginx(5248)が `localhost:5249` に proxy_pass するだけ**(外には、不要) |
+
+`ufw` を有効にすると、control-plane の既定が変わり危険なので、**専用の chain `MAAS-RACK` だけ**を、`INPUT` の先頭から呼ぶ(`ci-ssh-forward` などと同じ、systemd の oneshot + iptables の方式)。対象は上のポートだけで、SSH、etcd、kube-apiserver などには触れない。
+
+1. `lo` からは許可。
+2. **送信元が `lan_cidr`(既定 `192.168.1.0/24`)で、宛先が `lan_address`(このホストの LAN のアドレス。k8s2 は `192.168.1.20`、k8s4 は `192.168.1.120`)のときだけ**許可。
+3. それ以外(VIP 宛て、クラスタのサービス IP 宛て、Pod 経由、LAN の外)は DROP。
+4. `tcp 5249` は、`lo` 以外すべて DROP。
+
+- **`lan_address` は必須**(`server_ip`(クラスタの LAN のアドレス)とは別)。無いと、Terraform の `precondition` と、導入のスクリプトの両方が、導入を中止する(ファイアウォール無しで、Rack を公開しない)。
+- LAN の `192.168.1.0/24` の全ホストに、許可を出す(試験機や、他の端末を含む)。さらに絞るなら、DHCP を MAAS が担う段階で、MAAS が管理するサブネットだけにする。
+- DHCP(udp 67)と、failover(tcp 647 / 7911)は、DHCP の切り替えの段階で、同じ方式で足す(今は、DHCP を有効にしない)。
+- 止める・戻す: `systemctl stop maas-rack-firewall`(`remove` で chain を消す)。
+- **検証**: 偽の `iptables` によるテスト(ルールの内容、冪等性、`remove`)と、**使い捨ての Ubuntu 24.04 の本物の `iptables`** で、LAN からは LAN のアドレス宛てだけ届き、VIP 役のアドレス宛て、LAN 外、`5249`(`lo` 以外)は遮断され、対象外のポートは通ることを確認した(tcp と udp)。
+
 ## 失敗したとき・戻すとき
 
 - 導入の途中で失敗すると、パッケージが中途半端な状態で残る。**自動では戻さない。** host で `/var/lib/maas-rack-module/maas-rack-rollback.sh` を、root で実行する。
@@ -39,7 +66,6 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 ## 未検証(コンテナでは、確認できないこと)
 
 - ホストの AppArmor のプロファイル(dhcpd、squid、rackd、nginx、rsyslogd)。**`maas-syslog` は、Region(worker4)で、ホストの rsyslogd のプロファイルに拒否された**(Rack でも起きうる)。
-- **k8s2 の `ufw` は、サービスは active だが、ファイアウォールは無効(`ufw status` は inactive)。** 導入後の k8s2 では、次が **LAN から届く**状態になる: TFTP(udp 69)は、**k8s2 の全アドレス(API の VIP、LB の VIP、クラスタのサービス IP の数百個)にバインドされる**、`maas-proxy`(tcp 8000)は `*:8000`、Rack の HTTP(tcp 5247 / 5248)、NTP(udp 123。MAAS の `maas.conf` の `allow` により、LAN に時刻を配る)。**この module は、ファイアウォールを変更しない。** 待ち受けの絞り込みは、DHCP の切り替えの前に、別の PR で行う。
 - **Region の RPC(tcp 5250〜5253)が、Rack から届くこと**が前提。Region の Pod は、PID 1 の環境変数 `container=docker` が無いと、`/rpc/` に loopback だけを広告する(kigawa-net-k8s#401)。Rack は、Pod の IP(Flannel の `172.16.x.x`)の 5250〜5253 に直接 TCP で接続する(k8s のノードから届く)。
 - `chrony` への切り替えで、host の時刻が飛ばないか。
 - k8s4 の nginx は、標準の default サイトだけで、他の用途は無い(確認済み)。

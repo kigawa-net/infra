@@ -10,10 +10,19 @@
 locals {
   install_script  = file("${path.module}/files/maas-rack-install.sh")
   rollback_script = file("${path.module}/files/maas-rack-rollback.sh")
+  firewall_script = file("${path.module}/files/maas-rack-firewall.sh")
 }
 
 resource "null_resource" "maas_rack" {
   count = var.enabled ? 1 : 0
+
+  # ファイアウォール無しでは、Rack を公開しない(TFTP などが、ホストの全アドレスで待ち受けるため)。
+  lifecycle {
+    precondition {
+      condition     = var.lan_address != ""
+      error_message = "maas-rack: enabled のときは、lan_address(このホストの LAN 側のアドレス)が必須です。"
+    }
+  }
 
   triggers = {
     host                 = var.host
@@ -21,6 +30,9 @@ resource "null_resource" "maas_rack" {
     min_available_mb     = var.min_available_mb
     install_script_hash  = sha256(local.install_script)
     rollback_script_hash = sha256(local.rollback_script)
+    firewall_script_hash = sha256(local.firewall_script)
+    lan_cidr             = var.lan_cidr
+    lan_address          = var.lan_address
   }
 
   connection {
@@ -40,6 +52,11 @@ resource "null_resource" "maas_rack" {
     destination = "/tmp/maas-rack-rollback.sh"
   }
 
+  provisioner "file" {
+    content     = local.firewall_script
+    destination = "/tmp/maas-rack-firewall.sh"
+  }
+
   # secret の置き場所を、先に 0600 で作る(file provisioner は、既存のファイルの権限を保つ)。
   provisioner "remote-exec" {
     inline = [
@@ -56,7 +73,7 @@ resource "null_resource" "maas_rack" {
     inline = [
       "echo '${var.sudo_password}' | sudo -S install -d -m 0755 /var/lib/maas-rack-module && echo '${var.sudo_password}' | sudo -S install -m 0755 /tmp/maas-rack-rollback.sh /var/lib/maas-rack-module/maas-rack-rollback.sh && rm -f /tmp/maas-rack-rollback.sh",
       # 成功しても失敗しても、secret のファイルを host に残さない(失敗時は、終了コードを保って、apply を失敗させる)。
-      "echo '${var.sudo_password}' | sudo -S env MAAS_URL='${var.maas_url}' MIN_AVAILABLE_MB='${var.min_available_mb}' SECRET_FILE=/tmp/maas-rack-secret bash /tmp/maas-rack-install.sh; rc=$?; rm -f /tmp/maas-rack-secret /tmp/maas-rack-install.sh; exit $rc",
+      "echo '${var.sudo_password}' | sudo -S env MAAS_URL='${var.maas_url}' MIN_AVAILABLE_MB='${var.min_available_mb}' LAN_CIDR='${var.lan_cidr}' LAN_ADDRESS='${var.lan_address}' FIREWALL_SRC=/tmp/maas-rack-firewall.sh SECRET_FILE=/tmp/maas-rack-secret bash /tmp/maas-rack-install.sh; rc=$?; rm -f /tmp/maas-rack-secret /tmp/maas-rack-install.sh /tmp/maas-rack-firewall.sh; exit $rc",
     ]
   }
 }

@@ -328,6 +328,7 @@ module "maas_rack" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
   maas_secret     = var.maas_rack_enabled ? sensitive(data.external.maas_secret[0].result.value) : ""
+  lan_address     = var.maas_rack_lan_address
 }
 
 module "node_exporter" {
