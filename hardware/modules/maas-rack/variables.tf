@@ -67,3 +67,14 @@ variable "lan_address" {
     error_message = "lan_address は、IPv4 のアドレスで指定する(例: 192.168.1.20)。"
   }
 }
+
+variable "dhcp_peer_address" {
+  description = "DHCP の failover の相手(もう一方の Rack)の、LAN 側のアドレス(例: k8s2 なら 192.168.1.120)。ファイアウォールで、このアドレスから、failover のポート(tcp 647 / 7911)への接続だけを許可する。空なら、許可しない。DHCP を有効にするまでは、待ち受けが無いので、影響は無い"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.dhcp_peer_address == "" || can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", var.dhcp_peer_address))
+    error_message = "dhcp_peer_address は、IPv4 のアドレスで指定する(例: 192.168.1.120)。"
+  }
+}

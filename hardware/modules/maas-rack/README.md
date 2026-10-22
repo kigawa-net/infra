@@ -53,7 +53,11 @@ Rack を入れると、次が、ホストの**全アドレス**(API の VIP、LB
 
 - **`lan_address` は必須**(`server_ip`(クラスタの LAN のアドレス)とは別)。無いと、Terraform の `precondition` と、導入のスクリプトの両方が、導入を中止する(ファイアウォール無しで、Rack を公開しない)。
 - LAN の `192.168.1.0/24` の全ホストに、許可を出す(試験機や、他の端末を含む)。さらに絞るなら、DHCP を MAAS が担う段階で、MAAS が管理するサブネットだけにする。
-- DHCP(udp 67)と、failover(tcp 647 / 7911)は、DHCP の切り替えの段階で、同じ方式で足す(今は、DHCP を有効にしない)。
+- **DHCP(udp 67)と、failover(tcp 647 / 7911)の許可を、先に入れてある**(DHCP を、まだ、有効にしないので、待ち受けが無く、実機への影響は無い)。
+  - **udp 67**: クライアントのブロードキャスト(送信元 `0.0.0.0:68` → `255.255.255.255:67`)、LAN からのブロードキャスト、LAN から `lan_address` 宛ての unicast(更新)を許可。それ以外(VIP 宛てなど)は DROP。
+  - **tcp 647 / 7911**(ISC dhcpd の failover の peer 間と、OMAPI): **`dhcp_peer_address`(もう一方の Rack の LAN のアドレス)から `lan_address` 宛て**だけ許可。k8s2 の相手は `192.168.1.120`、k8s4 の相手は `192.168.1.20`。空なら、許可しない。LAN の他のホストには、許可しない。
+  - 使い捨ての Ubuntu 24.04 の本物の `iptables` で、相手の Rack からだけ 647 / 7911 に届き、LAN の一般ホストと LAN 外は遮断されること、udp 67 の unicast とブロードキャストが通ること、VIP 役のアドレス宛てと LAN 外は遮断されることを確認した。
+  - DHCP の切り替えの手順は、[docs/maas-dhcp-cutover.md](../../../docs/maas-dhcp-cutover.md)。
 - 止める・戻す: `systemctl stop maas-rack-firewall`(`remove` で chain を消す)。
 - **検証**: 偽の `iptables` によるテスト(ルールの内容、冪等性、`remove`)と、**使い捨ての Ubuntu 24.04 の本物の `iptables`** で、LAN からは LAN のアドレス宛てだけ届き、VIP 役のアドレス宛て、LAN 外、`5249`(`lo` 以外)は遮断され、対象外のポートは通ることを確認した(tcp と udp)。
 

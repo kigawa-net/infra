@@ -334,13 +334,14 @@ data "external" "maas_secret" {
 module "maas_rack" {
   source = "../modules/maas-rack"
 
-  enabled         = var.maas_rack_enabled
-  host            = var.server_ip
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key.result.value
-  sudo_password   = data.external.sudo_password.result.value
-  maas_secret     = var.maas_rack_enabled ? sensitive(data.external.maas_secret[0].result.value) : ""
-  lan_address     = var.maas_rack_lan_address
+  enabled           = var.maas_rack_enabled
+  host              = var.server_ip
+  ssh_user          = var.ssh_user
+  ssh_private_key   = data.external.ssh_key.result.value
+  sudo_password     = data.external.sudo_password.result.value
+  maas_secret       = var.maas_rack_enabled ? sensitive(data.external.maas_secret[0].result.value) : ""
+  lan_address       = var.maas_rack_lan_address
+  dhcp_peer_address = var.maas_rack_dhcp_peer_address
 }
 
 module "node_exporter" {
