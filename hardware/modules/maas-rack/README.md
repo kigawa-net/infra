@@ -20,7 +20,7 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 | ファイアウォール | **Rack のポートを、LAN の送信元かつ、このホストの LAN のアドレス宛てだけに絞る**(専用の chain `MAAS-RACK`を `INPUT` の先頭から呼ぶ。`ufw` は使わない。systemd の oneshot `maas-rack-firewall.service` で、再起動後も適用)。詳細は、下の「待ち受けの絞り込み」 |
 | avahi | disable する |
 | DHCP | `maas-dhcpd` / `maas-dhcpd6` は、パッケージの preset で enable になるので、**明示的に disable** する |
-| 登録 | `maas-rack register --url <Region の URL>`。**secret は stdin で渡す**(引数に出さない)。**登録済みと判定するのは、`rackd.conf` に同じ URL があり、かつ、共有 secret のファイル(`/var/lib/maas/secret`)があるとき**(URL だけだと、登録が途中で失敗した状態を、見逃す)。登録の失敗では、後続を止めず、最後に失敗として終わる。**`maas-rack register` は `maas-rackd` を停止させる**ので、登録の後に、必ず、起動する |
+| 登録 | `maas-rack register --url <Region の URL>`(**Region 専用の VIP の URL `http://10.0.0.244:5240/MAAS`**。`maas-agent` が、この URL のホストの tcp 5271(Temporal)に接続する。Ingress の URL では、`maas-agent` が `connection refused` で、クラッシュを繰り返す)。**secret は stdin で渡す**(引数に出さない)。**登録済みと判定するのは、`rackd.conf` に同じ URL があり、かつ、共有 secret のファイル(`/var/lib/maas/secret`)があるとき**(URL だけだと、登録が途中で失敗した状態を、見逃す)。登録の失敗では、後続を止めず、最後に失敗として終わる。**`maas-rack register` は `maas-rackd` を停止させる**ので、登録の後に、必ず、起動する |
 | サービス | `maas-rackd`・`maas-http`・`maas-proxy`・`maas-syslog`・`maas-agent`・`chrony` を enable / start(`maas-http` 以下は、Region への登録まで起動しない) |
 
 ## secret の扱い

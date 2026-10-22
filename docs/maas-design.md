@@ -48,7 +48,7 @@
   - **nginx の既定サイト(`:80`)は、無効にする**(MAAS の Rack は、`:5248` の専用設定を使う)。
   - **`systemd-timesyncd` → `chrony` の置き換えは、避けられない**(パッケージの依存)。control-plane の時刻同期の方式が変わるので、導入後に、時刻のずれと etcd の状態を確認する。
   - avahi-daemon は、mask を検討する。
-- Rack 登録: `maas-rack register --url https://maas.kigawa.net/MAAS --secret <Bitwarden の値>`。secret は Bitwarden から取得(`bws_get_value`)し、ログに出さない。
+- Rack 登録: `maas-rack register --url http://10.0.0.244:5240/MAAS`(2026-10-22 に、Ingress の URL から変更。`maas-agent` が、この URL のホストの tcp 5271(Temporal)に接続するため、Ingress(80/443 のみ)では、クラッシュを繰り返した。Region 専用の LoadBalancer Service の VIP を使う。kigawa-net-k8s の `maas/region-lb.yaml`) --secret <Bitwarden の値>`。secret は Bitwarden から取得(`bws_get_value`)し、ログに出さない。
 - ノードの計画停止の前に、そのノードが DHCP の primary / secondary なら、割り当てを k8s1 などに付け替える手順を、運用手順に書く。**failover の設定の外で、DHCP を 3 台以上、同時に動かさない。**
 
 ### 3. バージョン(Region を先に 3.6 へ)
