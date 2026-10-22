@@ -2,7 +2,8 @@
 # MAAS 3.6 の Rack コントローラーを、Ubuntu 24.04 のホストに deb で直接入れる(kigawa-net/infra#207、docs/maas-design.md)。
 # 使い捨ての systemd 付き Ubuntu 24.04 コンテナで検証した手順に、空きメモリの事前チェックと、Region への登録を足したもの。
 # 冪等: 2 回目以降は、インストール済みの状態に対して、同じ後処理だけを行う。
-# 環境変数: MAAS_URL(必須。Region の URL)、MIN_AVAILABLE_MB(既定 2000)、SECRET_FILE(登録に使う secret のファイル。無ければ登録しない)
+# 環境変数: MAAS_URL(必須。Region の URL)、LAN_CIDR・LAN_ADDRESS(必須。Rack のポートを許可する LAN と、このホストの LAN のアドレス。無いと中止)、
+#           MIN_AVAILABLE_MB(既定 2000)、SECRET_FILE(登録に使う secret のファイル。無ければ登録しない)、FIREWALL_SRC(ファイアウォールのスクリプトの置き場)
 # DHCP(maas-dhcpd / maas-dhcpd6)は、この段階では起動も enable もしない(DHCP の切り替えは、後の別の段階)。
 set -euo pipefail
 
@@ -15,8 +16,14 @@ NGINX_SITES_DIR=${NGINX_SITES_DIR:-/etc/nginx/sites-enabled}
 MAAS_ETC_DIR=${MAAS_ETC_DIR:-/etc/maas}
 MAAS_VAR_DIR=${MAAS_VAR_DIR:-/var/lib/maas}
 CHRONY_DIR=${CHRONY_DIR:-/etc/chrony}
+SBIN_DIR=${SBIN_DIR:-/usr/local/sbin}
+UNIT_DIR=${UNIT_DIR:-/etc/systemd/system}
+FIREWALL_SRC=${FIREWALL_SRC:-/tmp/maas-rack-firewall.sh}
 MIN_AVAILABLE_MB=${MIN_AVAILABLE_MB:-2000}
 : "${MAAS_URL:?MAAS_URL が未設定}"
+# Rack は、TFTP / proxy / NTP などを、ホストの全アドレスで待ち受ける。ファイアウォール無しでは、導入しない。
+: "${LAN_CIDR:?LAN_CIDR が未設定(ファイアウォールの設定が無いので、導入しない)}"
+: "${LAN_ADDRESS:?LAN_ADDRESS が未設定(ファイアウォールの設定が無いので、導入しない)}"
 mkdir -p "$LOG_DIR"
 
 # 0. 事前チェック: メモリの空き(導入で、squid・nginx・chrony・python などが増える。control-plane を逼迫させない)
@@ -84,6 +91,36 @@ EOF
 chmod 0644 "$CHRONY_DIR/sources.d/ubuntu-pool.sources"
 systemctl enable --now chrony.service
 chronyc reload sources >/dev/null 2>&1 || true
+
+# 4-3. 待ち受けの絞り込み(ファイアウォール)。Rack のサービス(rackd・proxy・rsyslog・nginx)を起動する前に、入れる。
+#       専用の chain MAAS-RACK を、INPUT の先頭から呼ぶ(ufw は使わない)。systemd の oneshot で、再起動後も、適用する。
+[ -s "$FIREWALL_SRC" ] || { echo "ABORT: ファイアウォールのスクリプトが無い($FIREWALL_SRC)" >&2; exit 1; }
+install -d -m 0755 "$SBIN_DIR" "$UNIT_DIR"
+install -m 0755 "$FIREWALL_SRC" "$SBIN_DIR/maas-rack-firewall.sh"
+cat > "$UNIT_DIR/maas-rack-firewall.service" <<EOF
+[Unit]
+Description=MAAS Rack の待ち受けポートを LAN に絞る(iptables の chain MAAS-RACK。kigawa-net/infra#207)
+After=network-online.target
+Wants=network-online.target
+Before=maas-rackd.service maas-http.service maas-proxy.service maas-syslog.service chrony.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=LAN_CIDR=$LAN_CIDR
+Environment=LAN_ADDRESS=$LAN_ADDRESS
+ExecStart=$SBIN_DIR/maas-rack-firewall.sh apply
+ExecStop=$SBIN_DIR/maas-rack-firewall.sh remove
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "$UNIT_DIR/maas-rack-firewall.service"
+systemctl daemon-reload
+systemctl enable maas-rack-firewall.service
+# restart: 再実行のとき、ルールを作り直す(oneshot + RemainAfterExit では、start は、active なら何もしないため)
+systemctl restart maas-rack-firewall.service
+rm -f "$FIREWALL_SRC"
 
 # 5. 後処理
 # bind9(named)は Rack では使わない。:53 は kresd が持つので mask する。
