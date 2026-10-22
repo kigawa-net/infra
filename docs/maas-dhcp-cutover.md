@@ -10,8 +10,15 @@ kigawa-net/infra#207、[docs/maas-design.md](maas-design.md)(案 Q)。**この�
 - スイッチは `AT-x510-28GTX`(AlliedWare Plus 系)。**LAN の一般クライアントは、DHCP で配られる DNS として、スイッチ自身(`192.168.1.1`)を使う**(スイッチが `ip dns forwarding` で、各ノードの kresd(`192.168.1.103` / `.20` / `.120`)に中継。`docs/network.md`)。**MAAS が DHCP を担うときも、配る DNS は `192.168.1.1` にする**(kresd を直接配るのではなく、今と同じにする)。
 - MAAS には、`kube-ipvs0` などのアドレスが、`/32` のサブネットとして、216 個、登録されている(Rack が、全インターフェースを報告するため)。DHCP は、VLAN ごとに有効にするので、動作には影響しない。画面と DB が、散らかる。
 
+## スイッチの DHCP の設定の控え(2026-10-22 に取得。`show running-config dhcp` と `show ip dhcp pool`)
+- **プール `manage`**(`192.168.1.0/24`): `range 192.168.1.200 192.168.1.254`、`dns-server 192.168.1.1`、`default-router 192.168.1.1`、リース 1 日。追加のオプション(`next-server` など)は、無い。**静的な予約は、無い。**
+- **プール `ceph`**(`192.168.2.0/24`): `range 192.168.2.200 192.168.2.254`、`dns-server 192.168.1.1`。**MAAS の対象外**(Rack は `192.168.2.x` にアドレスを持たない)。**スイッチの DHCP のまま、残す。**
+- 範囲の中で、実際に使われているアドレス(ping と ARP で確認): **`192.168.1.200` = Core Router VIP(keepalived。静的)**、**`192.168.1.228` = k8s-worker1(MAC `bc:24:11:43:dc:61`。スイッチのリースで、この IP を得ている)**、`192.168.1.242` = 作業用のマシン(動的)。他は、空き。
+- MAAS 側の対応(2026-10-22 に設定済み。DHCP は、無効のまま): 動的な範囲 `192.168.1.201–227` と `229–254`(`.200` を除外)、**予約 `192.168.1.228` ← `bc:24:11:43:dc:61`**(MAAS は、予約の IP を、動的な範囲の外に置くよう、求める。そのため、範囲を 2 つに分けた)、`gateway 192.168.1.1`、`dns 192.168.1.1`、`allow_dns=false`。
+- **リース時間: スイッチは 1 日(86400 秒)、MAAS の既定は 600 秒。** 合わせる設定は、未検証(DHCP snippet)。
+
 ## 未決・要確認(埋めてから、実行する)
-1. **スイッチの DHCP の全設定の控え**(あなたの操作が要る): プールの範囲、ゲートウェイ、DNS、リース時間、**固定の予約(MAC と IP)**、オプション。AlliedWare Plus の例(機種で、確認すること): `show running-config dhcp`、`show ip dhcp pool`、`show ip dhcp binding`。控えは、スイッチの外(手元)に、保存する。
+1. ~~スイッチの DHCP の全設定の控え~~ → **取得済み**(上の節)。**ただし、スイッチの外に、保存すること。**(元の項目: プールの範囲、ゲートウェイ、DNS、リース時間、**固定の予約(MAC と IP)**、オプション。AlliedWare Plus の例(機種で、確認すること): `show running-config dhcp`、`show ip dhcp pool`、`show ip dhcp binding`。控えは、スイッチの外(手元)に、保存する。
 2. **スイッチの DHCP を使っている端末の洗い出し。** 固定の予約がある端末(サーバー、プリンタ、IoT など)は、MAAS に、**予約(reserved IP。MAC つき)**として、作る。**抜けると、その端末の IP が変わる。**
 3. **試験機と BMC の有無。** PXE で起動する物理マシン 1 台と、BMC の方式(IPMI / Redfish など)。BIOS か UEFI か。
 4. ~~MAAS の DHCP の failover の動作確認~~ → **手元の Docker で、確認済み**(下の「検証済みの手順と挙動」。2026-10-22)。PXE の実機の起動(BIOS / UEFI)と DHCPv6 は、未確認。
@@ -74,7 +81,7 @@ maas <p> vlan update <fabric_id> <vid> dhcp_on=False
 **同時に、2 つの DHCP が、同じ範囲を配らない**ように、短い間隔で、入れ替える。
 1. 事前確認(上の 4)を、もう一度。
 2. MAAS で、VLAN の **DHCP を有効**にする(primary: k8s2、secondary: k8s4)。`dhcpd` が、2 台で、起動し、failover が確立するのを、待つ(`maas-dhcpd` が active、failover の状態が、normal)。**この時点では、スイッチの DHCP も、まだ動いている。** 2 つの DHCP が、同じ範囲を配る、短い期間になるので、**範囲を、スイッチと、一時的に、ずらす**(MAAS の範囲を、スイッチのプールの未使用部分にする)か、間隔を、できるだけ、短くする。
-3. **スイッチの DHCP を止める**(`no service dhcp-server`、またはプールを無効にする。AlliedWare Plus のコマンドは、機種で確認)。
+3. **スイッチの DHCP の、プール `manage` だけを、止める**(**`no service dhcp-server` は、使わない**。`ceph` プール(`192.168.2.0/24`)の DHCP も止まる)。`configure terminal` → `no ip dhcp pool manage`(AlliedWare Plus 5.5.1。**構文は、実機で、確認する**)。事前に、`copy running-config <ファイル名>` で、控えを、スイッチの中にも、保存する。
 4. 確認: 
    - 端末で、リースを更新して(`dhclient -r` / ネットワークの再接続)、**MAAS の DHCP から、IP・ゲートウェイ・DNS を、受け取る**こと。
    - MAAS の UI / API で、リースが見えること。k8s2 と k8s4 の `dhcpd` の failover が、normal であること。
@@ -85,7 +92,14 @@ maas <p> vlan update <fabric_id> <vid> dhcp_on=False
 6. 監視: 数時間、端末の IP の取得の失敗が、無いこと。
 
 ## 戻し方(いつでも、最優先)
-1. **スイッチの DHCP を、有効に戻す**(控えの設定)。
+1. **スイッチの DHCP の、プール `manage` を、元に戻す**(下の設定を、そのまま、入れ直す。**`ceph` プールは、触れていない**)。
+   ```
+   ip dhcp pool manage
+    network 192.168.1.0 255.255.255.0
+    range 192.168.1.200 192.168.1.254
+    dns-server 192.168.1.1
+    default-router 192.168.1.1
+   ```
 2. MAAS で、VLAN の **DHCP を無効**にする(`dhcpd` が、止まる)。
 3. 端末が、リースを、更新するのを、待つ(または、再接続)。
 - スイッチの設定の控え(1)が、手元に無いと、戻せない。**切り替えの前に、必ず、保存する。**
