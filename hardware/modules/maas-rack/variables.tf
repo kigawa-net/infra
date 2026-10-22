@@ -23,9 +23,14 @@ variable "enabled" {
 }
 
 variable "maas_url" {
-  description = "Rack が登録する Region の URL(Ingress)。host の DNS(kresd)で解決できること"
+  description = <<-DESC
+    Rack が登録する Region の URL。**Region 専用の LoadBalancer Service の固定の VIP(10.0.0.244。kigawa-net-k8s の maas/region-lb.yaml)を使う。**
+    maas-agent は、この URL のホスト(agent.yaml の controllers)の tcp 5271(Region の Temporal)に接続する。以前の Ingress の URL(https://maas.kigawa.net/MAAS。
+    ホストは Ingress の VIP 10.0.0.240 で、80/443 しか公開しない)では、maas-agent が connection refused で、約 1 分ごとにクラッシュと再起動を繰り返した。
+    IP で指定するので、DNS の変更は要らない。Pod が作り直されても、VIP は変わらない。
+  DESC
   type        = string
-  default     = "https://maas.kigawa.net/MAAS"
+  default     = "http://10.0.0.244:5240/MAAS"
 }
 
 variable "maas_secret" {
