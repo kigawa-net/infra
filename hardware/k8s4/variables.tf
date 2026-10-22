@@ -329,9 +329,9 @@ variable "etcd_peer_masquerade_destinations" {
 }
 
 variable "maas_rack_enabled" {
-  description = "true にすると、この host(k8s4)に MAAS の Rack コントローラーを導入する(kigawa-net/infra#207、docs/maas-design.md。DHCP の secondary の予定)。既定は false(何もしない)。1 台ずつ、別の PR で true にする"
+  description = "true にすると、この host(k8s4)に MAAS の Rack コントローラーを導入する(kigawa-net/infra#207、docs/maas-design.md。DHCP の secondary の予定)。DHCP は有効にしない(別の段階)。**戻すときは、host の /var/lib/maas-rack-module/maas-rack-rollback.sh を root で実行してから false にする**(false にするだけでは、パッケージは消えない)。k8s4 は IONOS の主ゲートウェイなので、導入の前後で、IONOS との接続を確認する"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "maas_secret_bitwarden_id" {
