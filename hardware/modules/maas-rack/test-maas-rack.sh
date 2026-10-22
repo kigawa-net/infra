@@ -75,7 +75,7 @@ EOF
 run_install() { # 引数: 追加の環境変数(KEY=VAL ...)
   env EXTRA_PATH="$sb/bin" LOG_DIR="$sb/log" POLICY="$sb/sbin/policy-rc.d" APT_SOURCES_DIR="$sb/apt" \
     NGINX_SITES_DIR="$sb/nginx" MAAS_ETC_DIR="$sb/maas" MAAS_VAR_DIR="$sb/var" CHRONY_DIR="$sb/chrony" MEMINFO="$sb/meminfo" \
-    SBIN_DIR="$sb/usrsbin" UNIT_DIR="$sb/units" FIREWALL_SRC="$sb/firewall-src.sh" LAN_CIDR=192.168.1.0/24 LAN_ADDRESS=192.168.1.20 \
+    SBIN_DIR="$sb/usrsbin" UNIT_DIR="$sb/units" FIREWALL_SRC="$sb/firewall-src.sh" LAN_CIDR=192.168.1.0/24 LAN_ADDRESS=192.168.1.20 DHCP_PEER_ADDRESS=192.168.1.120 \
     MAAS_URL="https://maas.example/MAAS" SECRET_FILE="$sb/secret" "$@" bash "$INSTALL" > "$sb/out" 2>&1
 }
 
@@ -100,6 +100,7 @@ chk "正常: chrony の起動が、Region への登録より前(時刻同期を�
 chk "正常: sources.d に、上流の pool を置いた" 'grep -q "^pool ntp.ubuntu.com" "$sb/chrony/sources.d/ubuntu-pool.sources"'
 chk "正常: 登録の後に、maas-rackd を start する(register は rackd を止めるため)" '[ "$(grep -n "^maas-rack register" "$sb/calls" | head -1 | cut -d: -f1)" -lt "$(grep -n "^systemctl start maas-rackd" "$sb/calls" | tail -1 | cut -d: -f1)" ]'
 chk "正常: ファイアウォールのユニットを置いた(環境変数つき)" 'grep -q "^Environment=LAN_ADDRESS=192.168.1.20" "$sb/units/maas-rack-firewall.service" && grep -q "^Environment=LAN_CIDR=192.168.1.0/24" "$sb/units/maas-rack-firewall.service"'
+chk "正常: unit に DHCP_PEER_ADDRESS(相手の Rack)が入る" 'grep -q "^Environment=DHCP_PEER_ADDRESS=192.168.1.120" "$sb/units/maas-rack-firewall.service"'
 chk "正常: ファイアウォールのスクリプトを、実行可能にして置いた" '[ -x "$sb/usrsbin/maas-rack-firewall.sh" ]'
 chk "正常: ファイアウォールを enable / restart する" 'grep -q "^systemctl enable maas-rack-firewall.service" "$sb/calls" && grep -q "^systemctl restart maas-rack-firewall.service" "$sb/calls"'
 chk "正常: ファイアウォールは、rackd などの起動より前" '[ "$(grep -n "^systemctl restart maas-rack-firewall" "$sb/calls" | head -1 | cut -d: -f1)" -lt "$(grep -n "^systemctl start maas-rackd" "$sb/calls" | head -1 | cut -d: -f1)" ]'
@@ -207,7 +208,7 @@ EOF
   : > "$sb/ipt/INPUT"
   echo "-j KUBE-FIREWALL" >> "$sb/ipt/INPUT"
 }
-run_fw() { env IPTABLES="$sb/bin/iptables" LAN_CIDR=192.168.1.0/24 LAN_ADDRESS=192.168.1.20 "$@" > "$sb/out" 2>&1; }
+run_fw() { env IPTABLES="$sb/bin/iptables" LAN_CIDR=192.168.1.0/24 LAN_ADDRESS=192.168.1.20 DHCP_PEER_ADDRESS=192.168.1.120 "$@" > "$sb/out" 2>&1; }
 
 mkfw
 run_fw bash "$FIREWALL" apply; rc=$?
@@ -217,10 +218,15 @@ chk "firewall apply: 既存の INPUT のルール(KUBE-FIREWALL)を残す" 'grep
 chk "firewall apply: lo を許可(最初のルール)" '[ "$(head -1 "$sb/ipt/MAAS-RACK")" = "-i lo -j RETURN" ]'
 chk "firewall apply: LAN から LAN のアドレス宛ての udp 69/123/5247 を許可" 'grep -qx -- "-s 192.168.1.0/24 -d 192.168.1.20 -p udp -m multiport --dports 69,123,5247 -j RETURN" "$sb/ipt/MAAS-RACK"'
 chk "firewall apply: LAN から LAN のアドレス宛ての tcp 5247/5248/3128/8000 を許可" 'grep -qx -- "-s 192.168.1.0/24 -d 192.168.1.20 -p tcp -m multiport --dports 5247,5248,3128,8000 -j RETURN" "$sb/ipt/MAAS-RACK"'
-chk "firewall apply: それ以外の udp 69/123/5247 は DROP" 'grep -qx -- "-p udp -m multiport --dports 69,123,5247 -j DROP" "$sb/ipt/MAAS-RACK"'
-chk "firewall apply: tcp 5249(内部 HTTP)は、DROP の側にだけ現れる(許可しない)" 'grep -qx -- "-p tcp -m multiport --dports 5247,5248,3128,8000,5249 -j DROP" "$sb/ipt/MAAS-RACK" && ! grep -- "RETURN" "$sb/ipt/MAAS-RACK" | grep -q 5249'
+chk "firewall apply: それ以外の udp 69/123/5247/67 は DROP" 'grep -qx -- "-p udp -m multiport --dports 69,123,5247,67 -j DROP" "$sb/ipt/MAAS-RACK"'
+chk "firewall apply: tcp 5249(内部 HTTP)は、DROP の側にだけ現れる(許可しない)" 'grep -qx -- "-p tcp -m multiport --dports 5247,5248,3128,8000,5249,647,7911 -j DROP" "$sb/ipt/MAAS-RACK" && ! grep -- "RETURN" "$sb/ipt/MAAS-RACK" | grep -q 5249'
+chk "firewall DHCP: クライアントのブロードキャスト(0.0.0.0:68 → 255.255.255.255:67)を許可" 'grep -qx -- "-s 0.0.0.0/32 -d 255.255.255.255/32 -p udp --sport 68 --dport 67 -j RETURN" "$sb/ipt/MAAS-RACK"'
+chk "firewall DHCP: LAN からのブロードキャストと、LAN から LAN アドレス宛ての unicast(更新)を許可" 'grep -qx -- "-s 192.168.1.0/24 -d 255.255.255.255/32 -p udp --dport 67 -j RETURN" "$sb/ipt/MAAS-RACK" && grep -qx -- "-s 192.168.1.0/24 -d 192.168.1.20 -p udp --dport 67 -j RETURN" "$sb/ipt/MAAS-RACK"'
+chk "firewall failover: 相手の Rack(192.168.1.120)から LAN アドレス宛ての tcp 647,7911 だけ許可" 'grep -qx -- "-s 192.168.1.120/32 -d 192.168.1.20 -p tcp -m multiport --dports 647,7911 -j RETURN" "$sb/ipt/MAAS-RACK"'
+chk "firewall failover: LAN 全体に、647 / 7911 を許可していない(相手の 1 アドレスだけ)" '[ "$(grep -c -- "--dports 647,7911 -j RETURN" "$sb/ipt/MAAS-RACK")" = 1 ]'
+chk "firewall DHCP / failover の許可は、DROP より前" '[ "$(grep -n -- "--dport 67 -j RETURN" "$sb/ipt/MAAS-RACK" | tail -1 | cut -d: -f1)" -lt "$(grep -n -- "-j DROP" "$sb/ipt/MAAS-RACK" | head -1 | cut -d: -f1)" ] && [ "$(grep -n -- "647,7911 -j RETURN" "$sb/ipt/MAAS-RACK" | cut -d: -f1)" -lt "$(grep -n -- "-j DROP" "$sb/ipt/MAAS-RACK" | head -1 | cut -d: -f1)" ]'
 chk "firewall apply: DROP は、許可のルールより後(順序)" '[ "$(grep -n -- "-j RETURN" "$sb/ipt/MAAS-RACK" | sed -n 3p | cut -d: -f1)" != "" ] && [ "$(grep -n -- "-j DROP" "$sb/ipt/MAAS-RACK" | head -1 | cut -d: -f1)" -gt "$(grep -n -- "-d 192.168.1.20 -p tcp" "$sb/ipt/MAAS-RACK" | head -1 | cut -d: -f1)" ]'
-chk "firewall apply: SSH(22)・etcd(2379)・apiserver(6443)・DHCP(67)には触れない" '! grep -E "(\\b22\\b|2379|2380|6443|\\b67\\b|647|7911)" "$sb/ipt/MAAS-RACK"'
+chk "firewall apply: SSH(22)・etcd(2379 / 2380)・apiserver(6443)・WireGuard・BGP(179)には触れない" '! grep -E "(\\b22\\b|2379|2380|6443|\\b179\\b|51820)" "$sb/ipt/MAAS-RACK"'
 
 run_fw bash "$FIREWALL" apply; rc=$?
 chk "firewall 冪等: 2 回目も終了コード 0" '[ "$rc" = 0 ]'
@@ -234,6 +240,11 @@ chk "firewall remove: chain が消えた" '[ ! -e "$sb/ipt/MAAS-RACK" ]'
 chk "firewall remove: 既存の INPUT のルールは残る" 'grep -qx -- "-j KUBE-FIREWALL" "$sb/ipt/INPUT"'
 run_fw bash "$FIREWALL" remove; rc=$?
 chk "firewall remove 冪等: 2 回目も終了コード 0" '[ "$rc" = 0 ]'
+rm -rf "$sb"
+
+mkfw
+run_fw DHCP_PEER_ADDRESS= bash "$FIREWALL" apply; rc=$?
+chk "firewall: DHCP_PEER_ADDRESS が空なら、failover の許可を作らない(647 / 7911 は DROP のみ)" '[ "$rc" = 0 ] && ! grep -q -- "647,7911 -j RETURN" "$sb/ipt/MAAS-RACK" && grep -q -- "647,7911 -j DROP" "$sb/ipt/MAAS-RACK"'
 rm -rf "$sb"
 
 mkfw

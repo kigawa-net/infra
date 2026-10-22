@@ -260,3 +260,9 @@ variable "maas_rack_lan_address" {
   type        = string
   default     = "192.168.1.20"
 }
+
+variable "maas_rack_dhcp_peer_address" {
+  description = "DHCP の failover の相手(もう一方の Rack)の、LAN 側のアドレス。k8s2 の相手は 192.168.1.120。Rack のファイアウォールで、このアドレスから、failover のポート(tcp 647 / 7911)への接続だけを許可する"
+  type        = string
+  default     = "192.168.1.120"
+}

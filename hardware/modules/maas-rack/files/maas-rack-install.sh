@@ -2,7 +2,7 @@
 # MAAS 3.6 の Rack コントローラーを、Ubuntu 24.04 のホストに deb で直接入れる(kigawa-net/infra#207、docs/maas-design.md)。
 # 使い捨ての systemd 付き Ubuntu 24.04 コンテナで検証した手順に、空きメモリの事前チェックと、Region への登録を足したもの。
 # 冪等: 2 回目以降は、インストール済みの状態に対して、同じ後処理だけを行う。
-# 環境変数: MAAS_URL(必須。Region の URL)、LAN_CIDR・LAN_ADDRESS(必須。Rack のポートを許可する LAN と、このホストの LAN のアドレス。無いと中止)、
+# 環境変数: MAAS_URL(必須。Region の URL)、LAN_CIDR・LAN_ADDRESS(必須。Rack のポートを許可する LAN と、このホストの LAN のアドレス。無いと中止)、DHCP_PEER_ADDRESS(任意。failover の相手の Rack の LAN のアドレス)、
 #           MIN_AVAILABLE_MB(既定 2000)、SECRET_FILE(登録に使う secret のファイル。無ければ登録しない)、FIREWALL_SRC(ファイアウォールのスクリプトの置き場)
 # DHCP(maas-dhcpd / maas-dhcpd6)は、この段階では起動も enable もしない(DHCP の切り替えは、後の別の段階)。
 set -euo pipefail
@@ -109,6 +109,7 @@ Type=oneshot
 RemainAfterExit=yes
 Environment=LAN_CIDR=$LAN_CIDR
 Environment=LAN_ADDRESS=$LAN_ADDRESS
+Environment=DHCP_PEER_ADDRESS=${DHCP_PEER_ADDRESS:-}
 ExecStart=$SBIN_DIR/maas-rack-firewall.sh apply
 ExecStop=$SBIN_DIR/maas-rack-firewall.sh remove
 

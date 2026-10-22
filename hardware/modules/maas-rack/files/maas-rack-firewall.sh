@@ -12,9 +12,13 @@
 #      udp: 69(TFTP)、123(NTP)、5247(syslog)  tcp: 5247、5248(HTTP)、3128 / 8000(proxy)
 #   3. それ以外は DROP(VIP 宛て、クラスタのサービス IP 宛て、Pod 経由、LAN の外からは届かない)
 #   4. tcp 5249(rackd の内部 HTTP。nginx が localhost:5249 に proxy_pass するだけ)は、lo 以外すべて DROP
-# DHCP(udp 67)と failover(tcp 647 / 7911)は、DHCP の切り替えの段階で、同じ方式で足す(今は、DHCP を有効にしない)。
+# DHCP(MAAS が LAN の DHCP を担うときのため。DHCP を有効にするまでは、待ち受けが無いので、実機への影響は無い):
+#   5. udp 67: DHCPDISCOVER などのブロードキャスト(送信元 0.0.0.0:68 → 255.255.255.255:67)、LAN からのブロードキャスト、
+#      LAN から LAN_ADDRESS 宛ての unicast(更新)を許可。それ以外は DROP
+#   6. failover(tcp 647 = ISC dhcpd の peer 間、tcp 7911 = OMAPI): **DHCP_PEER_ADDRESS(もう一方の Rack の LAN のアドレス)から LAN_ADDRESS 宛て**だけ許可。
+#      DHCP_PEER_ADDRESS が空なら、許可しない(DROP)
 #
-# 使い方: maas-rack-firewall.sh apply | remove | status   (root。環境変数 LAN_CIDR、LAN_ADDRESS が必要。apply のとき)
+# 使い方: maas-rack-firewall.sh apply | remove | status   (root。環境変数 LAN_CIDR、LAN_ADDRESS が必要。apply のとき。DHCP_PEER_ADDRESS は任意)
 set -euo pipefail
 
 IPT=${IPTABLES:-iptables}
@@ -24,6 +28,8 @@ ipt() { $IPT -w 5 "$@"; }
 UDP_PORTS=69,123,5247
 TCP_PORTS=5247,5248,3128,8000
 TCP_LOCAL_ONLY=5249
+DHCP_UDP=67
+FAILOVER_TCP=647,7911
 
 remove() {
     while ipt -C INPUT -j "$CHAIN" 2>/dev/null; do ipt -D INPUT -j "$CHAIN"; done
@@ -41,8 +47,16 @@ apply() {
     ipt -A "$CHAIN" -i lo -j RETURN
     ipt -A "$CHAIN" -s "$LAN_CIDR" -d "$LAN_ADDRESS" -p udp -m multiport --dports "$UDP_PORTS" -j RETURN
     ipt -A "$CHAIN" -s "$LAN_CIDR" -d "$LAN_ADDRESS" -p tcp -m multiport --dports "$TCP_PORTS" -j RETURN
-    ipt -A "$CHAIN" -p udp -m multiport --dports "$UDP_PORTS" -j DROP
-    ipt -A "$CHAIN" -p tcp -m multiport --dports "$TCP_PORTS,$TCP_LOCAL_ONLY" -j DROP
+    # DHCP: クライアントのブロードキャスト(送信元 0.0.0.0)、LAN からのブロードキャスト、LAN から LAN_ADDRESS 宛ての unicast(更新)
+    ipt -A "$CHAIN" -s 0.0.0.0/32 -d 255.255.255.255/32 -p udp --sport 68 --dport "$DHCP_UDP" -j RETURN
+    ipt -A "$CHAIN" -s "$LAN_CIDR" -d 255.255.255.255/32 -p udp --dport "$DHCP_UDP" -j RETURN
+    ipt -A "$CHAIN" -s "$LAN_CIDR" -d "$LAN_ADDRESS" -p udp --dport "$DHCP_UDP" -j RETURN
+    # failover: もう一方の Rack からだけ(DHCP_PEER_ADDRESS が空なら、許可しない)
+    if [ -n "${DHCP_PEER_ADDRESS:-}" ]; then
+        ipt -A "$CHAIN" -s "$DHCP_PEER_ADDRESS/32" -d "$LAN_ADDRESS" -p tcp -m multiport --dports "$FAILOVER_TCP" -j RETURN
+    fi
+    ipt -A "$CHAIN" -p udp -m multiport --dports "$UDP_PORTS,$DHCP_UDP" -j DROP
+    ipt -A "$CHAIN" -p tcp -m multiport --dports "$TCP_PORTS,$TCP_LOCAL_ONLY,$FAILOVER_TCP" -j DROP
     ipt -A "$CHAIN" -j RETURN
     # INPUT の先頭から呼ぶ(重複を除いてから、1 つだけ入れる)
     while ipt -C INPUT -j "$CHAIN" 2>/dev/null; do ipt -D INPUT -j "$CHAIN"; done
@@ -50,7 +64,7 @@ apply() {
 }
 
 case "${1:-}" in
-    apply) apply; echo "maas-rack-firewall: applied (LAN=$LAN_CIDR dst=$LAN_ADDRESS)" ;;
+    apply) apply; echo "maas-rack-firewall: applied (LAN=$LAN_CIDR dst=$LAN_ADDRESS dhcp-peer=${DHCP_PEER_ADDRESS:-なし})" ;;
     remove) remove; echo "maas-rack-firewall: removed" ;;
     status) ipt -S "$CHAIN" 2>&1 || true; ipt -S INPUT | grep -- "-j $CHAIN" || echo "(INPUT から呼ばれていない)" ;;
     *) echo "usage: $0 apply|remove|status" >&2; exit 2 ;;

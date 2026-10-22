@@ -33,6 +33,7 @@ resource "null_resource" "maas_rack" {
     firewall_script_hash = sha256(local.firewall_script)
     lan_cidr             = var.lan_cidr
     lan_address          = var.lan_address
+    dhcp_peer_address    = var.dhcp_peer_address
   }
 
   connection {
@@ -73,7 +74,7 @@ resource "null_resource" "maas_rack" {
     inline = [
       "echo '${var.sudo_password}' | sudo -S install -d -m 0755 /var/lib/maas-rack-module && echo '${var.sudo_password}' | sudo -S install -m 0755 /tmp/maas-rack-rollback.sh /var/lib/maas-rack-module/maas-rack-rollback.sh && rm -f /tmp/maas-rack-rollback.sh",
       # 成功しても失敗しても、secret のファイルを host に残さない(失敗時は、終了コードを保って、apply を失敗させる)。
-      "echo '${var.sudo_password}' | sudo -S env MAAS_URL='${var.maas_url}' MIN_AVAILABLE_MB='${var.min_available_mb}' LAN_CIDR='${var.lan_cidr}' LAN_ADDRESS='${var.lan_address}' FIREWALL_SRC=/tmp/maas-rack-firewall.sh SECRET_FILE=/tmp/maas-rack-secret bash /tmp/maas-rack-install.sh; rc=$?; rm -f /tmp/maas-rack-secret /tmp/maas-rack-install.sh /tmp/maas-rack-firewall.sh; exit $rc",
+      "echo '${var.sudo_password}' | sudo -S env MAAS_URL='${var.maas_url}' MIN_AVAILABLE_MB='${var.min_available_mb}' LAN_CIDR='${var.lan_cidr}' LAN_ADDRESS='${var.lan_address}' DHCP_PEER_ADDRESS='${var.dhcp_peer_address}' FIREWALL_SRC=/tmp/maas-rack-firewall.sh SECRET_FILE=/tmp/maas-rack-secret bash /tmp/maas-rack-install.sh; rc=$?; rm -f /tmp/maas-rack-secret /tmp/maas-rack-install.sh /tmp/maas-rack-firewall.sh; exit $rc",
     ]
   }
 }
