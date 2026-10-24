@@ -33,6 +33,21 @@ variable "maas_url" {
   default     = "http://10.0.0.244:5240/MAAS"
 }
 
+variable "maas_version" {
+  description = <<-DESC
+    Rack の MAAS のバージョン(major.minor。PPA ppa:maas/<version>)。**Region(kigawa-net-k8s の maas/region.yaml)と同じか、古いバージョンにする**(Rack は Region より新しくできない)。
+    すでに別のバージョンが入っている host では、files/maas-rack-upgrade.sh が、この版に上げる(下げる方向は中止)。
+    **既定値は無い(必須)。** 呼び出し側(hardware/k8s2、hardware/k8s4)が、host ごとに明示する。DHCP の failover の 2 台を、同時に更新しないため、1 台ずつ、別の PR で上げる。
+    3.7 にした理由: Region を 3.7 に上げたため。3.6 の Rack は、3.7 の Region が出す Temporal のタスク(delete-bootresource など)を処理できず、OS イメージの取り込みが完了しない(kigawa-net/infra#317)。
+  DESC
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+$", var.maas_version))
+    error_message = "maas_version は major.minor の形(例: 3.7)にしてください。"
+  }
+}
+
 variable "maas_secret" {
   description = "Region との共有 secret(Bitwarden から取得した値)。enabled が false のときは、使われない(空でよい)"
   type        = string

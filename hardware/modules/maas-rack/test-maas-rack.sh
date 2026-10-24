@@ -79,6 +79,16 @@ run_install() { # 引数: 追加の環境変数(KEY=VAL ...)
     MAAS_URL="https://maas.example/MAAS" SECRET_FILE="$sb/secret" "$@" bash "$INSTALL" > "$sb/out" 2>&1
 }
 
+# ---- 1b. MAAS_VERSION を指定すると、その版の PPA を追加する(既定は 3.6) ----
+MEM_KB=4000000 UPGRADE=0 mksb
+run_install MAAS_VERSION=3.7; rc=$?
+chk "MAAS_VERSION=3.7: 3.7 の PPA を追加" 'grep -q "^add-apt-repository -y ppa:maas/3.7" "$sb/calls" && [ "$rc" = 0 ]'
+rm -rf "$sb"
+MEM_KB=4000000 UPGRADE=0 mksb
+run_install; rc=$?
+chk "既定: 3.6 の PPA を追加" 'grep -q "^add-apt-repository -y ppa:maas/3.6" "$sb/calls"'
+rm -rf "$sb"
+
 # ---- 1. 正常系 ----
 MEM_KB=4000000 UPGRADE=0 mksb
 run_install; rc=$?
@@ -115,6 +125,7 @@ run_install; rc=$?
 chk "冪等: 2 回目も終了コード 0" '[ "$rc" = 0 ]'
 chk "冪等: 登録済みなら、maas-rack register を呼ばない" '! grep -q "^maas-rack register" "$sb/calls"'
 chk "冪等: PPA を二重に追加しない" '! grep -q "^add-apt-repository" "$sb/calls"'
+chk "冪等: 2 回目は maas-dhcpd を disable しない(稼働中の DHCP を止めない)" '! grep -E "^systemctl disable.*maas-dhcpd" "$sb/calls"'
 # 登録が途中で失敗した状態(rackd.conf に URL はあるが、secret が無い)は、登録済みとみなさず、登録し直す
 rm -f "$sb/var/secret"
 printf '%s\n' "$SECRET_VALUE" > "$sb/secret"
@@ -252,10 +263,31 @@ run_fw LAN_ADDRESS= bash "$FIREWALL" apply; rc=$?
 chk "firewall: LAN_ADDRESS なしの apply は失敗し、何も入れない" '[ "$rc" != 0 ] && [ ! -e "$sb/ipt/MAAS-RACK" ]'
 rm -rf "$sb"
 
+# ---- 5c. DHCP の無効化の保留マーカー ----
+# 初回の導入が、DHCP の無効化の前に失敗(ファイアウォールのスクリプトが無い)しても、再実行で無効化される
+MEM_KB=4000000 UPGRADE=0 mksb
+run_install FIREWALL_SRC="$sb/no-such-firewall.sh"; rc=$?
+chk "初回が途中で失敗: 中止(終了コード 1)" '[ "$rc" = 1 ]'
+chk "初回が途中で失敗: 保留マーカーが残る" '[ -e "$sb/log/dhcp-disable-pending" ]'
+cp "$FIREWALL" "$sb/firewall-src.sh"; printf '%s\n' "$SECRET_VALUE" > "$sb/secret"; : > "$sb/calls"
+run_install; rc=$?
+chk "再実行: 成功" '[ "$rc" = 0 ]'
+chk "再実行: maas-dhcpd を無効化する(初回の導入が、まだ終わっていなかったため)" 'grep -q "^systemctl disable --now maas-dhcpd.service" "$sb/calls"'
+chk "再実行: 無効化の後、保留マーカーは消える" '[ ! -e "$sb/log/dhcp-disable-pending" ]'
+rm -rf "$sb"
+# 既存のホスト(導入済みで、保留マーカーが無い)では、再 apply しても、稼働中の DHCP に触れない
+MEM_KB=4000000 UPGRADE=0 mksb
+: > "$sb/log/pre-installed.txt"
+run_install; rc=$?
+chk "既存のホスト: 成功" '[ "$rc" = 0 ]'
+chk "既存のホスト: maas-dhcpd を無効化しない(稼働中の DHCP を止めない)" '! grep -E "^systemctl (disable|stop|mask).*maas-dhcpd" "$sb/calls"'
+rm -rf "$sb"
+
 # ---- 6. 静的な確認 ----
 chk "install.sh の構文" 'bash -n "$INSTALL"'
 chk "rollback.sh の構文" 'bash -n "$ROLLBACK"'
 chk "firewall.sh の構文" 'bash -n "$FIREWALL"'
+chk "upgrade.sh の構文" 'bash -n "$here/files/maas-rack-upgrade.sh"'
 chk "rollback.sh は autoremove を実行しない(コメント行は除く)" '! grep -v "^[[:space:]]*#" "$ROLLBACK" | grep -q "autoremove"'
 chk "install.sh は --no-upgrade を使う" 'grep -q -- "--no-upgrade" "$INSTALL"'
 chk "install.sh は DHCP を enable / start しない" '! grep -E "^systemctl (enable|start).*maas-dhcpd" "$INSTALL"'

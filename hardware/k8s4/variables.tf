@@ -334,6 +334,12 @@ variable "maas_rack_enabled" {
   default     = true
 }
 
+variable "maas_rack_version" {
+  description = "この host(k8s4)の MAAS の Rack のバージョン(major.minor)。DHCP の secondary。**先に**上げる。 Rack は Region(kigawa-net-k8s の maas/region.yaml。いま 3.7)より新しくできない。更新は modules/maas-rack/files/maas-rack-upgrade.sh が行う(kigawa-net/infra#317)"
+  type        = string
+  default     = "3.7"
+}
+
 variable "maas_secret_bitwarden_id" {
   description = "MAAS の共有 secret(Region の /var/lib/maas/secret と同じ、32 桁の 16 進数)の Bitwarden の ID(項目名 maas-rack-shared-secret。値ではなく ID)。kigawa-net-k8s の maas-secret(88 文字。MAAS の secret ではない)とは別物。maas_rack_enabled が true のときだけ使う"
   type        = string

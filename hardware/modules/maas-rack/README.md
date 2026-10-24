@@ -1,6 +1,6 @@
 # maas-rack
 
-MAAS 3.6 の Rack コントローラーを、host に deb で直接インストールする module(kigawa-net/infra#207、[docs/maas-design.md](../../../docs/maas-design.md))。
+MAAS の Rack コントローラー(`maas_version`。既定 3.7)を、host に deb で直接インストールする module(kigawa-net/infra#207、[docs/maas-design.md](../../../docs/maas-design.md))。
 
 - Rack は k8s に載せず、control-plane の **k8s2(DHCP の primary)と k8s4(secondary)** に入れる。k8s1 は、メモリが足りないので入れない。
 - **この module は、DHCP を有効にしない。** DHCP の切り替え(スイッチの DHCP を止めて、MAAS の DHCP に一本化)は、LAN 全体に影響するので、別の段階で行う。
@@ -12,7 +12,7 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 
 | 項目 | 内容 |
 |---|---|
-| パッケージ | `ppa:maas/3.6` を追加し、`apt-get install --no-upgrade maas-rack-controller`。約 208 パッケージが入る。**既存パッケージのアップグレードが計画に含まれるときは、中止する** |
+| パッケージ | `ppa:maas/<maas_version>` を追加し、`apt-get install --no-upgrade maas-rack-controller`。約 208 パッケージが入る。**既存パッケージのアップグレードが計画に含まれるときは、中止する** |
 | 事前チェック | メモリの空きが `min_available_mb`(既定 2000)未満なら、中止する |
 | 時刻同期 | **`systemd-timesyncd` が削除され、`chrony` に置き換わる**(パッケージの依存)。**MAAS の rackd は、登録の際に `chrony.conf` を書き換え、上流の `server` / `pool` を消す**(`/etc/chrony/maas.conf` は、`local stratum 9 orphan` と `allow` だけ。Region の NTP の設定が空のため)。そのため、**`chrony` の起動と、MAAS が書き換えない `/etc/chrony/sources.d/ubuntu-pool.sources`(Ubuntu の pool。導入前と同じ上流)の設置を、最優先**にする(登録などの失敗で、時刻同期が無い状態に、ならないように) |
 | bind9 | 入るが、**mask** する(`:53` は kresd が使う) |
@@ -22,6 +22,26 @@ MAAS 3.6 の Rack コントローラーを、host に deb で直接インスト�
 | DHCP | `maas-dhcpd` / `maas-dhcpd6` は、パッケージの preset で enable になるので、**明示的に disable** する |
 | 登録 | `maas-rack register --url <Region の URL>`(**Region 専用の VIP の URL `http://10.0.0.244:5240/MAAS`**。`maas-agent` が、この URL のホストの tcp 5271(Temporal)に接続する。Ingress の URL では、`maas-agent` が `connection refused` で、クラッシュを繰り返す)。**secret は stdin で渡す**(引数に出さない)。**登録済みと判定するのは、`rackd.conf` に同じ URL があり、かつ、共有 secret のファイル(`/var/lib/maas/secret`)があるとき**(URL だけだと、登録が途中で失敗した状態を、見逃す)。登録の失敗では、後続を止めず、最後に失敗として終わる。**`maas-rack register` は `maas-rackd` を停止させる**ので、登録の後に、必ず、起動する |
 | サービス | `maas-rackd`・`maas-http`・`maas-proxy`・`maas-syslog`・`maas-agent`・`chrony` を enable / start(`maas-http` 以下は、Region への登録まで起動しない) |
+
+## バージョンの更新(`maas_version`。kigawa-net/infra#317)
+
+- `maas_version` は**必須**(既定値なし)。呼び出し側(`hardware/k8s2`、`hardware/k8s4` の `maas_rack_version`)が、host ごとに明示する。
+- **Rack は Region より新しくできない。Region(kigawa-net-k8s の `maas/region.yaml`)を先に上げてから**、`maas_version` を合わせる。
+- 上げる理由(3.6 → 3.7): Region を 3.7 に上げたあと、3.6 の Rack は、3.7 の Region が出す Temporal のタスク(`delete-bootresource` など)を処理できず、
+  `activity ScheduleToStart timeout` で OS イメージの取り込みが完了しない。
+- **DHCP の failover の 2 台は、同時に更新しない。** k8s4(secondary)→ 確認 → k8s2(primary)の順に、別の PR で `maas_rack_version` を上げる(CI は `fail-fast: false` なので、片方が失敗しても、もう片方が進んでしまう)。
+  確認: MAAS の `rack-controllers read` で、更新した Rack が新しいバージョンで、`rackd` が running。`maas-dhcpd` が active で、failover が `Both servers normal`。
+
+`files/maas-rack-upgrade.sh` の動作(冪等):
+- 入っている Rack が `maas_version` より古ければ、`maas*` / `python3-maas*` だけを `--only-upgrade` で上げる。設定ファイルは現状維持(`--force-confold`)。
+  - **計画にパッケージの削除、または maas 系ではないパッケージのアップグレードが含まれたら、中止する**(`UPGRADE_ALLOW_REGEX`)。
+  - パッケージが中途半端な状態(`half-configured` など)なら、中止する。下げる方向は中止。未導入ならスキップ。
+  - 更新の前に、`/etc/maas` と共有 secret を `/var/log/maas-rack-install/upgrade-before-<日時>/`(0700)にバックアップする。
+- **すでに `maas_version` なら、更新はせず、サービスの確認だけ行う**(前回の更新が途中で失敗していたら、ここで失敗する。成功扱いにしない)。
+- 確認: `maas-rackd` と `maas-agent` が active(確認だけのときは、止まっていれば 1 回再起動する)。**更新の前に active だった `maas-dhcpd` が、更新の後も active であること**(rackd が起動する)。
+  失敗したら、古い PPA は外さず、終了コード 1。成功したら、古い PPA を外す。
+- **DHCP(`maas-dhcpd`)を、有効・無効にしない**(rackd が管理する)。`maas-rack-install.sh` も、**初回の導入のとき(`dhcp-disable-pending` マーカーがあるとき)だけ** `maas-dhcpd` を無効化する
+  (再 apply で、稼働中の DHCP を止めないため。マーカーは、無効化が済むまで残るので、初回が途中で失敗しても、再実行で無効化される)。
 
 ## secret の扱い
 
@@ -77,7 +97,12 @@ Rack を入れると、次が、ホストの**全アドレス**(API の VIP、LB
 ## テスト
 
 ```bash
-bash hardware/modules/maas-rack/test-maas-rack.sh
+bash hardware/modules/maas-rack/test-maas-rack.sh          # install / rollback / firewall
+bash hardware/modules/maas-rack/test-maas-rack-upgrade.sh  # upgrade(偽の apt-get / systemctl)
 ```
+
+`maas-rack-upgrade.sh` は、使い捨ての systemd 付き Ubuntu 24.04 コンテナで、実際の apt を使い、3.6.6 → 3.7.4 の更新を検証済み(2026-10-24)。
+計画の形式(`Inst maas-rack-controller [旧] (新 …)`)が合い、9 パッケージ(すべて `maas-*` / `python3-maas-*`)が上がり、削除は 0。コンテナは Region に未登録のため、`maas-agent` が active にならず、終了コード 1(想定どおり。本番の Rack は登録済み)。
+**未検証: 実機(k8s2 / k8s4)での更新。** DHCP の failover の間の挙動は、k8s4 を先に更新して確認する。
 
 偽の `systemctl` / `apt-get` / `maas-rack` などで、`files/maas-rack-install.sh` を、使い捨てのディレクトリで検証する(実機の `/etc` には書かない)。secret が、引数・出力に出ないことも確認する。
