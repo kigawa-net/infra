@@ -1,5 +1,5 @@
 #!/bin/bash
-# MAAS 3.6 の Rack コントローラーを、Ubuntu 24.04 のホストに deb で直接入れる(kigawa-net/infra#207、docs/maas-design.md)。
+# MAAS の Rack コントローラー(MAAS_VERSION。既定 3.6)を、Ubuntu 24.04 のホストに deb で直接入れる(kigawa-net/infra#207、docs/maas-design.md)。
 # 使い捨ての systemd 付き Ubuntu 24.04 コンテナで検証した手順に、空きメモリの事前チェックと、Region への登録を足したもの。
 # 冪等: 2 回目以降は、インストール済みの状態に対して、同じ後処理だけを行う。
 # 環境変数: MAAS_URL(必須。Region の URL)、LAN_CIDR・LAN_ADDRESS(必須。Rack のポートを許可する LAN と、このホストの LAN のアドレス。無いと中止)、DHCP_PEER_ADDRESS(任意。failover の相手の Rack の LAN のアドレス)、
@@ -20,6 +20,7 @@ SBIN_DIR=${SBIN_DIR:-/usr/local/sbin}
 UNIT_DIR=${UNIT_DIR:-/etc/systemd/system}
 FIREWALL_SRC=${FIREWALL_SRC:-/tmp/maas-rack-firewall.sh}
 MIN_AVAILABLE_MB=${MIN_AVAILABLE_MB:-2000}
+MAAS_VERSION=${MAAS_VERSION:-3.6}  # PPA のバージョン。既に入っている Rack の更新は maas-rack-upgrade.sh が行う
 : "${MAAS_URL:?MAAS_URL が未設定}"
 # Rack は、TFTP / proxy / NTP などを、ホストの全アドレスで待ち受ける。ファイアウォール無しでは、導入しない。
 : "${LAN_CIDR:?LAN_CIDR が未設定(ファイアウォールの設定が無いので、導入しない)}"
@@ -34,11 +35,14 @@ if [ "$((avail_kb / 1024))" -lt "$MIN_AVAILABLE_MB" ]; then
 fi
 
 # ロールバック用の導入前スナップショット(初回のみ保存。2 回目以降は上書きしない)
+# 初回の導入では、DHCP を無効化する「保留マーカー」を作る(無効化が済むまで残す。途中で失敗して再実行しても、無効化をやり直せる)。
+# 既存のホスト(すでに導入済みで、DHCP を担っている)には、このマーカーが無いので、DHCP には触れない。
 if [ ! -e "$LOG_DIR/pre-installed.txt" ]; then
+    : > "$LOG_DIR/dhcp-disable-pending"
     dpkg-query -W -f='${Package} ${Status}\n' | awk '$NF=="installed"{print $1}' | sort > "$LOG_DIR/pre-installed.txt"
     ls "$NGINX_SITES_DIR"/ > "$LOG_DIR/nginx-sites-enabled-before.txt" 2>/dev/null || : > "$LOG_DIR/nginx-sites-enabled-before.txt"
     systemctl is-enabled nginx.service > "$LOG_DIR/nginx-enabled-before.txt" 2>/dev/null || true
-    if grep -rqs 'maas/3.6' "$APT_SOURCES_DIR"/ 2>/dev/null; then echo yes; else echo no; fi > "$LOG_DIR/pre-ppa.txt"
+    if grep -rqs "maas/$MAAS_VERSION" "$APT_SOURCES_DIR"/ 2>/dev/null; then echo yes; else echo no; fi > "$LOG_DIR/pre-ppa.txt"
 fi
 
 # パッケージ導入中に、サービスが自動起動しないように止める。失敗時も必ず外す。
@@ -49,8 +53,8 @@ printf '#!/bin/sh\n# maas-rack install: do not start services during package ins
 chmod 0755 "$POLICY"
 
 # 1. PPA(冪等)
-if ! grep -rqs 'maas/3.6' "$APT_SOURCES_DIR"/ 2>/dev/null; then
-    add-apt-repository -y ppa:maas/3.6
+if ! grep -rqs "maas/$MAAS_VERSION" "$APT_SOURCES_DIR"/ 2>/dev/null; then
+    add-apt-repository -y "ppa:maas/$MAAS_VERSION"
 fi
 apt-get update -qq
 
@@ -134,8 +138,15 @@ systemctl reload nginx 2>/dev/null || true
 # avahi(mDNS 5353)は Rack に不要。無効化する(パッケージは残す)。
 systemctl disable --now avahi-daemon.service avahi-daemon.socket >/dev/null 2>&1 || true
 
-# DHCP は、パッケージの preset で enable になるので、明示的に無効化する。標準の isc-dhcp-server も同様。
-systemctl disable --now maas-dhcpd.service maas-dhcpd6.service >/dev/null 2>&1 || true
+# DHCP は、パッケージの preset で enable になるので、**初回の導入のとき(保留マーカーがあるとき)だけ**、明示的に無効化する。
+# 2 回目以降(再 apply)で無効化すると、MAAS が有効にして稼働中の DHCP(LAN 全体)を止めてしまう。maas-dhcpd は rackd が管理する。
+if [ -e "$LOG_DIR/dhcp-disable-pending" ]; then
+    systemctl disable --now maas-dhcpd.service maas-dhcpd6.service >/dev/null 2>&1 || true
+    rm -f "$LOG_DIR/dhcp-disable-pending"
+else
+    echo "dhcp: 初回の導入ではない(保留マーカーなし)。maas-dhcpd には触れない(rackd が管理する)"
+fi
+# 標準の isc-dhcp-server は使わない。
 systemctl disable --now isc-dhcp-server.service isc-dhcp-server6.service >/dev/null 2>&1 || true
 
 # 6. Region への登録。secret は stdin で渡す(argv に出さない)。

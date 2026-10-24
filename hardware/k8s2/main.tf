@@ -335,6 +335,7 @@ module "maas_rack" {
   source = "../modules/maas-rack"
 
   enabled           = var.maas_rack_enabled
+  maas_version      = var.maas_rack_version
   host              = var.server_ip
   ssh_user          = var.ssh_user
   ssh_private_key   = data.external.ssh_key.result.value

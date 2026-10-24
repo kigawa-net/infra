@@ -55,7 +55,7 @@ systemctl reload nginx >/dev/null 2>&1 || true
 
 # 6. PPA を導入前の状態に戻す
 if [ "$(cat "$LOG_DIR/pre-ppa.txt")" = "no" ]; then
-    add-apt-repository -y --remove ppa:maas/3.6 || true
+    for v in 3.6 3.7; do add-apt-repository -y --remove "ppa:maas/$v" || true; done
 fi
 apt-get update -qq || true
 
