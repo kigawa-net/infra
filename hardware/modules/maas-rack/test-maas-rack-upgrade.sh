@@ -72,11 +72,16 @@ esac
 exit 0
 EOF
   chmod +x "$sb"/bin/*
+  cat > "$sb/shim-fake.sh" <<'EOF'
+#!/bin/bash
+echo "${FAKE_SHIM_OUT:-shim: present}"
+exit "${FAKE_SHIM_RC:-0}"
+EOF
 }
 
 run_upgrade() { # 引数: 追加の環境変数(KEY=VAL ...)
   env EXTRA_PATH="$sb/bin" LOG_DIR="$sb/log" APT_SOURCES_DIR="$sb/apt" MAAS_ETC_DIR="$sb/maas" MAAS_VAR_DIR="$sb/var" \
-    SERVICE_WAIT_SEC=2 "$@" bash "$UPGRADE" > "$sb/out" 2>&1
+    SERVICE_WAIT_SEC=2 SHIM_SCRIPT="$sb/shim-fake.sh" "$@" bash "$UPGRADE" > "$sb/out" 2>&1
 }
 
 OLD_VER='1:3.6.6-17672-g.08d455f29-0ubuntu1~24.04.1'
@@ -150,6 +155,32 @@ BADSTATUS=1 mksb "$OLD_VER"
 run_upgrade MAAS_VERSION=3.7 BADSTATUS=1; rc=$?
 chk "中途半端な状態: 中止(終了コード 1)" '[ "$rc" = 1 ] && grep -q "half-configured" "$sb/out"'
 chk "中途半端な状態: apt-get を呼ばない" '! grep -q "^apt-get" "$sb/calls"'
+rm -rf "$sb"
+
+# ---- 2f. 3.7 以降の Rack だけの構成の不具合の回避(maas-rack-shim.sh)との連携 ----
+mksb '1:3.7.4-18072-g.5db61257d-0ubuntu1~24.04.1'
+rm -f "$sb/apt/maas-3.6.list"
+run_upgrade MAAS_VERSION=3.7 FAKE_SHIM_OUT="shim: installed(maas-region-api 3.7.4 から 5 ファイル)"; rc=$?
+chk "回避を入れた(すでに 3.7): rackd と agent を再起動する" '[ "$rc" = 0 ] && grep -q "^systemctl restart maas-rackd.service" "$sb/calls" && grep -q "^systemctl restart maas-agent.service" "$sb/calls"'
+chk "回避を入れた(すでに 3.7): パッケージの更新(apt-get install)はしない" '! grep -q "^apt-get install" "$sb/calls"'
+rm -rf "$sb"
+mksb '1:3.7.4-18072-g.5db61257d-0ubuntu1~24.04.1'
+rm -f "$sb/apt/maas-3.6.list"
+run_upgrade MAAS_VERSION=3.7 FAKE_SHIM_OUT="shim: present"; rc=$?
+chk "回避が、すでにある: 再起動しない" '[ "$rc" = 0 ] && ! grep -q "^systemctl restart" "$sb/calls"'
+rm -rf "$sb"
+mksb '1:3.7.4-18072-g.5db61257d-0ubuntu1~24.04.1'
+run_upgrade MAAS_VERSION=3.7 FAKE_SHIM_RC=1; rc=$?
+chk "回避スクリプトが失敗: 中止(終了コード 1)" '[ "$rc" = 1 ] && grep -q "maas-rack-shim.sh が失敗した" "$sb/out"'
+chk "回避スクリプトが失敗: サービスを再起動しない" '! grep -q "^systemctl restart" "$sb/calls"'
+rm -rf "$sb"
+mksb '1:3.6.6-17672-g.08d455f29-0ubuntu1~24.04.1'
+run_upgrade MAAS_VERSION=3.6 FAKE_SHIM_RC=1; rc=$?
+chk "目標が 3.6: 回避スクリプトを呼ばない(失敗しても影響しない)" '[ "$rc" = 0 ]'
+rm -rf "$sb"
+mksb "$OLD_VER"
+run_upgrade MAAS_VERSION=3.7 FAKE_SHIM_OUT="shim: installed(maas-region-api 3.7.4 から 5 ファイル)"; rc=$?
+chk "3.6 から 3.7 に更新: 更新の後に回避を入れ、成功する" '[ "$rc" = 0 ] && grep -q "^apt-get install -y --only-upgrade" "$sb/calls"'
 rm -rf "$sb"
 
 # ---- 3. 未導入: スキップ ----
