@@ -99,6 +99,20 @@ else
     systemctl restart maas-agent.service || true
 fi
 
+# 4b. 3.7 以降の Rack だけの構成の不具合の回避(maas-rack-shim.sh。rackd が maasservicelayer を import できず、起動しない)。
+#     更新したときだけでなく、すでに目標の版のときも行う(前回の更新で、回避が入っていない host を直す)。回避を入れたら、rackd と agent を再起動する。
+SHIM_SCRIPT=${SHIM_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/maas-rack-shim.sh}
+if [ "$(printf '%s\n%s\n' 3.7 "$MAAS_VERSION" | sort -V | head -n1)" = 3.7 ] && [ -f "$SHIM_SCRIPT" ]; then
+    shim_out=$(bash "$SHIM_SCRIPT") || { echo "ABORT: maas-rack-shim.sh が失敗した" >&2; printf '%s\n' "$shim_out" >&2; exit 1; }
+    printf '%s\n' "$shim_out"
+    case "$shim_out" in
+        *"shim: installed"*|*"shim: removed"*)
+            systemctl restart maas-rackd.service
+            systemctl restart maas-agent.service || true
+            ;;
+    esac
+fi
+
 # 5. サービスの確認。確認だけのときは、active でなければ、1 回だけ再起動を試す。
 wait_active() { # $1 = unit
     local u=$1 _

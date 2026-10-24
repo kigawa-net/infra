@@ -12,6 +12,7 @@ locals {
   rollback_script = file("${path.module}/files/maas-rack-rollback.sh")
   firewall_script = file("${path.module}/files/maas-rack-firewall.sh")
   upgrade_script  = file("${path.module}/files/maas-rack-upgrade.sh")
+  shim_script     = file("${path.module}/files/maas-rack-shim.sh")
 }
 
 resource "null_resource" "maas_rack" {
@@ -33,6 +34,7 @@ resource "null_resource" "maas_rack" {
     rollback_script_hash = sha256(local.rollback_script)
     firewall_script_hash = sha256(local.firewall_script)
     upgrade_script_hash  = sha256(local.upgrade_script)
+    shim_script_hash     = sha256(local.shim_script)
     maas_version         = var.maas_version
     lan_cidr             = var.lan_cidr
     lan_address          = var.lan_address
@@ -66,6 +68,11 @@ resource "null_resource" "maas_rack" {
     destination = "/tmp/maas-rack-upgrade.sh"
   }
 
+  provisioner "file" {
+    content     = local.shim_script
+    destination = "/tmp/maas-rack-shim.sh"
+  }
+
   # secret の置き場所を、先に 0600 で作る(file provisioner は、既存のファイルの権限を保つ)。
   provisioner "remote-exec" {
     inline = [
@@ -90,7 +97,7 @@ resource "null_resource" "maas_rack" {
   # 複数台(k8s2 / k8s4)を、同時に更新しない。DHCP は 2 台で failover するので、1 台ずつ apply して、確認する。
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env MAAS_VERSION='${var.maas_version}' bash /tmp/maas-rack-upgrade.sh; rc=$?; rm -f /tmp/maas-rack-upgrade.sh; exit $rc",
+      "echo '${var.sudo_password}' | sudo -S env MAAS_VERSION='${var.maas_version}' bash /tmp/maas-rack-upgrade.sh; rc=$?; rm -f /tmp/maas-rack-upgrade.sh /tmp/maas-rack-shim.sh; exit $rc",
     ]
   }
 }
