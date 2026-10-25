@@ -250,9 +250,9 @@ variable "maas_rack_enabled" {
 }
 
 variable "maas_rack_version" {
-  description = "この host(k8s2)の MAAS の Rack のバージョン(major.minor)。DHCP の primary。**k8s4 を 3.7 に上げて、確認してから**、別の PR で 3.7 にする(2 台を同時に更新しない)。 Rack は Region(kigawa-net-k8s の maas/region.yaml。いま 3.7)より新しくできない。更新は modules/maas-rack/files/maas-rack-upgrade.sh が行う(kigawa-net/infra#317)"
+  description = "この host(k8s2)の MAAS の Rack のバージョン(major.minor)。DHCP の primary。k8s4 を 3.7.4 に上げて、rackd / agent が active であることを確認したので、3.7 にそろえる(kigawa-net/infra#317)。Rack は Region(kigawa-net-k8s の maas/region.yaml。いま 3.7)より新しくできない。更新と、3.7.4 の Rack だけの構成の不具合の回避は、modules/maas-rack/files/maas-rack-upgrade.sh と maas-rack-shim.sh が行う"
   type        = string
-  default     = "3.6"
+  default     = "3.7"
 }
 
 variable "maas_secret_bitwarden_id" {
