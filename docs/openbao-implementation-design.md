@@ -12,6 +12,18 @@
 | Unseal | Shamir 5/3 手動 | 再起動時に人手が要る。§6 の運用で担保 |
 | バックアップ先 | 外部 S3 互換 + Object Lock | **Cloudflare R2 は Object Lock 非対応**。既存の `etcd-backup` と同じ R2 は使えない(§7) |
 
+### 0.1 bao-01 の配置(決定: Inuyama の Kubernetes 上の StatefulSet)
+
+全体設計は「Kubernetes・Ceph に依存させない」としていたが、**bao-01 は Inuyama の K8s 上の Pod(StatefulSet)として動かす**ことに決めた。bao-02(IONOS の別 VPS)・bao-03(第3拠点)は、従来どおり systemd(`modules/openbao-node`)。
+
+この決定で変わること:
+
+- **bao-01 は `modules/openbao-node` を使わない**。manifest は `kigawa-net-k8s`(ArgoCD GitOps)側で管理する。`hardware/bao-01`(PR #328)は、bao-02 / bao-03 用に `hardware/bao-02` へ改名・流用する。
+- **bao-01 用の WireGuard ピアは追加しない**。bao-02 / bao-03 から bao-01 への経路は、K8s の LoadBalancer(kube-vip の VIP、10.0.0.x)を既存の WireGuard / BGP 経由で到達させる。`cluster_addr` もこの VIP(または専用 VIP)を使う。VIP の払い出しと、IONOS 側のルート広告を確認する。
+- **ストレージ**: Ceph の PV には載せない。ローカル SSD の PV(local PV / hostPath 固定)を使い、Pod を特定ノードに固定する。
+- **残るリスク(受け入れる)**: K8s の停止・再構築で、bao-01 が同時に落ちる。3 voter のうち 1 つなので、bao-02 / bao-03 が生きていれば継続する。ただし **K8s と別の 1 拠点が同時に落ちるとクォーラムを失う**。さらに、K8s が bao-01 に Secret を取りに行く構成(ESO)になると、K8s の再起動時に OpenBao の復旧が K8s の復旧を待つ循環が起きうるので、**K8s の起動に必要な資格情報は OpenBao に依存させない**(§1)。
+- **バックアップ実行ホストは、引き続き K8s の外**(§7)。Raft の復旧演習では「K8s 全損 + bao-01 消失」の場合を明示的に含める。
+
 ## 1. このリポジトリに合わせた設計判断
 
 - **ノード構築は既存パターンを踏襲する**: `hardware/<node>/` を独立 root module とし、`null_resource` + SSH provisioner で setup script を流す。共通部分は `hardware/modules/openbao-node/` に切り出す(`k8s-control-plane` と同じ位置づけ)。
