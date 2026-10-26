@@ -77,6 +77,7 @@ class Pure(unittest.TestCase):
 
 class Server(unittest.TestCase):
     def setUp(self):
+        wol.WAKES.clear()
         self.sent = []
         self.pings = {}
         self.leases = tempfile.NamedTemporaryFile("w", delete=False)
@@ -141,6 +142,44 @@ class Server(unittest.TestCase):
     def test_status_stopped(self):
         code, body = self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")
         self.assertEqual((code, body["status"]), (200, "stopped"))
+
+    def test_status_running_during_wake_grace(self):
+        # /wake の直後は、ping が通らなくても running(MAAS が、off から on への遷移を待つため)
+        self.req("POST", f"/wake?mac={MAC}")
+        code, body = self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")
+        self.assertEqual((code, body["status"], body["wake_grace"]), (200, "running", True))
+
+    def test_status_stopped_after_wake_grace(self):
+        t = [1000.0]
+        with mock.patch.object(wol, "now", lambda: t[0]):
+            self.req("POST", f"/wake?mac={MAC}")
+            t[0] += 299
+            self.assertEqual(self.req("GET", f"/status?mac={MAC}")[1]["status"], "running")
+            t[0] += 2  # 301 秒後
+            code, body = self.req("GET", f"/status?mac={MAC}")
+            self.assertEqual((body["status"], body["wake_grace"]), ("stopped", False))
+
+    def test_wake_grace_is_per_mac(self):
+        self.req("POST", f"/wake?mac={MAC}")
+        code, body = self.req("GET", "/status?mac=aa:bb:cc:dd:ee:ff")
+        self.assertEqual(body["status"], "stopped")
+
+    def test_off_ends_wake_grace(self):
+        self.req("POST", f"/wake?mac={MAC}")
+        self.req("POST", f"/off?mac={MAC}")
+        code, body = self.req("GET", f"/status?mac={MAC}")
+        self.assertEqual(body["status"], "stopped")
+
+    def test_wake_grace_can_be_disabled(self):
+        with mock.patch.dict(os.environ, {"WAKE_GRACE_SEC": "0"}):
+            self.req("POST", f"/wake?mac={MAC}")
+            code, body = self.req("GET", f"/status?mac={MAC}")
+        self.assertEqual(body["status"], "stopped")
+
+    def test_status_running_still_by_ping_without_wake(self):
+        self.pings["192.168.1.150"] = True
+        code, body = self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")
+        self.assertEqual((body["status"], body["wake_grace"]), ("running", False))
 
     def test_status_matches_maas_regex(self):
         import re

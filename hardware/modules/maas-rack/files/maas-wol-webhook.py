@@ -8,9 +8,13 @@ MAAS には Wake on LAN の電源ドライバが無い。`webhook` ドライバ(
   POST /off?mac=<MAC>                        WoL では電源を切れない。何もしない。200 {"status": "unsupported"}
   GET  /status?mac=<MAC>[&ip=<IPv4>]...      ping が通れば {"status": "running"}、通らなければ {"status": "stopped"}
                                             (確かめる IP: ip= で渡されたもの + dhcpd.leases にある、その MAC の有効なリース)
+                                            **ただし、/wake の直後 WAKE_GRACE_SEC 秒(既定 300)は、ping が通らなくても running を返す。**
+                                            MAAS は、電源オンの要求のあと、数十秒だけ、状態が off から on に変わるのを待つ。WoL の機械は、
+                                            BIOS・PXE・カーネルの起動で、ネットワークに出るまで 1〜3 分かかる。猶予が無いと、MAAS が
+                                            「BMC never transitioned from off to on」で、commission を中止する(2026-10-27、k8s-worker5)。
 
 MAAS の power_on_regex 既定は `status.*\\:.*running`、power_off_regex 既定は `status.*\\:.*stopped`(この応答と合う)。
-127.0.0.1 だけで待ち受ける。環境変数: BIND(既定 127.0.0.1)、PORT(既定 5290)、BCAST(既定 192.168.1.255)、LEASES(既定 /var/lib/maas/dhcp/dhcpd.leases)
+127.0.0.1 だけで待ち受ける。環境変数: BIND(既定 127.0.0.1)、PORT(既定 5290)、BCAST(既定 192.168.1.255)、LEASES(既定 /var/lib/maas/dhcp/dhcpd.leases)、WAKE_GRACE_SEC(既定 300。0 で無効)
 """
 import json
 import os
@@ -18,6 +22,7 @@ import re
 import socket
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -75,6 +80,20 @@ def ping(ip):
         return False
 
 
+WAKES = {}  # MAC -> 最後に /wake を受けた時刻(time.monotonic)。このサービスの中だけ。MAAS は、電源オンの要求と、その後の問い合わせを、同じ Rack に出す
+
+
+def now():
+    return time.monotonic()
+
+
+def wake_grace_sec():
+    try:
+        return float(os.environ.get("WAKE_GRACE_SEC", "300"))
+    except ValueError:
+        return 300.0
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "maas-wol-webhook"
     bcast = os.environ.get("BCAST", "192.168.1.255")
@@ -105,9 +124,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(400, {"error": str(e)})
         if path == "/wake":
             send_magic(mac, self.bcast)
+            WAKES[mac] = now()
             self.log_message("wake %s -> %s", mac, self.bcast)
             return self._reply(200, {"status": "sent", "mac": mac})
         if path == "/off":
+            WAKES.pop(mac, None)  # 猶予は終わりにする(以後、ping の結果だけで判定)
             self.log_message("off %s: WoL では電源を切れない(何もしない)", mac)
             return self._reply(200, {"status": "unsupported", "mac": mac})
         return self._reply(404, {"error": "not found"})
@@ -125,7 +146,11 @@ class Handler(BaseHTTPRequestHandler):
             if ip not in ips:
                 ips.append(ip)
         up = any(ping(ip) for ip in ips)
-        return self._reply(200, {"status": "running" if up else "stopped", "mac": mac, "checked": ips})
+        grace = False
+        if not up:
+            woke = WAKES.get(mac)
+            grace = woke is not None and now() - woke < wake_grace_sec()
+        return self._reply(200, {"status": "running" if (up or grace) else "stopped", "mac": mac, "checked": ips, "wake_grace": grace})
 
     def log_message(self, fmt, *args):  # journald に出す(標準エラー)
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
