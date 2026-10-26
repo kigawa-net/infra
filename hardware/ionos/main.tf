@@ -99,6 +99,15 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    # bao-02(OpenBao の raft voter。IONOS の別 VPS)。Spoke から発信する(endpoint なし)。
+    # 公開鍵が空の間は、ピアを出さない。AllowedIPs は bao-02 の /32 だけ(他のピアと重複させない。issue #121)。
+    # BGP は話さない(経路は hardware/ionos の既存の 172.31.254.0/24 の広告と、wg0 の直結経路で足りる)。
+    var.bao02_wireguard_public_key != "" ? [{
+      public_key           = var.bao02_wireguard_public_key
+      allowed_ips          = ["${var.bao02_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。var.gateway_links(k8s2 など、公開鍵を静的に持てるもの)に、

@@ -85,6 +85,10 @@ resource "terraform_data" "enable_check" {
       error_message = "enabled = true には host / wg_address / openbao_deb_sha256 の設定が必要。"
     }
     precondition {
+      condition     = var.wireguard_server_public_key != ""
+      error_message = "enabled = true には wireguard_server_public_key(IONOS hub の公開鍵)の設定が必要。bao-02 は WireGuard 経由でしか raft に参加できない。"
+    }
+    precondition {
       condition     = var.tls_cert_bitwarden_id != "" && var.tls_key_bitwarden_id != "" && var.tls_ca_bitwarden_id != ""
       error_message = "enabled = true には tls_*_bitwarden_id の設定が必要。"
     }
@@ -95,10 +99,31 @@ resource "terraform_data" "enable_check" {
   }
 }
 
-# OpenBao ノードの構築(ホスト名・バージョン・TLS は modules/openbao-node を参照)
-module "openbao_node" {
-  source = "../modules/openbao-node"
+# WireGuard(IONOS hub への spoke)。他のスポークと同じく modules/wireguard を使う。
+# 秘密鍵はホスト上で生成される(/etc/wireguard/privatekey。Terraform の state には入らない)。
+# 公開鍵は /etc/wireguard/publickey に置かれ、apply の出力(=== Public key ===)にも出る。
+# 読んだ公開鍵は hardware/ionos の bao02_wireguard_public_key に設定する(それまで IONOS 側にピアは出ない)。
+module "wireguard" {
+  source = "../modules/wireguard"
   count  = var.enabled ? 1 : 0
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key[0].result.value
+  sudo_password   = data.external.sudo_password[0].result.value
+
+  wireguard_address  = "${var.wg_address}/32"
+  server_public_key  = var.wireguard_server_public_key
+  server_endpoint    = var.wireguard_server_endpoint
+  server_allowed_ips = var.wireguard_server_allowed_ips
+}
+
+# OpenBao ノードの構築(ホスト名・バージョン・TLS は modules/openbao-node を参照)
+# WireGuard の設定(wg0 の起動)の後に構築する。wg_address で listen するため、先に wg0 が必要。
+module "openbao_node" {
+  source     = "../modules/openbao-node"
+  count      = var.enabled ? 1 : 0
+  depends_on = [module.wireguard]
 
   host            = var.host
   ssh_user        = var.ssh_user
