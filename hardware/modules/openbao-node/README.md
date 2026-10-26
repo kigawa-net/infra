@@ -2,7 +2,7 @@
 
 OpenBao のノード(raft の voter 1 台)を、SSH provisioner で構築する module。設計は `docs/openbao-implementation-design.md` §2、issue kigawa-net/infra#327 の Phase 1。
 
-呼び出し元: `hardware/bao-01/`(`enabled = false` の間は、何も作らず Bitwarden にも触れない)。
+呼び出し元: `hardware/bao-02/`(`enabled = false` の間は、何も作らず Bitwarden にも触れない)。
 
 ## 構成
 

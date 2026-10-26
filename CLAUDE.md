@@ -18,7 +18,7 @@ Each node is an independent Terraform root module. Use the shared `hardware/run.
 
 ```bash
 # Usage: ./hardware/run.sh <module> <terraform-args...>
-# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-01
+# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02
 
 # Initialize (first time or after provider changes)
 ./hardware/run.sh k8s1 init
@@ -43,7 +43,7 @@ hardware/
   k8s2/               # control-plane node at 10.0.0.120
   k8s4/               # control-plane node at 10.0.0.140
   k8s-worker5/        # worker node at 10.0.0.40
-  bao-01/             # OpenBao raft voter(enabled=false の間は何もしない)
+  bao-02/             # OpenBao raft voter(enabled=false の間は何もしない)
 application/          # empty (future use)
 platform/             # empty (future use)
 ```

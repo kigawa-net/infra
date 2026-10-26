@@ -1,4 +1,4 @@
-# bao-01(OpenBao の raft voter 1 台目、kigawa-net/infra#327 Phase 1、docs/openbao-implementation-design.md §2)。
+# bao-02(OpenBao の raft voter 2 台目(IONOS の別 VPS。bao-01 は K8s 上の StatefulSet)、kigawa-net/infra#327 Phase 1、docs/openbao-implementation-design.md §2)。
 # enabled = false(既定)のときは、どのリソースも作らず、Bitwarden にも触れない(plan は no-op)。
 # 実機に適用する前に、host / wg_address / peers / bws の ID / openbao_deb_sha256 を設定すること。
 

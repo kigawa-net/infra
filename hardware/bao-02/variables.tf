@@ -5,7 +5,7 @@ variable "enabled" {
 }
 
 variable "host" {
-  description = "bao-01 の SSH の接続先(自宅 LAN または管理網のアドレス)。未設定のままにしている(enabled = true のとき必須)"
+  description = "bao-02 の SSH の接続先(IONOS の VPS のグローバルアドレス)。未設定のままにしている(enabled = true のとき必須)"
   type        = string
   default     = ""
 }
@@ -48,11 +48,11 @@ variable "tls_ca_bitwarden_id" {
 variable "node_id" {
   description = "raft の node_id"
   type        = string
-  default     = "bao-01"
+  default     = "bao-02"
 }
 
 variable "wg_address" {
-  description = "bao-01 の WireGuard 上の IPv4 アドレス(単独)。未設定のままにしている(WireGuard の /32 ピアの割り当てと合わせて決める)"
+  description = "bao-02 の WireGuard 上の IPv4 アドレス(単独)。未設定のままにしている(WireGuard の /32 ピアの割り当てと合わせて決める)"
   type        = string
   default     = ""
 }

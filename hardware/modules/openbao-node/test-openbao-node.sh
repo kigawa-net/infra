@@ -35,7 +35,7 @@ mkdir -p "$render_dir"
 cat > "$render_dir/main.tf" <<EOF
 output "rendered" {
   value = templatefile("$tpl", {
-    node_id    = "bao-01"
+    node_id    = "bao-02"
     wg_address = "192.0.2.1"
     # モジュールは、自分自身を除いた一覧を渡す(modules/openbao-node/main.tf の retry_peers)
     peers = [
@@ -66,7 +66,7 @@ check "tls_min_version は全 listener で tls13" 2 "$(grep -c 'tls_min_version 
 check "公開 IF / 全アドレスに bind しない" 0 "$(grep -c '0\.0\.0\.0\|address *= *":' "$conf")"
 check "api_addr は WireGuard の https" 1 "$(grep -c '^api_addr *= *"https://192.0.2.1:8200"$' "$conf")"
 check "cluster_addr は WireGuard の 8201" 1 "$(grep -c '^cluster_addr *= *"https://192.0.2.1:8201"$' "$conf")"
-check "node_id が設定されている" 1 "$(grep -c 'node_id *= *"bao-01"' "$conf")"
+check "node_id が設定されている" 1 "$(grep -c 'node_id *= *"bao-02"' "$conf")"
 check "retry_join は他の 2 ノードだけ" 2 "$(grep -c 'leader_api_addr' "$conf")"
 check "retry_join に自分の宛先が無い" 0 "$(grep -c 'leader_api_addr *= *"https://192.0.2.1:8200"' "$conf")"
 check "retry_join の宛先(bao-02, bao-03)" 2 "$(grep -c 'https://192.0.2.[23]:8200' "$conf")"

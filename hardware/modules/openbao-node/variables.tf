@@ -19,7 +19,7 @@ variable "sudo_password" {
 }
 
 variable "node_id" {
-  description = "raft の node_id。このノードの識別子(例: bao-01)。retry_join の一覧からは自分を除く"
+  description = "raft の node_id。このノードの識別子(例: bao-02)。retry_join の一覧からは自分を除く"
   type        = string
 
   validation {
