@@ -52,6 +52,9 @@ MAAS(3.7.4)には、Wake on LAN の電源ドライバが無い(`amt`・`ipmi`・
 - `POST /off?mac=<MAC>`: WoL では電源を切れないので、何もしない(200 `{"status": "unsupported"}`)。
 - `GET /status?mac=<MAC>[&ip=<IPv4>]`: ping が通れば `{"status": "running"}`、通らなければ `{"status": "stopped"}`。確かめる IP は、`ip=` と、`dhcpd.leases` にある、その MAC の有効なリース(commissioning 中の DHCP のアドレス)。
   MAAS の `power_on_regex` / `power_off_regex` の既定(`status.*\:.*running` / `stopped`)と合う。
+  **`/wake` の直後、`WAKE_GRACE_SEC` 秒(既定 300)は、ping が通らなくても `running` を返す。** MAAS は、電源オンの要求のあと、数十秒だけ、状態が `off` から `on` に変わるのを待つ。
+  WoL の機械は、BIOS・PXE・カーネルの起動で、ネットワークに出るまで 1〜3 分かかる。猶予がないと、MAAS が `PowerError: BMC never transitioned from off to on` で、Commission を中止する
+  (2026-10-27、k8s-worker5 の Commission で発生)。`/off` を受けると、猶予は終わる。猶予は、サービスのメモリ上(MAAS は、要求と問い合わせを、同じ Rack に出す)。
 - 認証が無いので、**ループバックだけで待ち受ける**(スクリプトが、それ以外の `BIND` を拒否)。systemd のサンドボックス(`NoNewPrivileges`・`ProtectSystem=strict`・`CapabilityBoundingSet=CAP_NET_RAW` ほか)。
 - `maas-rackd`・`maas-dhcpd`・ファイアウォールには触れない。冪等(ファイルが変わったときだけ再起動。止まっていれば起動)。`wol_webhook_enabled = false` で、入れない。
 
