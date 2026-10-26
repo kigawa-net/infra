@@ -59,3 +59,20 @@ module "journald_limit" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+# 固定のアドレスとデフォルト経路(kigawa-net/infra#317、modules/static-network)。
+# worker1 は、DHCP が付けていた 192.168.1.228 とデフォルト経路が、DHCP の停止(2026-10-24 23:05 JST)で消え、kubelet が API サーバー(10.0.0.100)に届かず
+# NotReady になった(Ceph の OSD 4 台と mon が down)。DHCP に依存しないよう、固定にする。既存のアドレス(192.168.1.105)は、そのまま残す。
+# static_network_ssh_host を指定すると、その宛先で SSH する(192.168.1.228 が消えている間は、192.168.1.105 で接続する)。
+module "static_network" {
+  source = "../modules/static-network"
+  count  = var.static_network_enabled ? 1 : 0
+
+  host            = coalesce(var.static_network_ssh_host, var.host)
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  interface       = var.static_network_interface
+  address         = var.static_network_address
+  gateway         = var.static_network_gateway
+}
