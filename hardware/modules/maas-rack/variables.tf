@@ -98,3 +98,21 @@ variable "dhcp_peer_address" {
     error_message = "dhcp_peer_address は、IPv4 のアドレスで指定する(例: 192.168.1.120)。"
   }
 }
+
+variable "wol_webhook_enabled" {
+  description = "true にすると、MAAS 用の Wake on LAN の webhook(files/maas-wol-webhook.py。127.0.0.1:5290)を、この Rack に入れる。MAAS には WoL の電源ドライバが無く、webhook ドライバで、このサービスを呼ぶ(kigawa-net/infra#316、#317)"
+  type        = bool
+  default     = true
+}
+
+variable "wol_webhook_port" {
+  description = "WoL の webhook の待ち受けポート(127.0.0.1 だけ)"
+  type        = number
+  default     = 5290
+}
+
+variable "wol_broadcast" {
+  description = "マジックパケットの宛先(LAN のブロードキャストアドレス)。空なら、lan_cidr の最後のアドレス(192.168.1.0/24 なら 192.168.1.255)"
+  type        = string
+  default     = ""
+}
