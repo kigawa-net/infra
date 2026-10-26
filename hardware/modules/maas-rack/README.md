@@ -43,6 +43,28 @@ MAAS の Rack コントローラー(`maas_version`。既定 3.7)を、host に d
 - **DHCP(`maas-dhcpd`)を、有効・無効にしない**(rackd が管理する)。`maas-rack-install.sh` も、**初回の導入のとき(`dhcp-disable-pending` マーカーがあるとき)だけ** `maas-dhcpd` を無効化する
   (再 apply で、稼働中の DHCP を止めないため。マーカーは、無効化が済むまで残るので、初回が途中で失敗しても、再実行で無効化される)。
 
+## Wake on LAN(MAAS の電源。kigawa-net/infra#316、#317)
+
+MAAS(3.7.4)には、Wake on LAN の電源ドライバが無い(`amt`・`ipmi`・`redfish`・`webhook`・`manual` など)。BMC の無い自作 PC(k8s-worker5 など)を MAAS から起動できるよう、
+**`webhook` 電源ドライバ**で、各 Rack の **127.0.0.1:5290** のサービス(`files/maas-wol-webhook.py`、systemd の `maas-wol-webhook.service`)を呼ぶ。
+
+- `POST /wake?mac=<MAC>`: LAN(`wol_broadcast`。既定は `lan_cidr` の最後のアドレス)にマジックパケット(UDP 9 と 7)を送る。
+- `POST /off?mac=<MAC>`: WoL では電源を切れないので、何もしない(200 `{"status": "unsupported"}`)。
+- `GET /status?mac=<MAC>[&ip=<IPv4>]`: ping が通れば `{"status": "running"}`、通らなければ `{"status": "stopped"}`。確かめる IP は、`ip=` と、`dhcpd.leases` にある、その MAC の有効なリース(commissioning 中の DHCP のアドレス)。
+  MAAS の `power_on_regex` / `power_off_regex` の既定(`status.*\:.*running` / `stopped`)と合う。
+- 認証が無いので、**ループバックだけで待ち受ける**(スクリプトが、それ以外の `BIND` を拒否)。systemd のサンドボックス(`NoNewPrivileges`・`ProtectSystem=strict`・`CapabilityBoundingSet=CAP_NET_RAW` ほか)。
+- `maas-rackd`・`maas-dhcpd`・ファイアウォールには触れない。冪等(ファイルが変わったときだけ再起動。止まっていれば起動)。`wol_webhook_enabled = false` で、入れない。
+
+**MAAS 側の設定(マシンごと。IaC の対象外)**
+```
+maas <profile> machine update <system_id> power_type=webhook \
+  power_parameters_power_on_uri='http://127.0.0.1:5290/wake?mac=<MAC>' \
+  power_parameters_power_off_uri='http://127.0.0.1:5290/off?mac=<MAC>' \
+  power_parameters_power_query_uri='http://127.0.0.1:5290/status?mac=<MAC>&ip=<固定の IP>'
+```
+- 電源オフは、できない(WoL の限界)。commission / deploy の後の電源オフは、手動、または OS から(`shutdown`)。
+- WoL には、対象機の BIOS と NIC の設定(Wake on LAN の有効化)と、S5(停止)でも NIC に給電されることが必要。
+
 ## secret の扱い
 
 - 共有 secret は、**Region の `/var/lib/maas/secret` と同じ、32 桁の 16 進数**。Bitwarden の項目 **`maas-rack-shared-secret`**(プロジェクト `infra`)に保管した。ID は、ノードの変数 `maas_secret_bitwarden_id`(値ではなく ID)。
@@ -99,6 +121,8 @@ Rack を入れると、次が、ホストの**全アドレス**(API の VIP、LB
 ```bash
 bash hardware/modules/maas-rack/test-maas-rack.sh          # install / rollback / firewall
 bash hardware/modules/maas-rack/test-maas-rack-upgrade.sh  # upgrade(偽の apt-get / systemctl)
+bash hardware/modules/maas-rack/test-maas-rack-shim.sh     # shim(3.7.4 の Rack の回避)
+bash hardware/modules/maas-rack/test-maas-wol-webhook.sh   # WoL の webhook(インストーラ + Python の単体テスト)
 ```
 
 `maas-rack-upgrade.sh` は、使い捨ての systemd 付き Ubuntu 24.04 コンテナで、実際の apt を使い、3.6.6 → 3.7.4 の更新を検証済み(2026-10-24)。

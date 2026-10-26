@@ -13,6 +13,11 @@ locals {
   firewall_script = file("${path.module}/files/maas-rack-firewall.sh")
   upgrade_script  = file("${path.module}/files/maas-rack-upgrade.sh")
   shim_script     = file("${path.module}/files/maas-rack-shim.sh")
+
+  # MAAS 用の Wake on LAN の webhook(MAAS に WoL のドライバが無いため、webhook ドライバで 127.0.0.1 のサービスを呼ぶ)
+  wol_script         = file("${path.module}/files/maas-wol-webhook.py")
+  wol_install_script = file("${path.module}/files/maas-wol-webhook-install.sh")
+  wol_broadcast      = var.wol_broadcast != "" ? var.wol_broadcast : cidrhost(var.lan_cidr, -1)
 }
 
 resource "null_resource" "maas_rack" {
@@ -35,6 +40,11 @@ resource "null_resource" "maas_rack" {
     firewall_script_hash = sha256(local.firewall_script)
     upgrade_script_hash  = sha256(local.upgrade_script)
     shim_script_hash     = sha256(local.shim_script)
+    wol_enabled          = var.wol_webhook_enabled
+    wol_script_hash      = sha256(local.wol_script)
+    wol_install_hash     = sha256(local.wol_install_script)
+    wol_broadcast        = local.wol_broadcast
+    wol_port             = var.wol_webhook_port
     maas_version         = var.maas_version
     lan_cidr             = var.lan_cidr
     lan_address          = var.lan_address
@@ -73,6 +83,16 @@ resource "null_resource" "maas_rack" {
     destination = "/tmp/maas-rack-shim.sh"
   }
 
+  provisioner "file" {
+    content     = local.wol_script
+    destination = "/tmp/maas-wol-webhook.py"
+  }
+
+  provisioner "file" {
+    content     = local.wol_install_script
+    destination = "/tmp/maas-wol-webhook-install.sh"
+  }
+
   # secret の置き場所を、先に 0600 で作る(file provisioner は、既存のファイルの権限を保つ)。
   provisioner "remote-exec" {
     inline = [
@@ -98,6 +118,15 @@ resource "null_resource" "maas_rack" {
   provisioner "remote-exec" {
     inline = [
       "echo '${var.sudo_password}' | sudo -S env MAAS_VERSION='${var.maas_version}' bash /tmp/maas-rack-upgrade.sh; rc=$?; rm -f /tmp/maas-rack-upgrade.sh /tmp/maas-rack-shim.sh; exit $rc",
+    ]
+  }
+
+  # MAAS 用の Wake on LAN の webhook(127.0.0.1 だけで待ち受け。ほかのサービスには触れない)。無効のときは、何もせず、置いたファイルだけ消す。
+  provisioner "remote-exec" {
+    inline = [
+      var.wol_webhook_enabled ?
+      "echo '${var.sudo_password}' | sudo -S env BCAST='${local.wol_broadcast}' PORT='${var.wol_webhook_port}' SRC=/tmp/maas-wol-webhook.py bash /tmp/maas-wol-webhook-install.sh; rc=$?; rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh; exit $rc" :
+      "rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh",
     ]
   }
 }
