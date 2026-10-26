@@ -76,3 +76,19 @@ module "static_network" {
   address         = var.static_network_address
   gateway         = var.static_network_gateway
 }
+
+# workerノードから内部ネットワーク(10.0.0.0/24)への静的経路と、1 分ごとの再適用タイマー(issue #193 / #198)。
+# k8s-worker3 / k8s-worker4 / k8s-worker5 と同じ構成。worker1 だけ、この module が無かった(infra#323)。
+module "cluster_route" {
+  source = "../modules/cluster-route"
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
+  gateways = [var.core_router_vip]
+
+  # デフォルト経路(LAN)が通っていることが前提なので、static_network のあとに適用する。
+  depends_on = [module.static_network]
+}
