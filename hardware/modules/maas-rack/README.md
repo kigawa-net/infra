@@ -55,13 +55,19 @@ MAAS(3.7.4)には、Wake on LAN の電源ドライバが無い(`amt`・`ipmi`・
 - 認証が無いので、**ループバックだけで待ち受ける**(スクリプトが、それ以外の `BIND` を拒否)。systemd のサンドボックス(`NoNewPrivileges`・`ProtectSystem=strict`・`CapabilityBoundingSet=CAP_NET_RAW` ほか)。
 - `maas-rackd`・`maas-dhcpd`・ファイアウォールには触れない。冪等(ファイルが変わったときだけ再起動。止まっていれば起動)。`wol_webhook_enabled = false` で、入れない。
 
-**MAAS 側の設定(マシンごと。IaC の対象外)**
+**MAAS 側の設定(マシンごと。MAAS の DB の設定で、Terraform の対象外)**
 ```
 maas <profile> machine update <system_id> power_type=webhook \
-  power_parameters_power_on_uri='http://127.0.0.1:5290/wake?mac=<MAC>' \
-  power_parameters_power_off_uri='http://127.0.0.1:5290/off?mac=<MAC>' \
-  power_parameters_power_query_uri='http://127.0.0.1:5290/status?mac=<MAC>&ip=<固定の IP>'
+  'power_parameters_power_on_uri=http://localhost:5290/wake?mac=<MAC>' \
+  'power_parameters_power_off_uri=http://localhost:5290/off?mac=<MAC>' \
+  'power_parameters_power_query_uri=http://localhost:5290/status?mac=<MAC>&ip=<固定の IP>'
 ```
+- **URL のホストは、`127.0.0.1` ではなく、`localhost`(ホスト名)にする。** MAAS は、BMC の URL のホストが**ループバックの IP**だと、「電源操作を担当するのは、この Region と同じ場所の Rack」とみなして、
+  `RackController.get_running_controller()` を呼ぶ。Region を Pod で動かし、Rack を同居させない構成では、これが `RackController matching query does not exist` で例外になり、**UI に `Power error` が出る**。
+  ホスト名にすると、BMC は「IP を持たない」扱いになり、**電源の要求が、接続中の全 Rack に送られる**(各 Rack の 127.0.0.1:5290 のサービスが、自分で答える)。2026-10-27 に k8s-worker5 で確認(`query-power-state` が `off`)。
+- `power_query_uri` の `ip=` は、固定の IP(例: 192.168.1.150)。commissioning 中の DHCP のアドレスは、`dhcpd.leases` から、サービスが自分で調べる。
+- **MAAS の UI の `Power on` は、マシンの状態が `Broken` / `Deployed` / `Deploying` のときだけ**押せる(MAAS の仕様)。`Ready` のマシンは、**Commission** または **Deploy** が、電源を入れて始める(WoL が送られる)。
+  `Failed testing` のマシンは、**Override failed testing** で `Ready` にしてから、Commission する。
 - 電源オフは、できない(WoL の限界)。commission / deploy の後の電源オフは、手動、または OS から(`shutdown`)。
 - WoL には、対象機の BIOS と NIC の設定(Wake on LAN の有効化)と、S5(停止)でも NIC に給電されることが必要。
 
