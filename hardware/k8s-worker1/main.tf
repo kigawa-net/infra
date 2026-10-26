@@ -1,7 +1,5 @@
 # k8s-worker1(192.168.1.228)。kubeadm join などの既存の構築は、このモジュールの対象外(手動で構築済み)。
-# 2026-10-05 から、node-dns(内部ドメインを kresd に向ける)を、IaC で管理する。
-# 2026-10-25 から、デフォルトルート・ノードの LAN アドレス(host-network)と、10.0.0.0/24 への経路
-# (cluster-route)も、IaC で管理する(infra#323)。
+# 2026-10-05 から、node-dns(内部ドメインを kresd に向ける)のみを、IaC で管理する。
 
 data "external" "ssh_key" {
   program = ["bash", "-c", <<-EOT
@@ -62,20 +60,21 @@ module "journald_limit" {
   sudo_password   = data.external.sudo_password.result.value
 }
 
-# デフォルトルートと、ノードの LAN アドレス(infra#323)。
-# 2026-10-25 に netplan が書き換わってデフォルトルートが無くなり、kubelet が API サーバーに届かず
-# NotReady になった。手動で ip route / ip addr を入れて復旧したが、再起動で消えるので、IaC で持つ。
-module "host_network" {
-  source = "../modules/host-network"
+# 固定のアドレスとデフォルト経路(kigawa-net/infra#317、modules/static-network)。
+# worker1 は、DHCP が付けていた 192.168.1.228 とデフォルト経路が、DHCP の停止(2026-10-24 23:05 JST)で消え、kubelet が API サーバー(10.0.0.100)に届かず
+# NotReady になった(Ceph の OSD 4 台と mon が down)。DHCP に依存しないよう、固定にする。既存のアドレス(192.168.1.105)は、そのまま残す。
+# static_network_ssh_host を指定すると、その宛先で SSH する(192.168.1.228 が消えている間は、192.168.1.105 で接続する)。
+module "static_network" {
+  source = "../modules/static-network"
+  count  = var.static_network_enabled ? 1 : 0
 
-  host            = var.host
+  host            = coalesce(var.static_network_ssh_host, var.host)
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
-
-  interface    = var.lan_interface
-  address_cidr = "${var.host}/24"
-  gateway      = var.lan_gateway
+  interface       = var.static_network_interface
+  address         = var.static_network_address
+  gateway         = var.static_network_gateway
 }
 
 # workerノードから内部ネットワーク(10.0.0.0/24)への静的経路と、1 分ごとの再適用タイマー(issue #193 / #198)。
@@ -90,6 +89,6 @@ module "cluster_route" {
   # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
   gateways = [var.core_router_vip]
 
-  # ルートの追加は、先にデフォルトルート(LAN)が通っていることが前提。
-  depends_on = [module.host_network]
+  # デフォルト経路(LAN)が通っていることが前提なので、static_network のあとに適用する。
+  depends_on = [module.static_network]
 }
