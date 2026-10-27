@@ -462,3 +462,46 @@ variable "gateway_links" {
     error_message = "name と listen_port は、リンクごとに別にしてください。"
   }
 }
+
+# EasyTier(kigawa-net/infra#350、docs/network-vpn-architecture-design.md §4.1)。
+# false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。ネットワーク Secret を bws に登録してから true にする。
+variable "easytier_enabled" {
+  description = "true のときだけ EasyTier を入れる。easytier_network_secret_bitwarden_id が必要"
+  type        = bool
+  default     = false
+}
+
+variable "easytier_network_secret_bitwarden_id" {
+  description = "EasyTier のネットワーク Secret の bws の ID。ionos と bao-02 で同じ値を使う。未登録のまま(空)"
+  type        = string
+  default     = ""
+}
+
+variable "easytier_network_name" {
+  type    = string
+  default = "kigawa-net"
+}
+
+variable "easytier_version" {
+  description = "採用バージョン(docs/network-vpn-architecture-design.md §4.1)。GitHub の latest(prerelease でない最新)"
+  type        = string
+  default     = "2.6.4"
+}
+
+variable "easytier_sha256" {
+  description = "easytier-linux-x86_64-v2.6.4.zip の SHA-256(自分でダウンロードして計算し、GitHub の digest とも一致を確認した値)。easytier_version を上げるときは、必ず更新する"
+  type        = string
+  default     = "61b659eaedba658fa66fe47d17e1426cdd77e5d02fa15fed447bb4357c09dfd6"
+}
+
+variable "easytier_overlay_address" {
+  description = "このノードの EasyTier の Overlay アドレス(設計書 §4.1)"
+  type        = string
+  default     = "10.250.0.2/24"
+}
+
+variable "easytier_peers" {
+  description = "もう一方の公開ノードへの接続先(初期接続先)"
+  type        = list(string)
+  default     = ["tcp://207.231.111.196:11010"]
+}

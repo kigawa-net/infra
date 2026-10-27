@@ -25,6 +25,7 @@ resource "null_resource" "easytier" {
     easytier_arch    = var.easytier_arch
     easytier_sha256  = var.easytier_sha256
     config           = sha256(local.config_toml)
+    ufw_allow        = join(",", var.ufw_allow)
     script           = filesha256("${path.module}/files/easytier-setup.sh")
   }
 
@@ -47,7 +48,7 @@ resource "null_resource" "easytier" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' bash /tmp/easytier-setup.sh; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
+      "echo '${var.sudo_password}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' bash /tmp/easytier-setup.sh; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
     ]
   }
 }

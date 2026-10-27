@@ -1,6 +1,7 @@
 #!/bin/bash
 # EasyTier のバイナリを、SHA-256 を照合してから入れ、systemd サービスとして起動する。
 # 必須の環境変数: ET_VERSION(例: 2.7.0)、ET_ARCH(x86_64 / aarch64)、ET_SHA256(配布 zip の SHA-256)
+# 任意: ET_UFW_ALLOW(空白区切りの 11010/tcp など)。ufw が入っていれば、そのポートの受信を許可する。
 # 設定ファイルは /tmp/easytier.toml(ET_CONFIG_SRC で変更可)から読む。
 # ET_BIN_DIR / ET_CONF_DIR / ET_UNIT_DIR / ET_DOWNLOAD_BASE は、テスト(test-easytier-setup.sh)で差し替える。
 set -eo pipefail
@@ -67,6 +68,12 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 chmod 644 "$unit_dir/easytier.service"
+
+if [ -n "${ET_UFW_ALLOW:-}" ] && command -v ufw >/dev/null 2>&1; then
+  for rule in $ET_UFW_ALLOW; do
+    ufw allow "$rule" comment 'easytier'
+  done
+fi
 
 systemctl daemon-reload
 systemctl enable easytier.service

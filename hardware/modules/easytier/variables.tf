@@ -85,3 +85,14 @@ variable "listeners" {
   type        = list(string)
   default     = ["tcp://0.0.0.0:11010", "udp://0.0.0.0:11010"]
 }
+
+variable "ufw_allow" {
+  description = "ufw で受信を許可するポート(例: [\"11010/tcp\", \"11010/udp\"])。公開ノードでは、listeners に合わせて許可する(既定拒否の ufw だと、Peer が接続できない)。空なら ufw には触れない。ufw が入っていないホストでは無視する"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for r in var.ufw_allow : can(regex("^[0-9]+/(tcp|udp)$", r))])
+    error_message = "ufw_allow は 11010/tcp のような形式で指定する。"
+  }
+}
