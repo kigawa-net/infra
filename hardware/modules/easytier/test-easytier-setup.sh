@@ -33,6 +33,7 @@ done
 cp "$FAKE_DL/${url#file://}" "$out" 2>/dev/null || cp "${url#file://}" "$out"
 EOS
 printf '#!/bin/sh\necho "systemctl $*" >> "$FAKE_LOG"\n' > "$work/fakebin/systemctl"
+printf '#!/bin/sh\necho "ufw $*" >> "$FAKE_LOG"\n' > "$work/fakebin/ufw"
 chmod +x "$work/fakebin/"*
 
 printf 'instance_name = "t"\n[network_identity]\nnetwork_secret = "s3cret"\n' > "$work/easytier.toml"
@@ -61,6 +62,13 @@ check "設定ディレクトリは 0700" "700" "$(stat -c %a "$work/root/etc")"
 check "Secret は unit に出さない" "0" "$(grep -c s3cret "$work/root/unit/easytier.service")"
 check "unit は設定ファイルを指す" "1" "$(grep -c -- "-c $work/root/etc/easytier.toml" "$work/root/unit/easytier.service")"
 check "サービスを restart する" "1" "$(grep -c 'systemctl restart easytier.service' "$work/log")"
+
+# 2b. ET_UFW_ALLOW があれば、ufw でそのポートを許可する(なければ ufw に触れない)
+check "ET_UFW_ALLOW なしでは ufw に触れない" "0" "$(grep -c '^ufw' "$work/log")"
+ET_UFW_ALLOW="11010/tcp 11010/udp" run "$sha"; rc=$?
+check "ufw 許可つきでも成功する" 0 "$rc"
+check "11010/tcp を許可する" "1" "$(grep -c '^ufw allow 11010/tcp' "$work/log")"
+check "11010/udp を許可する" "1" "$(grep -c '^ufw allow 11010/udp' "$work/log")"
 
 # 3. 同じバージョンが入っていれば、ダウンロードしない(zip を消しても成功し、設定は更新される)
 mv "$work/dl/v${version}/$zip_name" "$work/dl/v${version}/moved.zip"

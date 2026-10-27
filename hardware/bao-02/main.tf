@@ -186,3 +186,37 @@ module "host_hardening" {
   wireguard_hub_address  = split(":", var.wireguard_server_endpoint)[0]
   tcp_ports_on_wireguard = [8200, 8201]
 }
+
+# EasyTier のネットワーク Secret(bws から読む。空なら止める)
+data "external" "easytier_network_secret" {
+  count = var.enabled && var.easytier_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.easytier_network_secret_bitwarden_id}" ]; then echo "easytier_network_secret_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.easytier_network_secret_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "easytier_network_secret: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+# 公開ノードとして、他のノードからの接続(11010 の tcp/udp)を受ける。WireGuard・FRR・BGP には触れない。
+module "easytier" {
+  source     = "../modules/easytier"
+  count      = var.enabled && var.easytier_enabled ? 1 : 0
+  depends_on = [module.host_hardening]
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key[0].result.value
+  sudo_password   = data.external.sudo_password[0].result.value
+
+  easytier_version = var.easytier_version
+  easytier_sha256  = var.easytier_sha256
+  network_name     = var.easytier_network_name
+  network_secret   = data.external.easytier_network_secret[0].result.value
+  overlay_address  = var.easytier_overlay_address
+  peers            = var.easytier_peers
+  ufw_allow        = ["11010/tcp", "11010/udp"]
+}
