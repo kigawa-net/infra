@@ -298,7 +298,7 @@ variable "soichiro_accepted_prefixes" {
 variable "bao02_wireguard_public_key" {
   description = "bao-02 の WireGuard 公開鍵(IONOS 用)。bao-02 の初回 apply の後、ホストの /etc/wireguard/publickey を読んで設定する。空文字のままは、ピアを出さない"
   type        = string
-  default     = ""
+  default     = "fKCmZnRpDlVxT4VbSKf9m0AYO2mmbeh2BumLZJpJcC4="
 
   validation {
     condition     = var.bao02_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.bao02_wireguard_public_key))
