@@ -16,15 +16,15 @@ variable "ssh_user" {
 }
 
 variable "ssh_key_bitwarden_id" {
-  description = "SSH 秘密鍵の bws の ID(k8s-worker1 と同じ鍵)"
+  description = "bao-02 専用の SSH 秘密鍵の bws の ID(bao-02-ssh-private-key)"
   type        = string
-  default     = "0393671f-6ef0-4650-be98-b364013f8644"
+  default     = "826652fb-c615-4fe1-88c3-b4f000bf1f37"
 }
 
 variable "sudo_password_bitwarden_id" {
-  description = "sudo パスワードの bws の ID(k8s-worker1 と同じ)"
+  description = "bao-02 の sudo パスワードの bws の ID(bao-02-sudo-password)"
   type        = string
-  default     = "52b44d60-7cab-429f-929a-b4340139b6d8"
+  default     = "57ba07a6-2ac8-4022-b8ea-b4ef011b362e"
 }
 
 variable "tls_cert_bitwarden_id" {
