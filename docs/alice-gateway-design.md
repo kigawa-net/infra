@@ -1,5 +1,7 @@
 # kigawa-net/infra 拠点ゲートウェイ設計書
 
+> **注記(2026-10-27):** alice は Terraform 上すでに廃止済み(`hardware/alice/` は存在せず、`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載がある)。本書の alice に関する記述は廃止前の設計の履歴であり、現行構成は [IONOS ゲートウェイ設計書](ionos-gateway-design.md) と [全体ネットワーク・VPN基盤設計書](network-vpn-architecture-design.md) を参照する。
+
 **対象リポジトリ:** `kigawa-net/infra`
 **対象拠点:** `inuyama` / `alice`
 **設計方針:** 既存Kubernetesは `inuyama` に集約し、`alice` は1ホストの公開ゲートウェイとして利用する。

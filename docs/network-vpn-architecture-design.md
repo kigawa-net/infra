@@ -100,7 +100,7 @@ EasyTier の役割は次の3つです。
 | --- | --- |
 | AS65000 | Inuyama Kubernetes内部 |
 | AS65010 | Inuyama外部接続用 |
-| AS65020 | ServerCheapへの移管候補 |
+| AS65020 | ServerCheapへの移管候補(旧 alice が使用していた AS) |
 | AS65030 | IONOS |
 | AS65040 | Soichiro新規提案 |
 
@@ -206,6 +206,8 @@ EasyTier の状態取得方法は、固定するバージョンの CLI/API を�
 
 ## 9. aliceからServerCheapへの移行
 
+> **現状(2026-10-27 時点):** alice は Terraform 上すでに廃止済みです(`hardware/alice/` は存在せず、`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載があります)。現行の WireGuard は IONOS 側(`172.31.254.0/24`)です。以下の手順のうち、alice 側の WireGuard・FRR の撤去は完了済みとして扱い、残作業は DNS・監視・CI/CD・ドキュメントの参照と、alice 実体 VPS の停止状況の確認です。
+
 既存リポジトリを確認したところ、`docs/network.md` と `docs/wireguard-network-map-design.md` では alice 側の WireGuard 接続構成に差があります。後者は alice–k8s4 の単一リンクを現状として扱っています。
 
 そのため、設計書の記載だけを根拠に既存トンネルを削除してはいけません。
@@ -235,11 +237,13 @@ EasyTier の状態取得方法は、固定するバージョンの CLI/API を�
 
 ## 11. 未確定事項
 
-本番実装前に確定する必要があるのは、次の4点です。
+本番実装前に確定する必要があるのは、次の点です。
 
 1. ServerCheap のグローバル IP・OS・VPS スペック
 2. Soichiro の LAN CIDR
 3. EasyTier の採用バージョン
 4. 管理端末を EasyTier へ統一するか、Headscale を併用するか
+5. ServerCheap 用 WireGuard のサブネット(旧 alice の `172.31.255.0/24` を再利用するか、新規に割り当てるか)
+6. 旧 alice の実体 VPS の停止状況、および DNS・監視・CI/CD に残る alice 参照
 
 最終的な推奨構成は、EasyTier による P2P/Relay、FRR による拠点間ルーティング、ServerCheap + IONOS の公開2拠点 HA、Keycloak による管理者認証、OpenBao による Secret 管理です。
