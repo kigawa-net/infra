@@ -5,7 +5,7 @@ variable "enabled" {
 }
 
 variable "openbao_node_enabled" {
-  description = "true のときだけ OpenBao を入れる(enabled = true も必要)。false なら WireGuard と journald-limit だけを適用する。TLS 証明書・peers・openbao_deb_sha256 が揃ってから true にする"
+  description = "true のときだけ OpenBao を入れる(enabled = true も必要)。false なら WireGuard と journald-limit だけを適用する。cloudflare_api_token_bitwarden_id・peers・openbao_deb_sha256 が揃ってから true にする"
   type        = bool
   default     = false
 }
@@ -33,22 +33,33 @@ variable "sudo_password_bitwarden_id" {
   default     = "57ba07a6-2ac8-4022-b8ea-b4ef011b362e"
 }
 
-variable "tls_cert_bitwarden_id" {
-  description = "サーバ証明書(PEM)の bws の ID。外部の CA で発行したもの。未設定のままにしている"
+variable "cloudflare_api_token_bitwarden_id" {
+  description = "certbot の DNS-01 に使う Cloudflare の API トークン(kigawa.net の Zone:DNS:Edit のみ、bao-02 の公開 IP に IP 制限)の bws の ID。openbao_node_enabled = true のとき必須。未設定のままにしている"
   type        = string
   default     = ""
 }
 
-variable "tls_key_bitwarden_id" {
-  description = "サーバ秘密鍵(PEM)の bws の ID。未設定のままにしている"
+variable "fqdn" {
+  description = "bao-02 の証明書の名前。certbot が Let's Encrypt から DNS-01 で発行する。/etc/hosts で WireGuard の IP に向ける"
+  type        = string
+  default     = "bao-02.kigawa.net"
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.fqdn))
+    error_message = "fqdn は小文字の FQDN(例: bao-02.kigawa.net)。"
+  }
+}
+
+variable "acme_email" {
+  description = "Let's Encrypt の連絡先メール。空なら --register-unsafely-without-email。実在のアドレスは既定値に書かない(tfvars で渡す)"
   type        = string
   default     = ""
 }
 
-variable "tls_ca_bitwarden_id" {
-  description = "発行元の CA 証明書(PEM)の bws の ID。未設定のままにしている"
-  type        = string
-  default     = ""
+variable "acme_staging" {
+  description = "true なら Let's Encrypt の staging(試験用)を使う。切り替えると、既存の証明書を消して発行し直す"
+  type        = bool
+  default     = false
 }
 
 variable "node_id" {
@@ -82,12 +93,21 @@ variable "wireguard_server_allowed_ips" {
 }
 
 variable "peers" {
-  description = "他の bao ノード(retry_join 先)。bao-02 / bao-03 の node_id と WireGuard の IPv4。未設定のままにしている"
+  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は WireGuard の IPv4。未設定のままにしている"
   type = list(object({
-    node_id = string
+    fqdn    = string
     address = string
   }))
   default = []
+
+  validation {
+    condition = alltrue([
+      for p in var.peers :
+      can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", p.fqdn)) &&
+      can(regex("^(\\d{1,3}\\.){3}\\d{1,3}$", p.address))
+    ])
+    error_message = "peers の fqdn は小文字の FQDN、address は WireGuard の IPv4(単独)。"
+  }
 }
 
 variable "openbao_version" {
