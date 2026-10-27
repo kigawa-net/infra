@@ -292,6 +292,26 @@ variable "soichiro_accepted_prefixes" {
   default     = ["10.255.10.12/32"]
 }
 
+# bao-02(OpenBao の raft voter。IONOS とは別の VPS、207.231.111.196)。spoke として IONOS へ発信する(endpoint なし)。
+# 公開鍵は bao-02 の初回 apply 後に、そのホストの /etc/wireguard/publickey から読んで設定する。
+# 空文字のままの間は、ピアを出さない(hardware/bao-02 の apply だけでは、IONOS の wg0 は変わらない)。
+variable "bao02_wireguard_public_key" {
+  description = "bao-02 の WireGuard 公開鍵(IONOS 用)。bao-02 の初回 apply の後、ホストの /etc/wireguard/publickey を読んで設定する。空文字のままは、ピアを出さない"
+  type        = string
+  default     = "fKCmZnRpDlVxT4VbSKf9m0AYO2mmbeh2BumLZJpJcC4="
+
+  validation {
+    condition     = var.bao02_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.bao02_wireguard_public_key))
+    error_message = "bao02_wireguard_public_key は、空文字か、WireGuard の公開鍵(44文字の base64)にしてください。"
+  }
+}
+
+variable "bao02_wireguard_address" {
+  description = "bao-02 の IONOS 側 WireGuard トンネル内 IP(hardware/bao-02 の wg_address と一致させる。k8s1=.11, k8s2=.12, soichiro=.15, oracle=.14 に続く採番)"
+  type        = string
+  default     = "172.31.254.30"
+}
+
 variable "etcd_allowed_sources" {
   description = "IONOS の Karmada etcd #3(2379/2380)に、WireGuard(wg)内から接続してよい送信元。ufw の既存の `deny 2379:2380/tcp`(公開インターネット向け)より前に、これらの allow を挿入する"
   type        = list(string)

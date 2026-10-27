@@ -18,7 +18,7 @@ Each node is an independent Terraform root module. Use the shared `hardware/run.
 
 ```bash
 # Usage: ./hardware/run.sh <module> <terraform-args...>
-# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare
+# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02
 
 # Initialize (first time or after provider changes)
 ./hardware/run.sh k8s1 init
@@ -38,10 +38,12 @@ hardware/
   run.sh              # 共通wrapper: R2クレデンシャル取得 + terraform実行
   modules/
     k8s-control-plane/  # control-plane共通モジュール
+    openbao-node/       # OpenBao ノード(raft voter)の構築。README 参照
   k8s1/               # control-plane node at 10.0.0.103 (クラスタ初期化ノード)
   k8s2/               # control-plane node at 10.0.0.120
   k8s4/               # control-plane node at 10.0.0.140
   k8s-worker5/        # worker node at 10.0.0.40
+  bao-02/             # OpenBao raft voter(enabled=false の間は何もしない)
 application/          # empty (future use)
 platform/             # empty (future use)
 ```
