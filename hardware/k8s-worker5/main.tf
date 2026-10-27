@@ -49,6 +49,15 @@ data "external" "join_info" {
       "${var.control_plane_ssh_user}@${var.control_plane_host}" \
       "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
 
+    # クラスタの CA 証明書(公開情報)。kubeadm join の discovery-file に、CA をピン留めするために使う
+    # (kube-public/cluster-info が無くても、join できる。2026-10-27、cluster-info が存在せず、join が失敗した)。
+    ca_b64=$(ssh \
+      -i "$tmpkey" \
+      -o StrictHostKeyChecking=no \
+      -o BatchMode=yes \
+      "${var.control_plane_ssh_user}@${var.control_plane_host}" \
+      "echo '$sudo_pass' | sudo -S base64 -w0 /etc/kubernetes/pki/ca.crt 2>/dev/null")
+
     rm -f "$tmpkey"
 
     token=$(printf '%s' "$cmd" | grep -oP '(?<=--token )\S+')
@@ -57,7 +66,12 @@ data "external" "join_info" {
       echo "join_info: kubeadm token create did not return token/ca_cert_hash" >&2
       exit 1
     fi
-    printf '{"token":"%s","ca_cert_hash":"%s"}' "$token" "$hash"
+    # base64 された PEM の証明書であること(先頭が LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t = "-----BEGIN CERTIFICATE-----")
+    case "$ca_b64" in
+      LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t*) ;;
+      *) echo "join_info: could not read the cluster CA certificate from the control plane" >&2; exit 1 ;;
+    esac
+    printf '{"token":"%s","ca_cert_hash":"%s","ca_data":"%s"}' "$token" "$hash" "$ca_b64"
   EOT
   ]
 }
@@ -66,7 +80,7 @@ resource "null_resource" "worker_node" {
   triggers = {
     host = var.host
     # Bump this value to re-run the provisioning script against an already-joined node.
-    provision_script_version = "2"
+    provision_script_version = "3"
   }
 
   connection {
@@ -130,10 +144,28 @@ resource "null_resource" "worker_node" {
       apt-mark hold kubelet kubeadm kubectl
 
       if [ ! -f /etc/kubernetes/kubelet.conf ]; then
-        kubeadm join ${var.k8s_endpoint}:6443 \
-          --token ${data.external.join_info.result.token} \
-          --discovery-token-ca-cert-hash ${data.external.join_info.result.ca_cert_hash} \
-           || { echo "kubeadm join failed with exit code: $?"; exit 1; }
+        # kube-public/cluster-info を使わない join(discovery-file)。CA をファイルでピン留めし、ブートストラップのトークンで TLS bootstrap する。
+        # cluster-info が無い(2026-10-27、このクラスタでは存在しなかった)と、トークン + CA ハッシュ方式の join は、5 分待って失敗する。
+        cat > /tmp/kubeadm-discovery.yaml <<DISCOVERY
+apiVersion: v1
+kind: Config
+clusters:
+- name: kubernetes
+  cluster:
+    certificate-authority-data: ${data.external.join_info.result.ca_data}
+    server: https://${var.k8s_endpoint}:6443
+contexts:
+- name: kubernetes
+  context:
+    cluster: kubernetes
+current-context: kubernetes
+DISCOVERY
+        chmod 600 /tmp/kubeadm-discovery.yaml
+        kubeadm join \
+          --discovery-file /tmp/kubeadm-discovery.yaml \
+          --tls-bootstrap-token ${data.external.join_info.result.token} \
+           || { echo "kubeadm join failed with exit code: $?"; rm -f /tmp/kubeadm-discovery.yaml; exit 1; }
+        rm -f /tmp/kubeadm-discovery.yaml
       fi
 
       # --- containerd image garbage collection ---
