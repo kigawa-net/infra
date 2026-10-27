@@ -137,9 +137,9 @@ variable "easytier_enabled" {
 }
 
 variable "easytier_network_secret_bitwarden_id" {
-  description = "EasyTier のネットワーク Secret の bws の ID。ionos と bao-02 で同じ値を使う。未登録のまま(空)"
+  description = "EasyTier のネットワーク Secret の bws の ID(easytier-network-secret、2026-10-28 登録)。ionos と bao-02 で同じ値を使う"
   type        = string
-  default     = ""
+  default     = "698da56c-a169-4837-93a1-b4f00107b513"
 }
 
 variable "easytier_network_name" {
