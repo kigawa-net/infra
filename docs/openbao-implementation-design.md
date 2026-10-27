@@ -59,11 +59,21 @@ docs/
 | ログ | journald → Loki。既存 `modules/journald-limit` を適用して肥大を防ぐ |
 | ロールバック | 既存 setup script と同じく `trap cleanup EXIT`。**ただし `/var/lib/openbao` は cleanup で消さない**(初期化後の誤削除防止。初回構築失敗時のみ明示フラグで消す) |
 
-### TLS
+### TLS(決定: Let's Encrypt + DNS-01、ノードごとに証明書を発行)
 
-- ノード間・クライアント向けとも、**OpenBao の外側にある CA** で発行する(OpenBao 自身の PKI に依存しない。さもないと循環する)。
-- CA: 初期は `step-ca` 相当 or 手元の offline root + 中間 CA を `bws` ではなくオフライン保管。サーバ証明書は 90 日、更新は `openbao-node` module が証明書を差し替えて `SIGHUP`(OpenBao は TLS 証明書を `SIGHUP` で再読込できる)。
-- 内部 TLS を OpenBao PKI Engine + cert-manager で出すのは **Phase 6**。bao ノード自身の証明書は対象外にする。
+OpenBao の外側にある CA(公開 CA の Let's Encrypt)で発行する。OpenBao 自身の PKI には依存しない(循環の防止)。
+
+- **名前**: `bao-0N.kigawa.net`(ノードごとに別の証明書)。公開の CT ログに名前が載る。IP は載らない。名前の解決は、`/etc/hosts` か内部 DNS(knot)で WireGuard 内の IP に向ける。公開 DNS に A レコードは置かない。
+- **発行・更新はノード自身が行う**(`certbot` + `python3-certbot-dns-cloudflare`、systemd timer)。証明書の秘密鍵はノードの外に出ない。**Terraform の state にも bws にも、TLS の秘密鍵は入らない**(これで、`openbao-node` が `tls_key_pem` を state に持つ問題がなくなる)。更新後は、deploy hook で OpenBao に `SIGHUP`(再読込)を送る。
+- **DNS-01 のトークンの権限を絞る**: `_acme-challenge.bao-0N.kigawa.net` を、**専用ゾーンへ CNAME で委任**する。Cloudflare のトークンは、その専用ゾーンの DNS 編集だけ(kigawa.net 本体は書き換えられない)。トークンは bws に置く(OpenBao には置かない。循環の防止)。
+- **`retry_join` は FQDN で指す**(`https://bao-0N.kigawa.net:8200`)。公開 CA の証明書なので、`leader_ca_cert_file` は不要(OS の信頼ストアで検証する)。
+- **Raft のノード間通信(8201)** は、OpenBao が自己管理する証明書で行う。外部 CA の対象ではない。
+
+**API の公開(Cloudflare Access / OAuth proxy)**: GitHub Actions(JWT Auth)や人間の CLI から、WireGuard の外で API に届かせるため、API(8200)は `kigawa.net` の名前で、Cloudflare Access または oauth2-proxy を前に置く方針。次の線は守る。
+- bao ノードの 8200/8201 は、引き続き **WireGuard 上だけ**で待ち受ける(ufw でも wg0 だけを許可)。公開側の入口は、別の経路(Cloudflare Tunnel など)にする。ノードの公開 IP に、8200 を開けない。
+- Access / proxy は、OpenBao の認証・認可(OIDC / JWT / Policy)の**代わりではなく、その手前の追加の層**として扱う。
+- 非ブラウザのクライアント(GitHub Actions、ESO)には、Access のサービストークンなどが必要になる。具体的な構成は、Phase 2(認証)の設計で決める。
+- 内部 TLS を OpenBao PKI Engine + cert-manager で出すのは **Phase 6**。bao ノード自身の証明書は対象外。
 
 ### ネットワーク(WireGuard)
 
@@ -211,7 +221,7 @@ issue は **フェーズごとの親 issue + 1 PR 1 テーマの子 issue** に�
 1. **第3拠点のホストと WireGuard 経路**(Phase 1 の着手条件)。
 2. **Object Lock 対応の S3 互換ストレージの選定**(R2 不可)。候補: AWS S3 / Backblaze B2 / Wasabi など。費用と、`bws` に置く資格情報の分離(etcd-backup の R2 トークンと別)。
 3. ~~OIDC プロバイダ~~ 確定: Google / Microsoft(復旧経路を兼ねる)+ Keycloak(K8s 上、日常利用のみ)。§5 参照。
-4. **外部 CA**(offline root の保管)と、証明書の更新運用。
+4. ~~外部 CA~~ 確定: Let's Encrypt + DNS-01(§2 TLS)。残り: DNS-01 の CNAME 委任先の専用ゾーン名、API の公開経路(Cloudflare Access / Tunnel)の具体的な構成。
 5. **Auto Unseal への移行判断**(§6 の手動 Unseal 運用負荷)。
 6. **バックアップ専用ホスト**(コストと置き場)。
 7. 既存 `bws`(Bitwarden Secrets)から OpenBao へ**何を移すか、何を移さないか**(§1 の循環禁止リスト)。
