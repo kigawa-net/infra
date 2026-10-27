@@ -92,6 +92,13 @@ EasyTier の役割は次の3つです。
 
 ただし、EasyTier の Relay 切替と直接 P2P への復帰は、採用バージョンで実測する必要があります。
 
+採用バージョン(2026-10-28 決定): **v2.6.4**(2026-05-12 公開)。GitHub の latest(prerelease でない最新)であり、v2.7.0 は prerelease のため採用しない。v2.7.0 は dev でのみ検証対象とする。配布 zip の SHA-256(自分でダウンロードして計算し、GitHub の digest とも一致を確認した値):
+
+| アーキテクチャ | SHA-256 |
+| --- | --- |
+| x86_64 | `61b659eaedba658fa66fe47d17e1426cdd77e5d02fa15fed447bb4357c09dfd6` |
+| aarch64 | `f533ec25a7ea714e09f645615012200278058525795cc3bb690ff011aec1a70f` |
+
 ### 4.2 FRR/BGP：拠点間経路制御
 
 既存リポジトリでは、Kubernetes コントロールプレーンの BGP は 2026年10月6日に BIRD から FRR へ移行しています。したがって、FRR を標準ルーティングデーモンとして継続します。
@@ -241,9 +248,8 @@ EasyTier の状態取得方法は、固定するバージョンの CLI/API を�
 
 1. ServerCheap のグローバル IP・OS・VPS スペック
 2. Soichiro の LAN CIDR
-3. EasyTier の採用バージョン
-4. 管理端末を EasyTier へ統一するか、Headscale を併用するか
-5. ServerCheap 用 WireGuard のサブネット(旧 alice の `172.31.255.0/24` を再利用するか、新規に割り当てるか)
-6. 旧 alice の実体 VPS の停止状況、および DNS・監視・CI/CD に残る alice 参照
+3. 管理端末を EasyTier へ統一するか、Headscale を併用するか
+4. ServerCheap 用 WireGuard のサブネット(旧 alice の `172.31.255.0/24` を再利用するか、新規に割り当てるか)
+5. 旧 alice の実体 VPS の停止状況、および DNS・監視・CI/CD に残る alice 参照
 
 最終的な推奨構成は、EasyTier による P2P/Relay、FRR による拠点間ルーティング、ServerCheap + IONOS の公開2拠点 HA、Keycloak による管理者認証、OpenBao による Secret 管理です。
