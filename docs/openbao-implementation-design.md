@@ -53,7 +53,8 @@ docs/
 | データ | ローカル SSD の `/var/lib/openbao`(Ceph・NFS 禁止)。単独ディスクの `ext4` |
 | Storage | `storage "raft"`(`node_id`、`retry_join` に他 2 ノードの TLS URL) |
 | Listener | `:8200`(API)・`:8201`(cluster)ともに `tls_min_version = "tls13"`。bind は **WireGuard IP とループバックのみ**(公開 IF に bind しない) |
-| `api_addr` / `cluster_addr` | WireGuard 上の固定 IP |
+| `api_addr` | `https://<fqdn>:8200`(`bao-0N.kigawa.net`。TLS の証明書の名前と合わせる) |
+| `cluster_addr` | WireGuard 上の固定 IP |
 | テレメトリ | `telemetry { unauthenticated_metrics_access = false }`。Prometheus は専用 token(`sys/metrics` read のみ)で scrape |
 | ホストFW | 8200: 認証済みクライアントの経路のみ / 8201: bao ノード間のみ / 22: 管理網のみ(全体設計 §3 の表どおり) |
 | ログ | journald → Loki。既存 `modules/journald-limit` を適用して肥大を防ぐ |
