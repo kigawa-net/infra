@@ -65,7 +65,9 @@ OpenBao の外側にある CA(公開 CA の Let's Encrypt)で発行する。Open
 
 - **名前**: `bao-0N.kigawa.net`(ノードごとに別の証明書)。公開の CT ログに名前が載る。IP は載らない。名前の解決は、`/etc/hosts` か内部 DNS(knot)で WireGuard 内の IP に向ける。公開 DNS に A レコードは置かない。
 - **発行・更新はノード自身が行う**(`certbot` + `python3-certbot-dns-cloudflare`、systemd timer)。証明書の秘密鍵はノードの外に出ない。**Terraform の state にも bws にも、TLS の秘密鍵は入らない**(これで、`openbao-node` が `tls_key_pem` を state に持つ問題がなくなる)。更新後は、deploy hook で OpenBao に `SIGHUP`(再読込)を送る。
-- **DNS-01 のトークンの権限を絞る**: `_acme-challenge.bao-0N.kigawa.net` を、**専用ゾーンへ CNAME で委任**する。Cloudflare のトークンは、その専用ゾーンの DNS 編集だけ(kigawa.net 本体は書き換えられない)。トークンは bws に置く(OpenBao には置かない。循環の防止)。
+- **DNS-01 のトークン(決定: 専用ゾーンは作らず、`kigawa.net` ゾーンのトークンを使う)**: Cloudflare のトークンは、`kigawa.net` ゾーンの「DNS 編集」だけの権限にする(アカウント全体や、他のゾーンには届かない)。**トークンは、Cloudflare の「クライアント IP アドレスのフィルタ」で、bao ノードの公開 IP だけに制限する**(bao-02 は 207.231.111.196)。トークンは bws に置く(OpenBao には置かない。循環の防止)。
+  - **受け入れるリスク**: Cloudflare のトークンは、レコード名では権限を絞れない。bao ノードの root が奪われると、`kigawa.net` の DNS レコードを書き換えられる。IP 制限と、ノードの堅牢化(SSH は鍵のみ、ufw)で軽減する。専用ゾーンへの CNAME 委任なら、この影響範囲を狭められる。**将来、別ドメインを用意できたときに、委任へ移行できる**(`certbot` の設定は、トークンと `--dns-cloudflare-credentials` の向き先を変えるだけ)。
+  - **bao-01(K8s 上)**: certbot ではなく cert-manager(Cloudflare の DNS-01)で発行する。トークンは、K8s の Secret に置き、bao-01 の Namespace 限定にする。この Secret は OpenBao に依存させない。
 - **`retry_join` は FQDN で指す**(`https://bao-0N.kigawa.net:8200`)。公開 CA の証明書なので、`leader_ca_cert_file` は不要(OS の信頼ストアで検証する)。
 - **Raft のノード間通信(8201)** は、OpenBao が自己管理する証明書で行う。外部 CA の対象ではない。
 
@@ -221,7 +223,7 @@ issue は **フェーズごとの親 issue + 1 PR 1 テーマの子 issue** に�
 1. **第3拠点のホストと WireGuard 経路**(Phase 1 の着手条件)。
 2. **Object Lock 対応の S3 互換ストレージの選定**(R2 不可)。候補: AWS S3 / Backblaze B2 / Wasabi など。費用と、`bws` に置く資格情報の分離(etcd-backup の R2 トークンと別)。
 3. ~~OIDC プロバイダ~~ 確定: Google / Microsoft(復旧経路を兼ねる)+ Keycloak(K8s 上、日常利用のみ)。§5 参照。
-4. ~~外部 CA~~ 確定: Let's Encrypt + DNS-01(§2 TLS)。残り: DNS-01 の CNAME 委任先の専用ゾーン名、API の公開経路(Cloudflare Access / Tunnel)の具体的な構成。
+4. ~~外部 CA~~ 確定: Let's Encrypt + DNS-01(§2 TLS)。残り: API の公開経路(Cloudflare Access / Tunnel)の具体的な構成。DNS-01 のトークンは kigawa.net ゾーンの DNS 編集 + IP 制限(委任は将来)。
 5. **Auto Unseal への移行判断**(§6 の手動 Unseal 運用負荷)。
 6. **バックアップ専用ホスト**(コストと置き場)。
 7. 既存 `bws`(Bitwarden Secrets)から OpenBao へ**何を移すか、何を移さないか**(§1 の循環禁止リスト)。
