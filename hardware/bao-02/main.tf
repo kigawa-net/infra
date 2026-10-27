@@ -169,3 +169,20 @@ module "journald_limit" {
   ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 }
+
+# 公開 IP の VPS の SSH と受信ファイアウォールを固める(kigawa-net/infra#337)。
+# WireGuard の後に適用する(ufw が wg0 を参照するため)。
+module "host_hardening" {
+  source     = "../modules/host-hardening"
+  count      = var.enabled ? 1 : 0
+  depends_on = [module.wireguard]
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key[0].result.value
+  sudo_password   = data.external.sudo_password[0].result.value
+
+  # WireGuard のハブ(IONOS)。wireguard_server_endpoint(host:port)のホスト部分
+  wireguard_hub_address  = split(":", var.wireguard_server_endpoint)[0]
+  tcp_ports_on_wireguard = [8200, 8201]
+}
