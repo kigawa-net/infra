@@ -138,7 +138,9 @@ ServerCheap と IONOS は別プロバイダーに配置し、単一事業者障�
 | FRR | 有効 | 既存維持 |
 | HAProxy | 旧aliceから移行 | 既存維持 |
 | Prometheus Exporter | 有効 | 有効 |
-| OpenBao本体 | 原則配置しない | 原則配置しない |
+| OpenBao本体 | bao-02 として配置(例外、下記) | 原則配置しない |
+
+**ServerCheap の実体は `hardware/bao-02`(`207.231.111.196`)です(2026-10-28 確認)。** bao-02 は OpenBao の raft voter 2 台目でもあるため、「公開ゲートウェイに OpenBao 本体は原則配置しない」方針の例外とします(bao-01 は K8s 上の StatefulSet。`docs/openbao-implementation-design.md` §2)。同居のリスクとして、OpenBao の障害や保守が EasyTier の公開 Peer に波及しうること、逆に公開 Peer 側の負荷・侵害が OpenBao に及びうることがあります。OpenBao は WireGuard(`wg0`)上の 8200/8201 だけで待ち受け、EasyTier は 11010 だけを公開するので、待ち受けは分離されています。公開 Peer の負荷が OpenBao に影響する兆候が出たら、ServerCheap を別 VPS に分けることを検討します。
 
 公開サービスの HTTP/HTTPS・Minecraft などの転送は、EasyTier の Relay HA とは別に設計します。
 
@@ -246,7 +248,7 @@ EasyTier の状態取得方法は、固定するバージョンの CLI/API を�
 
 本番実装前に確定する必要があるのは、次の点です。
 
-1. ServerCheap のグローバル IP・OS・VPS スペック
+1. ServerCheap(bao-02)の OS・VPS スペック(グローバル IP は `207.231.111.196` で確定)
 2. Soichiro の LAN CIDR
 3. 管理端末を EasyTier へ統一するか、Headscale を併用するか
 4. ServerCheap 用 WireGuard のサブネット(旧 alice の `172.31.255.0/24` を再利用するか、新規に割り当てるか)
