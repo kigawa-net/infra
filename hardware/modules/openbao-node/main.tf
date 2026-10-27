@@ -16,7 +16,7 @@ terraform {
 #   - 証明書の変更は SIGHUP で再読込する。設定・unit の変更は再起動する。
 
 locals {
-  deb_url = "https://github.com/openbao/openbao/releases/download/v${var.openbao_version}/bao_${var.openbao_version}_linux_amd64.deb"
+  deb_url = "https://github.com/openbao/openbao/releases/download/v${var.openbao_version}/openbao_${var.openbao_version}_linux_amd64.deb"
 
   # 自分自身は retry_join に入れない(raft の join 先は、他のノードだけ)
   retry_peers = [for p in var.peers : p if p.node_id != var.node_id]

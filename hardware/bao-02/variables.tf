@@ -91,15 +91,15 @@ variable "peers" {
 }
 
 variable "openbao_version" {
-  description = "固定する OpenBao のバージョン(X.Y.Z)。latest は使わない"
+  description = "固定する OpenBao のバージョン(X.Y.Z)。latest は使わない。2.7.2 は 2026-10-26 のセキュリティ修正リリース(GHSA 5 件)"
   type        = string
-  default     = "2.1.0"
+  default     = "2.7.2"
 }
 
 variable "openbao_deb_sha256" {
-  description = "公式の .deb の SHA256。公式の checksum を確認してから設定する。未設定のままにしている"
+  description = "公式の .deb(openbao_2.7.2_linux_amd64.deb)の SHA256。リリースの checksums.txt と、ダウンロードした実物の sha256sum の両方で一致を確認した(2026-10-27)。openbao_version を上げるときは、必ず更新する"
   type        = string
-  default     = ""
+  default     = "42bd0890a8e2060e5f29410ea828ee047aa2de21028045731a0516d5a532928c"
 }
 
 variable "wipe_data_on_failure" {

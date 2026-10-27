@@ -53,7 +53,7 @@ OpenBao のノード(raft の voter 1 台)を、SSH provisioner で構築する 
 | `tls_cert_pem` / `tls_key_pem` / `tls_ca_pem` | `""` | `sensitive`。空では apply できない(precondition) |
 | `wipe_data_on_failure` | `false` | 失敗時に `/var/lib/openbao` を消すか |
 
-`.deb` の URL は `https://github.com/openbao/openbao/releases/download/v<version>/bao_<version>_linux_amd64.deb` を使う。
+`.deb` の URL は `https://github.com/openbao/openbao/releases/download/v<version>/openbao_<version>_linux_amd64.deb` を使う。
 
 ## ネットワーク・ファイアウォール(この module の対象外)
 
@@ -78,6 +78,6 @@ bash hardware/modules/openbao-node/test-openbao-node.sh
 
 ## 未確定・要確認
 
-- `openbao_version` の既定(2.1.0)と、`openbao_deb_sha256`(未設定)。実際のリリースの checksum を確認してから設定すること。
+- ``.deb` のバイナリは `usr/bin/bao`(2.7.2 の実物で確認済み)。.deb は apt では入れず `dpkg-deb -x` で取り出す(パッケージは `openbao` で `bao` と Conflicts)。
 - `.deb` の中の `usr/bin/bao` のパス。公式パッケージの構成が違う場合は、setup script の `dpkg-deb -x` 後のパスを直す。
 - 証明書・秘密鍵の PEM は Terraform の state に入る(`data "external"` の結果)。既存の SSH 鍵と同じ扱い。state の暗号化は、R2 backend の方針に従う。
