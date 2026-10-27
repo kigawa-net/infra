@@ -3,7 +3,7 @@
 # 初期化(bao operator init)は、この script では行わない。鍵・root token は、どこにも保存しない。
 #
 # 必要な環境変数:
-#   OPENBAO_VERSION       固定のバージョン(例: 2.1.0)。bao の版を確認する
+#   OPENBAO_VERSION       固定のバージョン(例: 2.7.2)。bao の版を確認する
 #   DEB_URL               公式の .deb の URL
 #   DEB_SHA256            .deb の SHA256(一致しなければ何もしない)
 #   STAGE_DIR             Terraform が配置した一時ディレクトリ(設定・unit・証明書)。終了時に消す

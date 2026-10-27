@@ -48,7 +48,7 @@ variable "peers" {
 }
 
 variable "openbao_version" {
-  description = "固定する OpenBao のバージョン(例: 2.1.0)。latest は使わない"
+  description = "固定する OpenBao のバージョン(例: 2.7.2)。latest は使わない"
   type        = string
 
   validation {
@@ -58,7 +58,7 @@ variable "openbao_version" {
 }
 
 variable "openbao_deb_sha256" {
-  description = "公式の .deb(bao_<version>_linux_amd64.deb)の SHA256。空のままでは apply できない(precondition)"
+  description = "公式の .deb(openbao_<version>_linux_amd64.deb)の SHA256。空のままでは apply できない(precondition)"
   type        = string
   default     = ""
 
