@@ -34,9 +34,9 @@ variable "sudo_password_bitwarden_id" {
 }
 
 variable "cloudflare_api_token_bitwarden_id" {
-  description = "certbot の DNS-01 に使う Cloudflare の API トークン(kigawa.net の Zone:DNS:Edit のみ、bao-02 の公開 IP に IP 制限)の bws の ID。openbao_node_enabled = true のとき必須。未設定のままにしている"
+  description = "certbot の DNS-01 に使う Cloudflare の API トークン(kigawa.net の Zone:DNS:Edit のみ、bao-02 の公開 IP に IP 制限)の bws の ID(bao-cloudflare-dns01-token)。openbao_node_enabled = true のとき必須"
   type        = string
-  default     = ""
+  default     = "592c8dfd-1622-47cb-abb9-b4f00103c2a3"
 }
 
 variable "fqdn" {
