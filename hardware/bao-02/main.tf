@@ -1,6 +1,12 @@
 # bao-02(OpenBao の raft voter 2 台目(IONOS の別 VPS。bao-01 は K8s 上の StatefulSet)、kigawa-net/infra#327 Phase 1、docs/openbao-implementation-design.md §2)。
+# 段階的な適用: enabled = true だけなら、WireGuard と journald-limit だけを適用する(OpenBao は入れない)。
+# 先に WireGuard を適用して公開鍵を取り出し、ionos にピアを足してから、openbao_node_enabled = true にする。
 # enabled = false(既定)のときは、どのリソースも作らず、Bitwarden にも触れない(plan は no-op)。
 # 実機に適用する前に、host / wg_address / peers / bws の ID / openbao_deb_sha256 を設定すること。
+
+locals {
+  node_enabled = var.enabled && var.openbao_node_enabled
+}
 
 data "external" "ssh_key" {
   count = var.enabled ? 1 : 0
@@ -37,7 +43,7 @@ data "external" "sudo_password" {
 # TLS の証明書・秘密鍵・CA は、外部の CA で発行したものを bws から読む(この IaC では発行しない)。
 # ID が空のときは、Bitwarden に触れずに止める。
 data "external" "tls_cert" {
-  count = var.enabled ? 1 : 0
+  count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../../lib/bws-retry.sh"
@@ -50,7 +56,7 @@ data "external" "tls_cert" {
 }
 
 data "external" "tls_key" {
-  count = var.enabled ? 1 : 0
+  count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../../lib/bws-retry.sh"
@@ -63,7 +69,7 @@ data "external" "tls_key" {
 }
 
 data "external" "tls_ca" {
-  count = var.enabled ? 1 : 0
+  count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../../lib/bws-retry.sh"
@@ -81,20 +87,32 @@ resource "terraform_data" "enable_check" {
 
   lifecycle {
     precondition {
-      condition     = var.host != "" && var.wg_address != "" && var.openbao_deb_sha256 != ""
-      error_message = "enabled = true には host / wg_address / openbao_deb_sha256 の設定が必要。"
+      condition     = var.host != "" && var.wg_address != ""
+      error_message = "enabled = true には host / wg_address の設定が必要。"
     }
     precondition {
       condition     = var.wireguard_server_public_key != ""
       error_message = "enabled = true には wireguard_server_public_key(IONOS hub の公開鍵)の設定が必要。bao-02 は WireGuard 経由でしか raft に参加できない。"
     }
+  }
+}
+
+# OpenBao ノードを入れる前提(openbao_node_enabled = true のとき)。
+resource "terraform_data" "node_check" {
+  count = local.node_enabled ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = var.openbao_deb_sha256 != ""
+      error_message = "openbao_node_enabled = true には openbao_deb_sha256 の設定が必要。"
+    }
     precondition {
       condition     = var.tls_cert_bitwarden_id != "" && var.tls_key_bitwarden_id != "" && var.tls_ca_bitwarden_id != ""
-      error_message = "enabled = true には tls_*_bitwarden_id の設定が必要。"
+      error_message = "openbao_node_enabled = true には tls_*_bitwarden_id の設定が必要。"
     }
     precondition {
       condition     = length(var.peers) > 0
-      error_message = "enabled = true には peers(他のノード)の設定が必要。Raft の join 先が無いと、2 台目以降を参加させられない。"
+      error_message = "openbao_node_enabled = true には peers(他のノード)の設定が必要。Raft の join 先が無いと、2 台目以降を参加させられない。"
     }
   }
 }
@@ -122,8 +140,8 @@ module "wireguard" {
 # WireGuard の設定(wg0 の起動)の後に構築する。wg_address で listen するため、先に wg0 が必要。
 module "openbao_node" {
   source     = "../modules/openbao-node"
-  count      = var.enabled ? 1 : 0
-  depends_on = [module.wireguard]
+  count      = local.node_enabled ? 1 : 0
+  depends_on = [module.wireguard, terraform_data.node_check]
 
   host            = var.host
   ssh_user        = var.ssh_user

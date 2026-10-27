@@ -4,6 +4,12 @@ variable "enabled" {
   default     = false
 }
 
+variable "openbao_node_enabled" {
+  description = "true のときだけ OpenBao を入れる(enabled = true も必要)。false なら WireGuard と journald-limit だけを適用する。TLS 証明書・peers・openbao_deb_sha256 が揃ってから true にする"
+  type        = bool
+  default     = false
+}
+
 variable "host" {
   description = "bao-02 の SSH の接続先(別 VPS のグローバルアドレス)"
   type        = string
