@@ -2,6 +2,8 @@
 
 このドキュメントでは、kigawa-net インフラストラクチャのネットワーク構成について説明します。
 
+> **注記(2026-10-27):** alice は Terraform 上すでに廃止済み(`hardware/alice/` は存在せず、`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載がある)。本書の alice に関する記述は廃止前の設計の履歴であり、現行構成は [IONOS ゲートウェイ設計書](ionos-gateway-design.md) と [全体ネットワーク・VPN基盤設計書](network-vpn-architecture-design.md) を参照する。
+
 ## 概要
 
 本ネットワークは、BGPによる動的ルーティング、VRRP (Keepalived) による高可用性、およびWireGuardによるVPN接続を組み合わせたハイブリッド構成となっています。
