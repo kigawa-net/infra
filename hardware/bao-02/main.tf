@@ -2,7 +2,8 @@
 # 段階的な適用: enabled = true だけなら、WireGuard と journald-limit だけを適用する(OpenBao は入れない)。
 # 先に WireGuard を適用して公開鍵を取り出し、ionos にピアを足してから、openbao_node_enabled = true にする。
 # enabled = false のときは、どのリソースも作らず、Bitwarden にも触れない(plan は no-op)。
-# 実機に適用する前に、host / wg_address / peers / bws の ID / openbao_deb_sha256 を設定すること。
+# 実機に適用する前に、host / wg_address / peers / bws の ID(cloudflare_api_token_bitwarden_id 含む)/ openbao_deb_sha256 を設定すること。
+# TLS の証明書・秘密鍵は、ノード自身が certbot で発行する(Terraform は読まない)。
 
 locals {
   node_enabled = var.enabled && var.openbao_node_enabled
@@ -40,42 +41,17 @@ data "external" "sudo_password" {
   ]
 }
 
-# TLS の証明書・秘密鍵・CA は、外部の CA で発行したものを bws から読む(この IaC では発行しない)。
+# Cloudflare の API トークン(certbot の DNS-01 用。kigawa.net の DNS 編集のみ、IP 制限つき)。
+# TLS の秘密鍵は Terraform を通らない。トークンだけを bws から読む(SSH 鍵と同じく、state には入る)。
 # ID が空のときは、Bitwarden に触れずに止める。
-data "external" "tls_cert" {
+data "external" "cloudflare_api_token" {
   count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
     source "${path.module}/../../lib/bws-retry.sh"
-    if [ -z "${var.tls_cert_bitwarden_id}" ]; then echo "tls_cert_bitwarden_id が未設定" >&2; exit 1; fi
-    value=$(bws_get_value "${var.tls_cert_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "tls_cert: bws secret is empty" >&2; exit 1; fi
-    jq -n --arg value "$value" '{"value": $value}'
-  EOT
-  ]
-}
-
-data "external" "tls_key" {
-  count = local.node_enabled ? 1 : 0
-
-  program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    if [ -z "${var.tls_key_bitwarden_id}" ]; then echo "tls_key_bitwarden_id が未設定" >&2; exit 1; fi
-    value=$(bws_get_value "${var.tls_key_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "tls_key: bws secret is empty" >&2; exit 1; fi
-    jq -n --arg value "$value" '{"value": $value}'
-  EOT
-  ]
-}
-
-data "external" "tls_ca" {
-  count = local.node_enabled ? 1 : 0
-
-  program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    if [ -z "${var.tls_ca_bitwarden_id}" ]; then echo "tls_ca_bitwarden_id が未設定" >&2; exit 1; fi
-    value=$(bws_get_value "${var.tls_ca_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "tls_ca: bws secret is empty" >&2; exit 1; fi
+    if [ -z "${var.cloudflare_api_token_bitwarden_id}" ]; then echo "cloudflare_api_token_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.cloudflare_api_token_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "cloudflare_api_token: bws secret is empty" >&2; exit 1; fi
     jq -n --arg value "$value" '{"value": $value}'
   EOT
   ]
@@ -107,8 +83,8 @@ resource "terraform_data" "node_check" {
       error_message = "openbao_node_enabled = true には openbao_deb_sha256 の設定が必要。"
     }
     precondition {
-      condition     = var.tls_cert_bitwarden_id != "" && var.tls_key_bitwarden_id != "" && var.tls_ca_bitwarden_id != ""
-      error_message = "openbao_node_enabled = true には tls_*_bitwarden_id の設定が必要。"
+      condition     = var.cloudflare_api_token_bitwarden_id != ""
+      error_message = "openbao_node_enabled = true には cloudflare_api_token_bitwarden_id の設定が必要(certbot の DNS-01 に使う Cloudflare のトークン)。"
     }
     precondition {
       condition     = length(var.peers) > 0
@@ -136,8 +112,9 @@ module "wireguard" {
   server_allowed_ips = var.wireguard_server_allowed_ips
 }
 
-# OpenBao ノードの構築(ホスト名・バージョン・TLS は modules/openbao-node を参照)
+# OpenBao ノードの構築(バージョン・TLS は modules/openbao-node を参照)
 # WireGuard の設定(wg0 の起動)の後に構築する。wg_address で listen するため、先に wg0 が必要。
+# TLS の証明書は、ノードが certbot で発行する(fqdn の DNS-01 に、Cloudflare のトークンを使う)。
 module "openbao_node" {
   source     = "../modules/openbao-node"
   count      = local.node_enabled ? 1 : 0
@@ -150,12 +127,13 @@ module "openbao_node" {
 
   node_id              = var.node_id
   wg_address           = var.wg_address
+  fqdn                 = var.fqdn
   peers                = var.peers
   openbao_version      = var.openbao_version
   openbao_deb_sha256   = var.openbao_deb_sha256
-  tls_cert_pem         = data.external.tls_cert[0].result.value
-  tls_key_pem          = data.external.tls_key[0].result.value
-  tls_ca_pem           = data.external.tls_ca[0].result.value
+  cloudflare_api_token = data.external.cloudflare_api_token[0].result.value
+  acme_email           = var.acme_email
+  acme_staging         = var.acme_staging
   wipe_data_on_failure = var.wipe_data_on_failure
 }
 

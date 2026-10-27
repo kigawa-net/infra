@@ -11,21 +11,30 @@ terraform {
 #
 # 範囲と前提:
 #   - 初期化(bao operator init)と unseal は、この module の対象外(手動、別手順)。鍵・root token はどこにも保存しない。
-#   - TLS の証明書・秘密鍵・CA は、この module の外で発行し、変数で渡す(この module は発行しない)。
+#   - TLS の証明書・秘密鍵は、この module を通らない。ノード自身が certbot で Let's Encrypt から発行・更新する
+#     (DNS-01 / Cloudflare)。Terraform が渡すのは Cloudflare の API トークンだけ(README を参照)。
 #   - ホストの FW(8200 / 8201 / 22 の制限)は、この module では扱わない。README を参照。
-#   - 証明書の変更は SIGHUP で再読込する。設定・unit の変更は再起動する。
+#   - 証明書の更新は deploy hook が SIGHUP で再読込する。設定・unit の変更は再起動する。
 
 locals {
   deb_url = "https://github.com/openbao/openbao/releases/download/v${var.openbao_version}/openbao_${var.openbao_version}_linux_amd64.deb"
 
-  # 自分自身は retry_join に入れない(raft の join 先は、他のノードだけ)
-  retry_peers = [for p in var.peers : p if p.node_id != var.node_id]
+  # 自分自身は retry_join に入れない(raft の join 先は、他のノードだけ。fqdn で判定する)
+  retry_peers = [for p in var.peers : p if p.fqdn != var.fqdn]
 
   config = templatefile("${path.module}/files/openbao.hcl.tpl", {
+    fqdn       = var.fqdn
     node_id    = var.node_id
     wg_address = var.wg_address
     peers      = local.retry_peers
   })
+
+  # /etc/hosts の管理ブロック(自分と全ピアの fqdn を、WireGuard の IP に向ける)
+  hosts_lines   = distinct(concat([for p in var.peers : "${p.address} ${p.fqdn}"], ["${var.wg_address} ${var.fqdn}"]))
+  hosts_entries = join("", [for l in local.hosts_lines : "${l}\n"])
+
+  # Cloudflare の資格情報(certbot の dns-cloudflare 用の ini)。内容は STAGE_DIR 経由で渡し、コマンドラインには載せない
+  cloudflare_ini = "dns_cloudflare_api_token = ${var.cloudflare_api_token}\n"
 
   service_unit = <<-UNIT
     [Unit]
@@ -84,9 +93,6 @@ locals {
 
   stage = "/home/${var.ssh_user}/.openbao-node-stage"
 
-  # 証明書・鍵の変更は、SIGHUP で再読込する(設定の変更のように再起動はしない)。ハッシュだけ trigger に入れる
-  tls_hash = sha256(join("", [var.tls_cert_pem, var.tls_key_pem, var.tls_ca_pem]))
-
   # remote-exec の inline は、シバンなしで転送され、dash で動いてしまうため、シバン付きのスクリプトを bash で実行する
   # (node-exporter / journald-limit モジュールと同じ理由)。
   setup_script = file("${path.module}/files/openbao-node-setup.sh")
@@ -100,19 +106,20 @@ resource "null_resource" "openbao_node" {
     deb_sha256           = var.openbao_deb_sha256
     config_sha           = sha256(local.config)
     unit_sha             = sha256(local.service_unit)
-    tls_sha              = local.tls_hash
     setup_sha            = sha256(local.setup_script)
     wipe_data_on_failure = tostring(var.wipe_data_on_failure)
+    fqdn                 = var.fqdn
+    acme_email           = var.acme_email
+    acme_staging         = tostring(var.acme_staging)
+    # トークンの変更で、資格情報の ini を置き直す。トークン本体ではなくハッシュだけを trigger に入れる
+    cloudflare_ini_sha = sha256(local.cloudflare_ini)
+    hosts_sha          = sha256(local.hosts_entries)
   }
 
   lifecycle {
     precondition {
       condition     = can(regex("^[0-9a-f]{64}$", var.openbao_deb_sha256))
       error_message = "openbao_deb_sha256 に、公式の .deb の SHA256(64 桁の 16 進)を設定すること。"
-    }
-    precondition {
-      condition     = var.tls_cert_pem != "" && var.tls_key_pem != "" && var.tls_ca_pem != ""
-      error_message = "TLS の証明書・秘密鍵・CA が空。外部の CA で発行したものを、bws から渡すこと(この module は発行しない)。"
     }
   }
 
@@ -143,23 +150,18 @@ resource "null_resource" "openbao_node" {
   }
 
   provisioner "file" {
-    content     = var.tls_cert_pem
-    destination = "${local.stage}/tls.crt"
+    content     = local.cloudflare_ini
+    destination = "${local.stage}/cloudflare.ini"
   }
 
   provisioner "file" {
-    content     = var.tls_key_pem
-    destination = "${local.stage}/tls.key"
-  }
-
-  provisioner "file" {
-    content     = var.tls_ca_pem
-    destination = "${local.stage}/ca.crt"
+    content     = local.hosts_entries
+    destination = "${local.stage}/hosts.entries"
   }
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
+      "echo '${var.sudo_password}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' FQDN='${var.fqdn}' ACME_EMAIL='${var.acme_email}' ACME_STAGING='${var.acme_staging ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
     ]
   }
 }

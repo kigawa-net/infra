@@ -39,12 +39,21 @@ variable "wg_address" {
 }
 
 variable "peers" {
-  description = "raft の他のノード(retry_join の宛先)。address は WireGuard の IPv4。自分自身が含まれていても無視する"
+  description = "raft の他のノード(retry_join の宛先と /etc/hosts の対応)。fqdn は証明書の名前、address は WireGuard の IPv4。自分自身が含まれていても無視する(fqdn で判定する)"
   type = list(object({
-    node_id = string
+    fqdn    = string
     address = string
   }))
   default = []
+
+  validation {
+    condition = alltrue([
+      for p in var.peers :
+      can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", p.fqdn)) &&
+      can(regex("^(\\d{1,3}\\.){3}\\d{1,3}$", p.address))
+    ])
+    error_message = "peers の fqdn は小文字の FQDN、address は WireGuard の IPv4(単独)。"
+  }
 }
 
 variable "openbao_version" {
@@ -68,25 +77,42 @@ variable "openbao_deb_sha256" {
   }
 }
 
-variable "tls_cert_pem" {
-  description = "サーバ証明書(PEM)。外部の CA で発行したもの。bws から渡す"
+variable "fqdn" {
+  description = "このノードの証明書の名前(例: bao-02.kigawa.net)。ノード自身が certbot で Let's Encrypt から DNS-01 により発行する。/etc/hosts で WireGuard の IP に向ける"
   type        = string
-  sensitive   = true
-  default     = ""
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.fqdn))
+    error_message = "fqdn は小文字の FQDN(例: bao-02.kigawa.net)。"
+  }
 }
 
-variable "tls_key_pem" {
-  description = "サーバ秘密鍵(PEM)。0600 openbao 所有で配置する"
+variable "cloudflare_api_token" {
+  description = "Cloudflare の API トークン(kigawa.net ゾーンの Zone:DNS:Edit のみ。Cloudflare 側で、クライアント IP を bao ノードの公開 IP に制限する)。ノードの /etc/letsencrypt/cloudflare.ini に 0600 root で置く。sensitive だが、SSH 鍵と同じく Terraform の state には入る"
   type        = string
   sensitive   = true
-  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]+$", var.cloudflare_api_token))
+    error_message = "cloudflare_api_token は英数字・_・- のみ(ini に書くため、他の文字は受け付けない)。値はエラーに含めない。"
+  }
 }
 
-variable "tls_ca_pem" {
-  description = "発行元の CA 証明書(PEM)。ピアの検証に使う(retry_join の leader_ca_cert_file)"
+variable "acme_email" {
+  description = "Let's Encrypt のアカウントの連絡先メール。空のときは --register-unsafely-without-email で登録する(期限切れなどの通知が届かない)。実在のアドレスは、既定値に書かず、呼び出し側から渡す"
   type        = string
-  sensitive   = true
   default     = ""
+
+  validation {
+    condition     = var.acme_email == "" || can(regex("^[^@\\s'\"]+@[^@\\s'\"]+\\.[^@\\s'\"]+$", var.acme_email))
+    error_message = "acme_email は空、またはメールアドレス形式(引用符や空白は不可)。"
+  }
+}
+
+variable "acme_staging" {
+  description = "true のとき、Let's Encrypt の staging を使う(試験用。ブラウザ等では信頼されない証明書。レート制限が緩い)。切り替えると、既存の証明書を消して発行し直す"
+  type        = bool
+  default     = false
 }
 
 variable "wipe_data_on_failure" {

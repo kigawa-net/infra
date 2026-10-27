@@ -1,13 +1,14 @@
 # OpenBao の設定(kigawa-net/infra、hardware/modules/openbao-node が描画する)。手で編集しない。
 # 変更は Terraform 側(変数)で行い、適用すると再起動する。
-# 証明書(/etc/openbao/tls)は、この設定の外で配置する。秘密鍵をこのファイルに入れない。
+# 証明書(/etc/openbao/tls)は、ノード自身が certbot で発行・更新する。秘密鍵をこのファイルに入れない。
 
 ui            = false
 log_format    = "json"
 disable_mlock = false
 
-# クラスタ内のクライアント・ピアが使う固定アドレス(WireGuard 上)
-api_addr     = "https://${wg_address}:8200"
+# api_addr は証明書の名前(fqdn。/etc/hosts で WireGuard の IP に向けている)
+# cluster_addr は WireGuard 上の固定 IP(8201 はピア同士の raft 通信)
+api_addr     = "https://${fqdn}:8200"
 cluster_addr = "https://${wg_address}:8201"
 
 storage "raft" {
@@ -15,9 +16,9 @@ storage "raft" {
   node_id = "${node_id}"
 %{ for p in peers ~}
 
+  # ピアの証明書は公開 CA(Let's Encrypt)で発行されるので、OS の信頼ストアで検証する(leader_ca_cert_file は不要)
   retry_join {
-    leader_api_addr     = "https://${p.address}:8200"
-    leader_ca_cert_file = "/etc/openbao/tls/ca.crt"
+    leader_api_addr = "https://${p.fqdn}:8200"
   }
 %{ endfor ~}
 }
