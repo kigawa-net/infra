@@ -53,17 +53,30 @@ docs/
 | データ | ローカル SSD の `/var/lib/openbao`(Ceph・NFS 禁止)。単独ディスクの `ext4` |
 | Storage | `storage "raft"`(`node_id`、`retry_join` に他 2 ノードの TLS URL) |
 | Listener | `:8200`(API)・`:8201`(cluster)ともに `tls_min_version = "tls13"`。bind は **WireGuard IP とループバックのみ**(公開 IF に bind しない) |
-| `api_addr` / `cluster_addr` | WireGuard 上の固定 IP |
+| `api_addr` | `https://<fqdn>:8200`(`bao-0N.kigawa.net`。TLS の証明書の名前と合わせる) |
+| `cluster_addr` | WireGuard 上の固定 IP |
 | テレメトリ | `telemetry { unauthenticated_metrics_access = false }`。Prometheus は専用 token(`sys/metrics` read のみ)で scrape |
 | ホストFW | 8200: 認証済みクライアントの経路のみ / 8201: bao ノード間のみ / 22: 管理網のみ(全体設計 §3 の表どおり) |
 | ログ | journald → Loki。既存 `modules/journald-limit` を適用して肥大を防ぐ |
 | ロールバック | 既存 setup script と同じく `trap cleanup EXIT`。**ただし `/var/lib/openbao` は cleanup で消さない**(初期化後の誤削除防止。初回構築失敗時のみ明示フラグで消す) |
 
-### TLS
+### TLS(決定: Let's Encrypt + DNS-01、ノードごとに証明書を発行)
 
-- ノード間・クライアント向けとも、**OpenBao の外側にある CA** で発行する(OpenBao 自身の PKI に依存しない。さもないと循環する)。
-- CA: 初期は `step-ca` 相当 or 手元の offline root + 中間 CA を `bws` ではなくオフライン保管。サーバ証明書は 90 日、更新は `openbao-node` module が証明書を差し替えて `SIGHUP`(OpenBao は TLS 証明書を `SIGHUP` で再読込できる)。
-- 内部 TLS を OpenBao PKI Engine + cert-manager で出すのは **Phase 6**。bao ノード自身の証明書は対象外にする。
+OpenBao の外側にある CA(公開 CA の Let's Encrypt)で発行する。OpenBao 自身の PKI には依存しない(循環の防止)。
+
+- **名前**: `bao-0N.kigawa.net`(ノードごとに別の証明書)。公開の CT ログに名前が載る。IP は載らない。名前の解決は、`/etc/hosts` か内部 DNS(knot)で WireGuard 内の IP に向ける。公開 DNS に A レコードは置かない。
+- **発行・更新はノード自身が行う**(`certbot` + `python3-certbot-dns-cloudflare`、systemd timer)。証明書の秘密鍵はノードの外に出ない。**Terraform の state にも bws にも、TLS の秘密鍵は入らない**(これで、`openbao-node` が `tls_key_pem` を state に持つ問題がなくなる)。更新後は、deploy hook で OpenBao に `SIGHUP`(再読込)を送る。
+- **DNS-01 のトークン(決定: 専用ゾーンは作らず、`kigawa.net` ゾーンのトークンを使う)**: Cloudflare のトークンは、`kigawa.net` ゾーンの「DNS 編集」だけの権限にする(アカウント全体や、他のゾーンには届かない)。**トークンは、Cloudflare の「クライアント IP アドレスのフィルタ」で、bao ノードの公開 IP だけに制限する**(bao-02 は 207.231.111.196)。トークンは bws に置く(OpenBao には置かない。循環の防止)。
+  - **受け入れるリスク**: Cloudflare のトークンは、レコード名では権限を絞れない。bao ノードの root が奪われると、`kigawa.net` の DNS レコードを書き換えられる。IP 制限と、ノードの堅牢化(SSH は鍵のみ、ufw)で軽減する。専用ゾーンへの CNAME 委任なら、この影響範囲を狭められる。**将来、別ドメインを用意できたときに、委任へ移行できる**(`certbot` の設定は、トークンと `--dns-cloudflare-credentials` の向き先を変えるだけ)。
+  - **bao-01(K8s 上)**: certbot ではなく cert-manager(Cloudflare の DNS-01)で発行する。トークンは、K8s の Secret に置き、bao-01 の Namespace 限定にする。この Secret は OpenBao に依存させない。
+- **`retry_join` は FQDN で指す**(`https://bao-0N.kigawa.net:8200`)。公開 CA の証明書なので、`leader_ca_cert_file` は不要(OS の信頼ストアで検証する)。
+- **Raft のノード間通信(8201)** は、OpenBao が自己管理する証明書で行う。外部 CA の対象ではない。
+
+**API の公開(Cloudflare Access / OAuth proxy)**: GitHub Actions(JWT Auth)や人間の CLI から、WireGuard の外で API に届かせるため、API(8200)は `kigawa.net` の名前で、Cloudflare Access または oauth2-proxy を前に置く方針。次の線は守る。
+- bao ノードの 8200/8201 は、引き続き **WireGuard 上だけ**で待ち受ける(ufw でも wg0 だけを許可)。公開側の入口は、別の経路(Cloudflare Tunnel など)にする。ノードの公開 IP に、8200 を開けない。
+- Access / proxy は、OpenBao の認証・認可(OIDC / JWT / Policy)の**代わりではなく、その手前の追加の層**として扱う。
+- 非ブラウザのクライアント(GitHub Actions、ESO)には、Access のサービストークンなどが必要になる。具体的な構成は、Phase 2(認証)の設計で決める。
+- 内部 TLS を OpenBao PKI Engine + cert-manager で出すのは **Phase 6**。bao ノード自身の証明書は対象外。
 
 ### ネットワーク(WireGuard)
 
@@ -211,7 +224,7 @@ issue は **フェーズごとの親 issue + 1 PR 1 テーマの子 issue** に�
 1. **第3拠点のホストと WireGuard 経路**(Phase 1 の着手条件)。
 2. **Object Lock 対応の S3 互換ストレージの選定**(R2 不可)。候補: AWS S3 / Backblaze B2 / Wasabi など。費用と、`bws` に置く資格情報の分離(etcd-backup の R2 トークンと別)。
 3. ~~OIDC プロバイダ~~ 確定: Google / Microsoft(復旧経路を兼ねる)+ Keycloak(K8s 上、日常利用のみ)。§5 参照。
-4. **外部 CA**(offline root の保管)と、証明書の更新運用。
+4. ~~外部 CA~~ 確定: Let's Encrypt + DNS-01(§2 TLS)。残り: API の公開経路(Cloudflare Access / Tunnel)の具体的な構成。DNS-01 のトークンは kigawa.net ゾーンの DNS 編集 + IP 制限(委任は将来)。
 5. **Auto Unseal への移行判断**(§6 の手動 Unseal 運用負荷)。
 6. **バックアップ専用ホスト**(コストと置き場)。
 7. 既存 `bws`(Bitwarden Secrets)から OpenBao へ**何を移すか、何を移さないか**(§1 の循環禁止リスト)。
