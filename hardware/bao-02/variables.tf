@@ -1,7 +1,7 @@
 variable "enabled" {
-  description = "false(既定)のときは、何も作らず、Bitwarden にも触れない。実機に適用する準備ができてから true にする"
+  description = "false のときは、何も作らず、Bitwarden にも触れない。WireGuard と journald-limit は適用済み(2026-10-27)なので true。OpenBao は openbao_node_enabled で別に制御する"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "openbao_node_enabled" {

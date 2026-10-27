@@ -1,7 +1,7 @@
 # bao-02(OpenBao の raft voter 2 台目(IONOS の別 VPS。bao-01 は K8s 上の StatefulSet)、kigawa-net/infra#327 Phase 1、docs/openbao-implementation-design.md §2)。
 # 段階的な適用: enabled = true だけなら、WireGuard と journald-limit だけを適用する(OpenBao は入れない)。
 # 先に WireGuard を適用して公開鍵を取り出し、ionos にピアを足してから、openbao_node_enabled = true にする。
-# enabled = false(既定)のときは、どのリソースも作らず、Bitwarden にも触れない(plan は no-op)。
+# enabled = false のときは、どのリソースも作らず、Bitwarden にも触れない(plan は no-op)。
 # 実機に適用する前に、host / wg_address / peers / bws の ID / openbao_deb_sha256 を設定すること。
 
 locals {
