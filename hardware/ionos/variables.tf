@@ -535,9 +535,9 @@ variable "easytier_overlay_allow" {
 # OpenBao の Raft スナップショットの退避(modules/openbao-backup、設計書 §7)。
 # false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。B2 のバケット・age の公開鍵・AppRole を用意してから true にする。
 variable "openbao_backup_enabled" {
-  description = "true のときだけ、OpenBao のバックアップ(B2 へ退避)を入れる。以下の bws の ID と、age の公開鍵が必要。有効化は、README の手順を終えてから"
+  description = "有効化: 2026-10-28(最初のバックアップが成功。B2 へ 4 世代)。true のときだけ、OpenBao のバックアップ(B2 へ退避)を入れる。以下の bws の ID と、age の公開鍵が必要。有効化は、README の手順を終えてから"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "openbao_backup_b2_endpoint" {
