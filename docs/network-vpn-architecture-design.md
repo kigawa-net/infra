@@ -95,11 +95,13 @@ EasyTier の役割は次の3つです。
 | 2026-10-28 | ionos(`10.250.0.2`)と bao-02 / ServerCheap(`10.250.0.1`)に EasyTier v2.6.4 を導入(#351・#357・#361) | 両ノードで `easytier.service` が `active`。ufw で 11010/tcp・udp を許可 |
 | 2026-10-28 | 公開 Peer 2 台の相互接続(`easytier-cli peer`) | p2p(tcp)で直接接続。遅延 11.63ms、パケットロス 0.0% |
 | 2026-10-28 | Overlay からの受信の絞り込み(ufw、#368・#369)。ionos・bao-02 で、Overlay(`10.250.0.0/24`)の送信元を拒否し、許可リストだけを通す | ionos: `DENY IN 10.250.0.0/24` が先頭(許可リストは空)。bao-02: Raft 用の 8200/8201 の allow が deny より前にある。適用後も 3 台が p2p で接続(遅延 11〜35ms、loss 0.0%)、`ping 10.250.0.2` は 3/3 で通る |
+| 2026-10-28 | bao-03(`host-hye1`、`10.250.0.31`)の Overlay からの受信の絞り込み(#376・#377) | bao-03: 8201/tcp・8200/tcp の allow が `DENY IN 10.250.0.0/24` より前(1〜3 番)。`easytier` と `openbao` が `active`。bao-02(遅延 31.77ms)・ionos(同 34.13ms)に p2p で接続、loss 0.0%、`ping 10.250.0.1` は 3/3 |
 
 - 設定ファイル(`/etc/easytier/easytier.toml`、`ipv4` / `dhcp` / `listeners` / `[network_identity]` / `[[peer]]`)の書式は、v2.6.4 で通ることを確認した。
 - 同じ Overlay に、管理者が追加した別のノード(`host-hye1`、`10.250.0.31`)も参加している。
 - Overlay からの受信は、送信元アドレス(`10.250.0.0/24`)で絞っている。インターフェース名で絞るには EasyTier の設定の変更と再起動が要り、メッシュが切れるため。ICMP は ufw の `before.rules` で許可されるので、ping は通る。許可は `easytier_overlay_allow`(既定は空。bao-02 だけ Raft 用に 8200/tcp・8201/tcp)で足し、足したルールは外しても自動では消えない(`ufw delete` が要る)。
-- 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、NAT 配下のノード(Inuyama・Soichiro)の接続、bao-03(`host-hye1`)の Overlay からの受信の絞り込み(現状は対象外)、Overlay 経由の SSH が拒否されること(ufw の順序は確認済み)。
+- bao-02 から bao-03 の Overlay の IP(`bao-03.kigawa.net:8200`)へ、TLS・HTTP とも届くことを確認した。bao-03 は HTTP 503 `Vault is sealed` を返す。OpenBao が未初期化(`bao operator init` と Unseal が未実施。設計書 `docs/openbao-implementation-design.md` §6 のとおり、人間が端末で行う)のためで、ネットワークの異常ではない。このため、OpenBao の Raft のリーダー選出と、`easytier` の再起動が Raft に与える影響は、初期化が済むまで確認できない。
+- 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、NAT 配下のノード(Inuyama・Soichiro)の接続、Overlay 経由の SSH が拒否されること(ufw の順序は確認済み)、OpenBao の Raft のリーダー選出(初期化後)。
 
 両公開ノードを初期接続先として登録し、特定の1台だけに依存しない構成にします。
 
