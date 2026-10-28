@@ -81,9 +81,28 @@ OpenBao の外側にある CA(公開 CA の Let's Encrypt)で発行する。Open
 ### ネットワーク(WireGuard)
 
 - 既存の `modules/wireguard` / `ionos` ハブ構成(`docs/wireguard-network-map-design.md`)に **bao 用のピアとアドレスを追加**する。bao-01(Inuyama)・bao-02(IONOS)は既存網に載せられる。
-- **bao-03 の経路は未設計**。決まるまでの暫定として、bao-03 を IONOS 経由のスポーク接続にするか、第3拠点が決まるまで 2 voter では運用しない(2 voter は片方の停止で書込不能になり、単一ノードより悪い)。
+- **bao-03 は host-hye1(`143.203.220.195`、Debian 13、2 vCPU / 1.9GB)に決定**(2026-10-28、#359 で WireGuard `172.31.254.31/32` を適用済み)。bao-02(ServerCheap、`172.31.254.30`)・bao-03 とも、ハブ(ionos)の WireGuard に `/32` で参加している。bao-01(K8s 上)は、K8s のノード経由の `10.0.0.x` の VIP で届く。
+- **実測の RTT(bao-03 から、2026-10-28)**: ハブ 42.7ms、bao-02(ハブ経由)53.6ms、Inuyama 約 197ms。bao-02 → Inuyama は約 167ms。
 - 重要: 既存の WireGuard 設計メモの注意(同一 `AllowedIPs` を複数ピアに割り当てない、issue #121)に従う。bao 用 /32 だけを個別ピアに割り当てる。
 - Phase 1 の合格条件に **拠点間 RTT / loss の実測**(全体設計 §3 の要求)を入れる。目安: Raft の `heartbeat_timeout` 既定値(1s)に対し、RTT p99 が十分小さいこと(下記 §9)。
+
+### Raft の経路(ハブの SPOF への対策)
+
+現状の WireGuard は、ハブ(ionos-01)を中心にしたスター型で、**bao ノード同士の通信が、すべてハブを経由する**。ハブが落ちると、3 ノードが互いに見えなくなり、Raft がクォーラムを失う。対策を、段階的に入れる。
+
+1. **FQDN 経由で経路を切り替えられるようにしてある**: `retry_join` は `bao-0N.kigawa.net` を指し、解決は各ノードの `/etc/hosts` の管理ブロック(`modules/openbao-node`)が行う。**経路を変えるときは、`peers` の `address` を変えるだけ**で、OpenBao の設定(`retry_join`)は変えない。
+2. **現在(Phase 1)**: `address` は WireGuard の IP(`172.31.254.30` / `.31`)。ハブ経由。
+3. **目標**: bao-02 ↔ bao-03 は、EasyTier のオーバーレイ(`10.250.0.0/24`、`docs/network-vpn-architecture-design.md` §4.1)の P2P 直結に向ける。2 台とも公開 IP を持つので、直接の経路になる見込み。ハブ(ionos-01)が落ちても、bao-02 ↔ bao-03 の 2 ノードで、クォーラム(3 ノード中 2)を保てる。bao-01 は、Inuyama のゲートウェイ(オーバーレイ `10.250.0.11`)経由で参加する。
+   - オーバーレイ上のアドレス: bao-02=`10.250.0.1`(ServerCheap)、bao-03=`10.250.0.31`(予約、`easytier_enabled` は未適用)。
+   - **ufw の追加が要る**: 8200/8201 は、今は `wg0` 上だけ許可している。EasyTier の `tun0` でも許可する(`modules/host-hardening` の `tcp_ports_on_wireguard` を、インターフェースの一覧に拡張する)。
+   - EasyTier が relay に回ると、遅延が増える。**採用バージョンでの、P2P 直結と relay の切替の実測**(設計書 §4.1 の要求)を、経路の切替の前提にする。
+4. **切替の手順**: オーバーレイの疎通と RTT を実測 → bao-02 / bao-03 の `peers` の `address` を、オーバーレイの IP にする → ハブを止めた状態(WireGuard のハブへの接続を遮断)でも `bao status` が取れることを確認する。**OpenBao の導入前に、この切替の試験を終える**(導入後だと、Raft の `cluster_addr` の変更で、再起動が要る)。
+
+### メモリ(bao-03 は 1.9GB)
+
+bao-03 の RAM は、設計の目安(4GB)の半分(bao-02 は 3.9GB)。**`mlock` を有効にしたまま、小規模な Secret 管理で、数百 MB に収まる見込み**だが、余裕は少ない。
+- 導入前に、メモリの使用量(RSS)の上限を `MemoryMax`(systemd)で決め、スナップショット取得時の増加を実測する。
+- 実測で足りなければ、VPS のプランを上げる。足りる場合も、メモリ使用量の監視(`node_memory_MemAvailable_bytes`)を、Phase 2 の監視に入れる。
 
 ### クライアント側のエンドポイント冗長
 

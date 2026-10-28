@@ -163,6 +163,8 @@ module "host_hardening" {
   # WireGuard のハブ(IONOS)。wireguard_server_endpoint(host:port)のホスト部分
   wireguard_hub_address  = split(":", var.wireguard_server_endpoint)[0]
   tcp_ports_on_wireguard = [8200, 8201]
+  # EasyTier のオーバーレイ(tun0)でも通す。Raft を、ハブを通らない経路に切り替えられるようにする(docs/openbao-implementation-design.md「Raft の経路」)
+  extra_interfaces = ["tun0"]
 }
 
 # EasyTier のネットワーク Secret(bws から読む。空なら止める)

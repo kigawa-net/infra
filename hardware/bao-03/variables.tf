@@ -133,7 +133,7 @@ variable "wipe_data_on_failure" {
 variable "easytier_enabled" {
   description = "true のときだけ EasyTier を入れる。easytier_network_secret_bitwarden_id が必要"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "easytier_network_secret_bitwarden_id" {
