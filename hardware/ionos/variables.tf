@@ -585,7 +585,7 @@ variable "openbao_backup_bao_endpoints" {
 variable "openbao_backup_approle_role_id_bitwarden_id" {
   description = "バックアップ用 AppRole の role_id の bws の ID。有効化前に登録する"
   type        = string
-  default     = ""
+  default     = "ef959a79-7c97-466c-886e-b4f100c6e0fe"
 }
 
 variable "openbao_backup_approle_secret_id_bitwarden_id" {
