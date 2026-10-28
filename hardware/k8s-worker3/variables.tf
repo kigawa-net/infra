@@ -61,8 +61,8 @@ variable "bgp_local_as" {
 
 variable "bgp_peers" {
   type = list(object({
-    ip = string
-    as = number
+    ip   = string
+    as   = number
   }))
   default = []
 }
