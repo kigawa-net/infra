@@ -541,9 +541,9 @@ variable "openbao_backup_enabled" {
 }
 
 variable "openbao_backup_b2_endpoint" {
-  description = "Backblaze B2 の S3 互換エンドポイント(例: https://s3.us-west-004.backblazeb2.com)。バケットのリージョンに合わせる"
+  description = "Backblaze B2 の S3 互換エンドポイント(例: https://s3.us-west-004.backblazeb2.com)。バケットのリージョンに合わせる。us-east-005 のバケット(kigawa-net-bao)"
   type        = string
-  default     = ""
+  default     = "https://s3.us-east-005.backblazeb2.com"
 }
 
 variable "openbao_backup_b2_region" {
@@ -555,7 +555,7 @@ variable "openbao_backup_b2_region" {
 variable "openbao_backup_b2_bucket" {
   description = "Object Lock を有効にした B2 バケット名"
   type        = string
-  default     = "openbao-backup"
+  default     = "kigawa-net-bao"
 }
 
 variable "openbao_backup_b2_key_id_bitwarden_id" {
