@@ -531,3 +531,89 @@ variable "easytier_overlay_allow" {
   type        = list(string)
   default     = []
 }
+
+# OpenBao の Raft スナップショットの退避(modules/openbao-backup、設計書 §7)。
+# false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。B2 のバケット・age の公開鍵・AppRole を用意してから true にする。
+variable "openbao_backup_enabled" {
+  description = "true のときだけ、OpenBao のバックアップ(B2 へ退避)を入れる。以下の bws の ID と、age の公開鍵が必要。有効化は、README の手順を終えてから"
+  type        = bool
+  default     = false
+}
+
+variable "openbao_backup_b2_endpoint" {
+  description = "Backblaze B2 の S3 互換エンドポイント(例: https://s3.us-west-004.backblazeb2.com)。バケットのリージョンに合わせる。us-east-005 のバケット(kigawa-net-bao)"
+  type        = string
+  default     = "https://s3.us-east-005.backblazeb2.com"
+}
+
+variable "openbao_backup_b2_region" {
+  description = "署名のリージョン。空なら openbao_backup_b2_endpoint から導く"
+  type        = string
+  default     = ""
+}
+
+variable "openbao_backup_b2_bucket" {
+  description = "Object Lock を有効にした B2 バケット名"
+  type        = string
+  default     = "kigawa-net-bao"
+}
+
+variable "openbao_backup_b2_key_id_bitwarden_id" {
+  description = "B2 のアプリケーションキー ID の bws の ID(書き込み専用。deleteFiles と bypassGovernance は付けない)。有効化前に登録する"
+  type        = string
+  default     = "74f97073-d0b0-4c8f-9314-b4f100a5969d"
+}
+
+variable "openbao_backup_b2_secret_bitwarden_id" {
+  description = "B2 のアプリケーションキーの secret の bws の ID。有効化前に登録する"
+  type        = string
+  default     = "8fccf1ad-996a-4fb2-9d2f-b4f100a70220"
+}
+
+variable "openbao_backup_age_recipient" {
+  description = "バックアップ専用の age の公開鍵(age1...)。秘密鍵は、ホストにも bws にも置かない(README 参照)"
+  type        = string
+  default     = "age1mpdwghza2wrmk640g3a0l249f0td7ns3f75xshy6su58w8csyypqrnp63k"
+}
+
+variable "openbao_backup_bao_endpoints" {
+  description = "スナップショットを取る OpenBao のエンドポイント(順に試す)。overlay 経由の FQDN"
+  type        = list(string)
+  default     = ["https://bao-02.kigawa.net:8200", "https://bao-03.kigawa.net:8200"]
+}
+
+variable "openbao_backup_approle_role_id_bitwarden_id" {
+  description = "バックアップ用 AppRole の role_id の bws の ID。有効化前に登録する"
+  type        = string
+  default     = "ef959a79-7c97-466c-886e-b4f100c6e0fe"
+}
+
+variable "openbao_backup_approle_secret_id_bitwarden_id" {
+  description = "バックアップ用 AppRole の secret_id の bws の ID。有効化前に登録する"
+  type        = string
+  default     = "d655de34-1857-4697-bbce-b4f100c76ec6"
+}
+
+variable "openbao_backup_healthcheck_url_bitwarden_id" {
+  description = "外部の死活監視(dead-man's switch)の ping URL の bws の ID。空なら、死活監視は使わない"
+  type        = string
+  default     = ""
+}
+
+variable "openbao_backup_object_lock_mode" {
+  description = "Object Lock のモード。最初は GOVERNANCE(README 参照)"
+  type        = string
+  default     = "GOVERNANCE"
+}
+
+variable "openbao_backup_hosts_entries" {
+  description = "実行ホストの /etc/hosts に入れる、bao ノードの名前解決(EasyTier の overlay のアドレス)"
+  type = list(object({
+    fqdn    = string
+    address = string
+  }))
+  default = [
+    { fqdn = "bao-02.kigawa.net", address = "10.250.0.1" },
+    { fqdn = "bao-03.kigawa.net", address = "10.250.0.31" },
+  ]
+}
