@@ -120,3 +120,25 @@ variable "wipe_data_on_failure" {
   type        = bool
   default     = false
 }
+
+variable "memory_high" {
+  description = "systemd の MemoryHigh(例: 1000M)。超えると、メモリの回収が強くなり、遅くなる(kill はされない)。空なら設定しない。RAM が少ないホスト(bao-03 は 1.9GB)で、OpenBao の暴走が EasyTier や sshd を巻き込む前に、抑えるために使う"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.memory_high == "" || can(regex("^[0-9]+[KMGT]$", var.memory_high))
+    error_message = "memory_high は、空か、数字と単位(K/M/G/T)で指定する(例: 1000M)。"
+  }
+}
+
+variable "memory_max" {
+  description = "systemd の MemoryMax(例: 1300M)。超えると、OpenBao だけが OOM で止められ、Restart=on-failure で戻る(ホスト全体の OOM で、sshd や EasyTier が巻き込まれるのを防ぐ)。空なら設定しない。memory_high より大きくすること"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.memory_max == "" || can(regex("^[0-9]+[KMGT]$", var.memory_max))
+    error_message = "memory_max は、空か、数字と単位(K/M/G/T)で指定する(例: 1300M)。"
+  }
+}

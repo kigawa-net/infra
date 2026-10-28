@@ -83,6 +83,10 @@ locals {
     CapabilityBoundingSet=CAP_IPC_LOCK
     AmbientCapabilities=CAP_IPC_LOCK
 
+    # メモリの上限(RAM が少ないホスト向け。空なら設定しない)
+    ${var.memory_high != "" ? "MemoryHigh=${var.memory_high}" : "# MemoryHigh は未設定"}
+    ${var.memory_max != "" ? "MemoryMax=${var.memory_max}" : "# MemoryMax は未設定"}
+
     # ProtectSystem=strict のもとで書けるのは /var/lib/openbao だけ(StateDirectory が例外として開ける)
     StateDirectory=openbao
     StateDirectoryMode=0700

@@ -135,6 +135,8 @@ module "openbao_node" {
   acme_email           = var.acme_email
   acme_staging         = var.acme_staging
   wipe_data_on_failure = var.wipe_data_on_failure
+  memory_high          = var.openbao_memory_high
+  memory_max           = var.openbao_memory_max
 }
 
 # journald の上限(他のノードと同じく、/run の ramdisk 圧迫対策、k8s-system#259)

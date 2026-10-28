@@ -170,3 +170,15 @@ variable "easytier_peers" {
   type        = list(string)
   default     = ["tcp://74.208.55.86:11010", "tcp://207.231.111.196:11010"]
 }
+
+variable "openbao_memory_high" {
+  description = "OpenBao の MemoryHigh。bao-03 は RAM が 1.9GB なので、OpenBao を 1000M で抑える(OS・EasyTier・sshd の分を残す)"
+  type        = string
+  default     = "1000M"
+}
+
+variable "openbao_memory_max" {
+  description = "OpenBao の MemoryMax。超えたら OpenBao だけが止められ、Restart=on-failure で戻る"
+  type        = string
+  default     = "1300M"
+}
