@@ -312,6 +312,26 @@ variable "bao02_wireguard_address" {
   default     = "172.31.254.30"
 }
 
+# bao-03(OpenBao の raft voter 3 台目、hardware/bao-03、host-hye1)の WireGuard ピア。
+# 公開鍵は bao-03 の初回 apply 後に、そのホストの /etc/wireguard/publickey から読んで設定する。
+# 空文字のままの間は、ピアを出さない(hardware/bao-03 の apply だけでは、IONOS の wg0 は変わらない)。
+variable "bao03_wireguard_public_key" {
+  description = "bao-03 の WireGuard 公開鍵(IONOS 用)。bao-03 の初回 apply の後、ホストの /etc/wireguard/publickey を読んで設定する。空文字のままは、ピアを出さない"
+  type        = string
+  default     = "1KOGwWrm5MbnO5xGlOXXsmqSEP0JG4MWgdQzR567yUE="
+
+  validation {
+    condition     = var.bao03_wireguard_public_key == "" || can(regex("^[A-Za-z0-9+/]{43}=$", var.bao03_wireguard_public_key))
+    error_message = "bao03_wireguard_public_key は、空文字か、WireGuard の公開鍵(44文字の base64)にしてください。"
+  }
+}
+
+variable "bao03_wireguard_address" {
+  description = "bao-03 の IONOS 側 WireGuard トンネル内 IP(hardware/bao-03 の wg_address と一致させる。bao-02 の .30 に続く採番)"
+  type        = string
+  default     = "172.31.254.31"
+}
+
 variable "etcd_allowed_sources" {
   description = "IONOS の Karmada etcd #3(2379/2380)に、WireGuard(wg)内から接続してよい送信元。ufw の既存の `deny 2379:2380/tcp`(公開インターネット向け)より前に、これらの allow を挿入する"
   type        = list(string)
