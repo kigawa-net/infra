@@ -573,7 +573,7 @@ variable "openbao_backup_b2_secret_bitwarden_id" {
 variable "openbao_backup_age_recipient" {
   description = "バックアップ専用の age の公開鍵(age1...)。秘密鍵は、ホストにも bws にも置かない(README 参照)"
   type        = string
-  default     = ""
+  default     = "age1mpdwghza2wrmk640g3a0l249f0td7ns3f75xshy6su58w8csyypqrnp63k"
 }
 
 variable "openbao_backup_bao_endpoints" {
