@@ -56,9 +56,9 @@ POD
 
 resource "null_resource" "dnsmasq" {
   triggers = {
-    host           = var.host
-    dnsmasq_conf   = local.dnsmasq_conf
-    pod_yaml       = local.pod_manifest
+    host         = var.host
+    dnsmasq_conf = local.dnsmasq_conf
+    pod_yaml     = local.pod_manifest
   }
 
   connection {

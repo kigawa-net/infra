@@ -1,4 +1,7 @@
 locals {
+  # overlay_firewall のときだけ、Overlay のネットワーク(例: 10.250.0.0/24)を渡す。空なら、スクリプトは何もしない。
+  overlay_cidr = var.overlay_firewall ? "${cidrhost(var.overlay_address, 0)}/${split("/", var.overlay_address)[1]}" : ""
+
   # ネストしたヒアドキュメントを避けるため、設定ファイルは単独の file provisioner で /tmp に置き、
   # セットアップスクリプトが 0600 で /etc/easytier/ に移す。Secret はプロセスの引数に出さず、設定ファイルにだけ書く。
   config_toml = <<-TOML
@@ -26,6 +29,8 @@ resource "null_resource" "easytier" {
     easytier_sha256  = var.easytier_sha256
     config           = sha256(local.config_toml)
     ufw_allow        = join(",", var.ufw_allow)
+    overlay_firewall = tostring(var.overlay_firewall)
+    overlay_allow    = join(",", var.overlay_allow)
     script           = filesha256("${path.module}/files/easytier-setup.sh")
   }
 
@@ -49,7 +54,7 @@ resource "null_resource" "easytier" {
   provisioner "remote-exec" {
     inline = [
       # root で接続するノード(ionos)は sudo を使わず直接実行する(hardware/ionos と同じ)。root でなければ sudo -S。
-      "run() { env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' bash /tmp/easytier-setup.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else echo '${var.sudo_password}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' bash /tmp/easytier-setup.sh; fi; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
+      "run() { env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else echo '${var.sudo_password}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; fi; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
     ]
   }
 }

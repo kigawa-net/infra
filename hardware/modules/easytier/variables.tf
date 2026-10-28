@@ -96,3 +96,20 @@ variable "ufw_allow" {
     error_message = "ufw_allow は 11010/tcp のような形式で指定する。"
   }
 }
+
+variable "overlay_firewall" {
+  description = "true のとき、ufw で、Overlay(overlay_address のネットワーク)からの受信を、overlay_allow だけに絞る(設計書 §7: Overlay に参加できることを、ホストの全ポートへのアクセスと同義にしない)。送信元アドレスで絞るため、EasyTier の設定(インターフェース名)は変えない。ICMP は ufw の before.rules で許可されるので、ping は通る。ufw が入っていないホストでは無視する"
+  type        = bool
+  default     = false
+}
+
+variable "overlay_allow" {
+  description = "overlay_firewall が true のとき、Overlay からの受信を許可するポート(例: [\"22/tcp\"])。空なら、Overlay からは何も受けない(ICMP を除く)。一度足したルールは、このリストから外しても自動では消えない(ufw delete が要る)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r))])
+    error_message = "overlay_allow は 22/tcp のような形式で指定する。"
+  }
+}

@@ -170,3 +170,9 @@ variable "easytier_peers" {
   type        = list(string)
   default     = ["tcp://74.208.55.86:11010"]
 }
+
+variable "easytier_overlay_allow" {
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート(例: [\"22/tcp\"])。既定は空で、Overlay からは何も受けない(ICMP を除く)。足したルールは、外しても自動では消えない(ufw delete が要る)"
+  type        = list(string)
+  default     = []
+}

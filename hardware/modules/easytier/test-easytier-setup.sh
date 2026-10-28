@@ -70,6 +70,16 @@ check "ufw 許可つきでも成功する" 0 "$rc"
 check "11010/tcp を許可する" "1" "$(grep -c '^ufw allow 11010/tcp' "$work/log")"
 check "11010/udp を許可する" "1" "$(grep -c '^ufw allow 11010/udp' "$work/log")"
 
+# 2c. ET_OVERLAY_CIDR があれば、deny を足し、allow を先頭に入れる(なければ ufw に触れない)
+run "$sha"; check "ET_OVERLAY_CIDR なしでは overlay のルールを足さない" "0" "$(grep -c 'overlay' "$work/log")"
+ET_OVERLAY_CIDR=10.250.0.0/24 ET_OVERLAY_ALLOW="22/tcp 8443/udp" run "$sha"; rc=$?
+check "overlay 制限つきでも成功する" 0 "$rc"
+check "Overlay からの受信を deny する" "1" "$(grep -c '^ufw insert 1 deny in from 10.250.0.0/24 to any' "$work/log")"
+check "22/tcp を allow する" "1" "$(grep -c '^ufw insert 1 allow in from 10.250.0.0/24 to any port 22 proto tcp' "$work/log")"
+check "8443/udp を allow する" "1" "$(grep -c '^ufw insert 1 allow in from 10.250.0.0/24 to any port 8443 proto udp' "$work/log")"
+check "deny は allow より先に足す(allow を insert 1 で先頭に入れるため)" "1" "$(awk '/deny in from/{d=NR} /allow in from 10.250/{a=(a?a:NR)} END{print (d<a)?1:0}' "$work/log")"
+ET_OVERLAY_CIDR=10.250.0.0/24 run "$sha" >/dev/null 2>&1; check "許可リストが空でも deny は足す" "1" "$(grep -c 'deny in from 10.250.0.0/24' "$work/log")"
+
 # 3. 同じバージョンが入っていれば、ダウンロードしない(zip を消しても成功し、設定は更新される)
 mv "$work/dl/v${version}/$zip_name" "$work/dl/v${version}/moved.zip"
 printf 'instance_name = "t2"\n' > "$work/easytier.toml"
