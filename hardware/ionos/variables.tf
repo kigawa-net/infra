@@ -466,9 +466,9 @@ variable "gateway_links" {
 # EasyTier(kigawa-net/infra#350、docs/network-vpn-architecture-design.md §4.1)。
 # false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。ネットワーク Secret を bws に登録してから true にする。
 variable "easytier_enabled" {
-  description = "true のときだけ EasyTier を入れる。easytier_network_secret_bitwarden_id が必要"
+  description = "true のときだけ EasyTier を入れる。easytier_network_secret_bitwarden_id が必要(登録済み)。有効化: 2026-10-28"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "easytier_network_secret_bitwarden_id" {
