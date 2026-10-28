@@ -17,10 +17,13 @@ locals {
     PubkeyAuthentication yes
     CONF
 
-  ufw_wg_rules = join("\n", [
-    for p in var.tcp_ports_on_wireguard :
-    "ufw allow in on ${var.wireguard_interface} proto tcp to any port ${p} comment 'openbao ${p} (wireguard)'"
-  ])
+  ufw_rule_interfaces = concat([var.wireguard_interface], var.extra_interfaces)
+  ufw_wg_rules = join("\n", flatten([
+    for ifc in local.ufw_rule_interfaces : [
+      for p in var.tcp_ports_on_wireguard :
+      "ufw allow in on ${ifc} proto tcp to any port ${p} comment 'openbao ${p} (${ifc})'"
+    ]
+  ]))
 
   # remote-exec の inline は dash で動いてしまうため、シバン付きのスクリプトを bash で明示的に実行する(journald-limit と同じ理由)。
   setup_script = <<-SCRIPT
@@ -79,6 +82,7 @@ resource "null_resource" "host_hardening" {
     wireguard_interface    = var.wireguard_interface
     wireguard_hub_address  = var.wireguard_hub_address
     tcp_ports_on_wireguard = join(",", var.tcp_ports_on_wireguard)
+    extra_interfaces       = join(",", var.extra_interfaces)
     sshd_dropin_hash       = sha256(local.sshd_dropin)
     setup_script_hash      = sha256(local.setup_script)
   }

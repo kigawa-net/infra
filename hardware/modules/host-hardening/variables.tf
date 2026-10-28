@@ -38,3 +38,9 @@ variable "tcp_ports_on_wireguard" {
   type        = list(number)
   default     = []
 }
+
+variable "extra_interfaces" {
+  description = "tcp_ports_on_wireguard を、wireguard_interface に加えて許可するインターフェース(EasyTier のオーバーレイ tun0 など)。Raft を、ハブを通らない経路(オーバーレイ)でも通せるようにする。存在しないインターフェースでも、ufw のルールは作れる"
+  type        = list(string)
+  default     = []
+}
