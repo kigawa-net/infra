@@ -2,6 +2,7 @@
 # EasyTier のバイナリを、SHA-256 を照合してから入れ、systemd サービスとして起動する。
 # 必須の環境変数: ET_VERSION(例: 2.7.0)、ET_ARCH(x86_64 / aarch64)、ET_SHA256(配布 zip の SHA-256)
 # 任意: ET_UFW_ALLOW(空白区切りの 11010/tcp など)。ufw が入っていれば、そのポートの受信を許可する。
+# 任意: ET_OVERLAY_CIDR(Overlay のネットワーク)と ET_OVERLAY_ALLOW(許可するポート)。ufw が入っていれば、Overlay からの受信を、ET_OVERLAY_ALLOW だけに絞る。
 # 設定ファイルは /tmp/easytier.toml(ET_CONFIG_SRC で変更可)から読む。
 # ET_BIN_DIR / ET_CONF_DIR / ET_UNIT_DIR / ET_DOWNLOAD_BASE は、テスト(test-easytier-setup.sh)で差し替える。
 set -eo pipefail
@@ -72,6 +73,15 @@ chmod 644 "$unit_dir/easytier.service"
 if [ -n "${ET_UFW_ALLOW:-}" ] && command -v ufw >/dev/null 2>&1; then
   for rule in $ET_UFW_ALLOW; do
     ufw allow "$rule" comment 'easytier'
+  done
+fi
+
+# Overlay からの受信を絞る。送信元アドレスで絞る(インターフェース名は、設定の変更と再起動が要るため使わない)。
+# 先に deny を足し、あとから allow を `insert 1` で先頭に入れる(ufw は順序で評価する。再実行しても、既存のルールは skip される)。
+if [ -n "${ET_OVERLAY_CIDR:-}" ] && command -v ufw >/dev/null 2>&1; then
+  ufw insert 1 deny in from "$ET_OVERLAY_CIDR" to any comment 'easytier overlay deny'
+  for rule in ${ET_OVERLAY_ALLOW:-}; do
+    ufw insert 1 allow in from "$ET_OVERLAY_CIDR" to any port "${rule%/*}" proto "${rule#*/}" comment 'easytier overlay allow'
   done
 fi
 

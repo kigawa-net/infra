@@ -200,4 +200,8 @@ module "easytier" {
   overlay_address  = var.easytier_overlay_address
   peers            = var.easytier_peers
   ufw_allow        = ["11010/tcp", "11010/udp"]
+
+  # Overlay からの受信は、許可リスト(既定は空)だけに絞る(設計書 §7、kigawa-net/infra#368)
+  overlay_firewall = true
+  overlay_allow    = var.easytier_overlay_allow
 }
