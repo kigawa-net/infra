@@ -170,3 +170,9 @@ variable "easytier_peers" {
   type        = list(string)
   default     = ["tcp://74.208.55.86:11010", "tcp://207.231.111.196:11010"]
 }
+
+variable "easytier_overlay_allow" {
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。OpenBao の Raft(8200/8201)を Overlay(tun0)経由で通すため(host-hardening の extra_interfaces = [\"tun0\"])。Overlay の送信元の deny は、tun0 向けの許可より先に評価されるので、ここに入れないと塞がれる(docs/openbao-implementation-design.md「Raft の経路」)。足したルールは、外しても自動では消えない(ufw delete が要る)"
+  type        = list(string)
+  default     = ["8200/tcp", "8201/tcp"]
+}

@@ -199,4 +199,8 @@ module "easytier" {
   overlay_address  = var.easytier_overlay_address
   peers            = var.easytier_peers
   ufw_allow        = ["11010/tcp", "11010/udp"]
+
+  # Overlay からの受信は、許可リスト(Raft の 8200/8201)だけに絞る。deny は host_hardening の tun0 向けの許可より先に評価されるので、許可リストに入れる(設計書 §7、kigawa-net/infra#376)
+  overlay_firewall = true
+  overlay_allow    = var.easytier_overlay_allow
 }
