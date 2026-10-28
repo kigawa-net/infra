@@ -567,7 +567,7 @@ variable "openbao_backup_b2_key_id_bitwarden_id" {
 variable "openbao_backup_b2_secret_bitwarden_id" {
   description = "B2 のアプリケーションキーの secret の bws の ID。有効化前に登録する"
   type        = string
-  default     = ""
+  default     = "8fccf1ad-996a-4fb2-9d2f-b4f100a70220"
 }
 
 variable "openbao_backup_age_recipient" {
