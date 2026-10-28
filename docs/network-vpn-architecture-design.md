@@ -88,6 +88,17 @@ EasyTier の役割は次の3つです。
 | Inuyama Gateway | `10.250.0.11` |
 | Soichiro Gateway | `10.250.0.21` |
 
+### 4.1.1 実機での確認状況
+
+| 日付 | 確認内容 | 結果 |
+| --- | --- | --- |
+| 2026-10-28 | ionos(`10.250.0.2`)と bao-02 / ServerCheap(`10.250.0.1`)に EasyTier v2.6.4 を導入(#351・#357・#361) | 両ノードで `easytier.service` が `active`。ufw で 11010/tcp・udp を許可 |
+| 2026-10-28 | 公開 Peer 2 台の相互接続(`easytier-cli peer`) | p2p(tcp)で直接接続。遅延 11.63ms、パケットロス 0.0% |
+
+- 設定ファイル(`/etc/easytier/easytier.toml`、`ipv4` / `dhcp` / `listeners` / `[network_identity]` / `[[peer]]`)の書式は、v2.6.4 で通ることを確認した。
+- 同じ Overlay に、管理者が追加した別のノード(`host-hye1`、`10.250.0.31`)も参加している。
+- 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、NAT 配下のノード(Inuyama・Soichiro)の接続、Overlay からの受信の絞り込み(ufw)。
+
 両公開ノードを初期接続先として登録し、特定の1台だけに依存しない構成にします。
 
 ただし、EasyTier の Relay 切替と直接 P2P への復帰は、採用バージョンで実測する必要があります。
