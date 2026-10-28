@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: ./run.sh <module> <terraform-args...>
-# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02
+# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02, bao-03
 # BWS_ACCESS_TOKEN が設定されている必要があります
 set -ue
 

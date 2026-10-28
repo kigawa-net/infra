@@ -18,7 +18,7 @@ Each node is an independent Terraform root module. Use the shared `hardware/run.
 
 ```bash
 # Usage: ./hardware/run.sh <module> <terraform-args...>
-# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02
+# module: k8s1, k8s2, k8s4, k8s-worker3, k8s-worker5, ionos, cloudflare, bao-02, bao-03
 
 # Initialize (first time or after provider changes)
 ./hardware/run.sh k8s1 init

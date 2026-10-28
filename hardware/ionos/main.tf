@@ -108,6 +108,13 @@ locals {
       endpoint             = ""
       persistent_keepalive = var.wireguard_persistent_keepalive
     }] : [],
+    # bao-03(OpenBao の raft voter 3 台目、host-hye1)。bao-02 と同じ形(/32 だけ、BGP なし、endpoint なし)。
+    var.bao03_wireguard_public_key != "" ? [{
+      public_key           = var.bao03_wireguard_public_key
+      allowed_ips          = ["${var.bao03_wireguard_address}/32"]
+      endpoint             = ""
+      persistent_keepalive = var.wireguard_persistent_keepalive
+    }] : [],
   )
 
   # ゲートウェイごとの専用リンク(kigawa-net/infra#238)。var.gateway_links(k8s2 など、公開鍵を静的に持てるもの)に、

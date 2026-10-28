@@ -130,12 +130,12 @@ jobs:
           # (issue #100対策)。k8s-worker1/3/4/5は192.168.1.228/.130/.121/.150の/32だけをSSH(tcp/22)限定で
           # 同じ経路(ionos AllowedIPs + k8s4のci-ssh-forward)に載せた。
           # cloudflareはCloudflare APIだけを使うので、ubuntu-latestで動く。
-          # bao-02は公開IP(207.231.111.196)へSSH(tcp/22)で直接届くので、ubuntu-latestで動く。
+          # bao-02/bao-03は公開IP(207.231.111.196 / 143.203.220.195)へSSH(tcp/22)で直接届くので、ubuntu-latestで動く。
           # arc-runner-set-infra(worker1/4/5のメモリ逼迫・containerd不調でPendingになりがち、
           # issue #100/#182)に依存しないよう、全モジュールをubuntu-latestにする。
           # 新しいモジュールを追加して、192.168.1.xなどトンネルで届かないホストに接続する場合は、
           # ここに足さずにarc-runner-set-infraのままにするか、経路を追加すること。
-          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker1 k8s-worker3 k8s-worker4 k8s-worker5 cloudflare bao-02"
+          GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker1 k8s-worker3 k8s-worker4 k8s-worker5 cloudflare bao-02 bao-03"
           MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})

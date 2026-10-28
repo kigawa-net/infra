@@ -43,8 +43,9 @@ locals {
     rm -f /tmp/00-hardening.conf
     if ! sshd -t; then rollback_sshd; exit 1; fi
     effective=$(sshd -T)
-    for want in "passwordauthentication no" "kbdinteractiveauthentication no" "permitrootlogin prohibit-password" "pubkeyauthentication yes"; do
-      if ! echo "$effective" | grep -qx "$want"; then
+    # sshd -T の表示は、Debian では `permitrootlogin without-password`(旧名のまま)、Ubuntu では `prohibit-password`。どちらも同じ意味
+    for want in "passwordauthentication no" "kbdinteractiveauthentication no" "permitrootlogin (prohibit|without)-password" "pubkeyauthentication yes"; do
+      if ! echo "$effective" | grep -Eqx "$want"; then
         echo "host-hardening: 有効な設定に '$want' が無い(ほかの drop-in が勝っている)" >&2
         rollback_sshd
         exit 1
