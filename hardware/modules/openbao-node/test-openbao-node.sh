@@ -68,6 +68,7 @@ else
 fi
 
 check "ui は無効" 1 "$(grep -c '^ui *= *false$' "$conf")"
+check "disable_mlock を書かない(2.x は mlock をやめた。書くと起動に失敗する)" 0 "$(grep -c "^[^#]*disable_mlock" "$conf")"
 check "listener が 2 つ(WireGuard IP と loopback)" 2 "$(grep -c '^listener "tcp"' "$conf")"
 check "WireGuard IP の 8200 / 8201 で待ち受ける" 1 "$(grep -c 'address *= *"192.0.2.1:8200"' "$conf")"
 check "cluster_address も WireGuard IP" 1 "$(grep -c 'cluster_address *= *"192.0.2.1:8201"' "$conf")"
@@ -127,7 +128,7 @@ cat > "$work/fakebin/systemctl" <<'EOF'
 echo "systemctl $*" >> "$FAKE_LOG"
 case "$1" in
   is-active) [ -f "$FAKE_STATE/active" ] && exit 0; exit 3 ;;
-  start) [ -n "${FAKE_START_FAIL:-}" ] && exit 1; touch "$FAKE_STATE/active"; exit 0 ;;
+  start) [ -n "${FAKE_START_FAIL:-}" ] && exit 1; touch "$FAKE_STATE/active"; [ -n "${FAKE_DIE:-}" ] && rm -f "$FAKE_STATE/active"; exit 0 ;;
   stop) rm -f "$FAKE_STATE/active"; exit 0 ;;
 esac
 exit 0
@@ -205,10 +206,10 @@ run_setup() {
   last_out="$sb/run$run_n.out"
   : > "$FAKE_LOG"
   env -i PATH="$work/fakebin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-    OPENBAO_ROOT="$sb/root" OPENBAO_VERSION=2.1.0 DEB_URL="https://example.invalid/bao.deb" \
+    OPENBAO_ROOT="$sb/root" OPENBAO_START_WAIT=0 OPENBAO_VERSION=2.1.0 DEB_URL="https://example.invalid/bao.deb" \
     DEB_SHA256="${DEB_SHA256_OVERRIDE:-$deb_sha}" STAGE_DIR="$sb/stage" \
     WIPE_DATA_ON_FAILURE="${WIPE:-0}" FAKE_DEB="$work/bao.deb" FAKE_LOG="$FAKE_LOG" FAKE_STATE="$sb/state" \
-    FAKE_CURL_FAIL="${CURL_FAIL:-}" FAKE_START_FAIL="${START_FAIL:-}" \
+    FAKE_CURL_FAIL="${CURL_FAIL:-}" FAKE_START_FAIL="${START_FAIL:-}" FAKE_DIE="${DIE_AFTER_START:-}" \
     FAKE_LE="$sb/root/etc/letsencrypt" FAKE_CERTBOT_FAIL="${CERTBOT_FAIL:-}" \
     FQDN="$FQDN" ACME_EMAIL="${EMAIL:-}" ACME_STAGING="${STAGING:-0}" \
     bash "$setup" >"$last_out" 2>&1
@@ -319,6 +320,12 @@ check "失敗時も /var/lib/openbao は残す(wipe=0)" 1 "$(exists "$sb/root/va
 check "失敗時に初回に足した unit を戻す" 0 "$(exists "$sb/root/etc/systemd/system/openbao.service")"
 check "失敗時に初回に足した設定を戻す" 0 "$(exists "$sb/root/etc/openbao/openbao.hcl")"
 check "失敗時もステージを消す" 0 "$(exists "$sb/stage")"
+
+# (e2) start は成功するが、直後に落ちる(2.7.2 の disable_mlock など、設定エラー)。失敗扱いにする
+new_sandbox diedafterstart
+DIE_AFTER_START=1 run_setup
+check "start の直後に落ちたら、失敗扱い" 1 "$(failed)"
+check "落ちたときの失敗メッセージ" 1 "$(grep -c '起動後に OpenBao が止まりました' "$last_out")"
 
 # (f) 同じ失敗で wipe_data_on_failure=1: /var/lib/openbao を消す
 new_sandbox wipe

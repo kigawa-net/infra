@@ -49,7 +49,7 @@ docs/
 | 項目 | 内容 |
 |---|---|
 | OS / 導入 | Ubuntu(既存ノードと同じ)。OpenBao は公式 `.deb`(or バイナリ)を**バージョン固定+SHA256 検証**で導入。`apt` 追従にしない |
-| 実行 | systemd unit `openbao.service`、専用ユーザー `openbao`、`NoNewPrivileges` / `ProtectSystem=strict` / `MemoryDenyWriteExecute` / `LimitCORE=0`、swap 無効(または `mlock` 有効) |
+| 実行 | systemd unit `openbao.service`、専用ユーザー `openbao`、`NoNewPrivileges` / `ProtectSystem=strict` / `MemoryDenyWriteExecute` / `LimitCORE=0`、swap 無効(または暗号化。OpenBao 2.x は mlock をやめた) |
 | データ | ローカル SSD の `/var/lib/openbao`(Ceph・NFS 禁止)。単独ディスクの `ext4` |
 | Storage | `storage "raft"`(`node_id`、`retry_join` に他 2 ノードの TLS URL) |
 | Listener | `:8200`(API)・`:8201`(cluster)ともに `tls_min_version = "tls13"`。bind は **WireGuard IP とループバックのみ**(公開 IF に bind しない) |
@@ -100,7 +100,7 @@ OpenBao の外側にある CA(公開 CA の Let's Encrypt)で発行する。Open
 
 ### メモリ(bao-03 は 1.9GB)
 
-bao-03 の RAM は、設計の目安(4GB)の半分(bao-02 は 3.9GB)。**`mlock` を有効にしたまま、小規模な Secret 管理で、数百 MB に収まる見込み**だが、余裕は少ない。
+bao-03 の RAM は、設計の目安(4GB)の半分(bao-02 は 3.9GB)。**小規模な Secret 管理で、数百 MB に収まる見込み**だが、余裕は少ない(OpenBao 2.x は mlock をやめたので、swap なしのホストでは、メモリを固定しない)。
 - 導入前に、メモリの使用量(RSS)の上限を `MemoryMax`(systemd)で決め、スナップショット取得時の増加を実測する。
 - 実測で足りなければ、VPS のプランを上げる。足りる場合も、メモリ使用量の監視(`node_memory_MemAvailable_bytes`)を、Phase 2 の監視に入れる。
 

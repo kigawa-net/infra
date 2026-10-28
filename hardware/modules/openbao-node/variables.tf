@@ -29,7 +29,7 @@ variable "node_id" {
 }
 
 variable "wg_address" {
-  description = "WireGuard 上の IPv4 アドレス(単独、CIDR なし)。listener・api_addr・cluster_addr に使う"
+  description = "Raft のネットワーク上のこのノードの IPv4 アドレス(単独、CIDR なし)。WireGuard の IP か、EasyTier のオーバーレイの IP。listener と cluster_addr に使う。オーバーレイ(ハブを通らない直結)にするときは after_units に easytier.service を足す"
   type        = string
 
   validation {
@@ -39,7 +39,7 @@ variable "wg_address" {
 }
 
 variable "peers" {
-  description = "raft の他のノード(retry_join の宛先と /etc/hosts の対応)。fqdn は証明書の名前、address は WireGuard の IPv4。自分自身が含まれていても無視する(fqdn で判定する)"
+  description = "raft の他のノード(retry_join の宛先と /etc/hosts の対応)。fqdn は証明書の名前、address は Raft のネットワーク上の IPv4(wg_address と同じネットワーク)。自分自身が含まれていても無視する(fqdn で判定する)"
   type = list(object({
     fqdn    = string
     address = string
@@ -141,4 +141,10 @@ variable "memory_max" {
     condition     = var.memory_max == "" || can(regex("^[0-9]+[KMGT]$", var.memory_max))
     error_message = "memory_max は、空か、数字と単位(K/M/G/T)で指定する(例: 1300M)。"
   }
+}
+
+variable "after_units" {
+  description = "openbao.service が、起動の順序を待つ systemd の unit(After= と Wants=)。listener が bind するアドレスを持つインターフェースの unit を入れる(WireGuard なら wg-quick@wg0.service、EasyTier のオーバーレイなら easytier.service)"
+  type        = list(string)
+  default     = ["wg-quick@wg0.service"]
 }

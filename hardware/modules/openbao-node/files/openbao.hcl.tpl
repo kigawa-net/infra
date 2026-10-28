@@ -4,10 +4,10 @@
 
 ui            = false
 log_format    = "json"
-disable_mlock = false
+# OpenBao 2.x は mlock をやめた(disable_mlock を書くと、起動に失敗する)。メモリを swap に出さない対策は、swap を無効にする(このホストは swap なし)か、暗号化する
 
-# api_addr は証明書の名前(fqdn。/etc/hosts で WireGuard の IP に向けている)
-# cluster_addr は WireGuard 上の固定 IP(8201 はピア同士の raft 通信)
+# api_addr は証明書の名前(fqdn。/etc/hosts で、このノードのアドレスに向けている)
+# cluster_addr は Raft のネットワーク上の固定 IP(8201 はピア同士の raft 通信。WireGuard か、EasyTier のオーバーレイ)
 api_addr     = "https://${fqdn}:8200"
 cluster_addr = "https://${wg_address}:8201"
 
@@ -23,7 +23,7 @@ storage "raft" {
 %{ endfor ~}
 }
 
-# WireGuard の IP だけで待ち受ける(公開 IF には bind しない)。
+# Raft のネットワーク上の IP だけで待ち受ける(公開 IF には bind しない)。
 # ループバックは、同じノード上の bao CLI 用。
 listener "tcp" {
   address         = "${wg_address}:8200"
