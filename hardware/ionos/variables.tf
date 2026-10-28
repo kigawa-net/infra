@@ -561,7 +561,7 @@ variable "openbao_backup_b2_bucket" {
 variable "openbao_backup_b2_key_id_bitwarden_id" {
   description = "B2 のアプリケーションキー ID の bws の ID(書き込み専用。deleteFiles と bypassGovernance は付けない)。有効化前に登録する"
   type        = string
-  default     = ""
+  default     = "74f97073-d0b0-4c8f-9314-b4f100a5969d"
 }
 
 variable "openbao_backup_b2_secret_bitwarden_id" {
