@@ -647,3 +647,96 @@ module "easytier" {
   overlay_firewall = true
   overlay_allow    = var.easytier_overlay_allow
 }
+
+# OpenBao のバックアップ(modules/openbao-backup)。openbao_backup_enabled=false のときは、bws にも触れず、何も作らない。
+# 値は bws から読む(空や null なら止める)。ID が空の任意のもの(死活監視の URL)だけは、空のままでよい。
+data "external" "openbao_backup_b2_key_id" {
+  count = var.openbao_backup_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.openbao_backup_b2_key_id_bitwarden_id}" ]; then echo "openbao_backup_b2_key_id_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.openbao_backup_b2_key_id_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "openbao_backup_b2_key_id: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "openbao_backup_b2_secret" {
+  count = var.openbao_backup_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.openbao_backup_b2_secret_bitwarden_id}" ]; then echo "openbao_backup_b2_secret_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.openbao_backup_b2_secret_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "openbao_backup_b2_secret: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "openbao_backup_approle_role_id" {
+  count = var.openbao_backup_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.openbao_backup_approle_role_id_bitwarden_id}" ]; then echo "openbao_backup_approle_role_id_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.openbao_backup_approle_role_id_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "openbao_backup_approle_role_id: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "openbao_backup_approle_secret_id" {
+  count = var.openbao_backup_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.openbao_backup_approle_secret_id_bitwarden_id}" ]; then echo "openbao_backup_approle_secret_id_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.openbao_backup_approle_secret_id_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "openbao_backup_approle_secret_id: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+data "external" "openbao_backup_healthcheck_url" {
+  count = var.openbao_backup_enabled && var.openbao_backup_healthcheck_url_bitwarden_id != "" ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.openbao_backup_healthcheck_url_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "openbao_backup_healthcheck_url: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+module "openbao_backup" {
+  source = "../modules/openbao-backup"
+  count  = var.openbao_backup_enabled ? 1 : 0
+
+  # overlay(EasyTier)経由で bao ノードに届く。easytier が入ってから動かす
+  depends_on = [module.easytier]
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  enabled              = true
+  b2_endpoint          = var.openbao_backup_b2_endpoint
+  b2_region            = var.openbao_backup_b2_region
+  b2_bucket            = var.openbao_backup_b2_bucket
+  b2_access_key_id     = try(data.external.openbao_backup_b2_key_id[0].result.value, "")
+  b2_secret_access_key = try(data.external.openbao_backup_b2_secret[0].result.value, "")
+  age_recipient        = var.openbao_backup_age_recipient
+  bao_endpoints        = var.openbao_backup_bao_endpoints
+  approle_role_id      = try(data.external.openbao_backup_approle_role_id[0].result.value, "")
+  approle_secret_id    = try(data.external.openbao_backup_approle_secret_id[0].result.value, "")
+  object_lock_mode     = var.openbao_backup_object_lock_mode
+  healthcheck_url      = try(data.external.openbao_backup_healthcheck_url[0].result.value, "")
+  hosts_entries        = var.openbao_backup_hosts_entries
+}
