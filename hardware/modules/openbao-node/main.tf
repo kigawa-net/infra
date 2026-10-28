@@ -40,8 +40,8 @@ locals {
     [Unit]
     Description=OpenBao (raft, ${var.node_id})
     Documentation=https://openbao.org/docs/
-    After=network-online.target wg-quick@wg0.service
-    Wants=network-online.target wg-quick@wg0.service
+    After=network-online.target ${join(" ", var.after_units)}
+    Wants=network-online.target ${join(" ", var.after_units)}
 
     [Service]
     Type=simple
@@ -76,12 +76,14 @@ locals {
     SystemCallFilter=@system-service
     UMask=0077
 
-    # core dump に秘密が出ないよう無効化。mlock(メモリを swap に出さない)のため IPC_LOCK だけを持たせる
+    # core dump に秘密が出ないよう無効化。OpenBao 2.x は mlock をやめたので、ケーパビリティは持たせない(空 = 全て落とす)
     LimitCORE=0
     LimitNOFILE=65536
-    LimitMEMLOCK=infinity
-    CapabilityBoundingSet=CAP_IPC_LOCK
-    AmbientCapabilities=CAP_IPC_LOCK
+    CapabilityBoundingSet=
+
+    # メモリの上限(RAM が少ないホスト向け。空なら設定しない)
+    ${var.memory_high != "" ? "MemoryHigh=${var.memory_high}" : "# MemoryHigh は未設定"}
+    ${var.memory_max != "" ? "MemoryMax=${var.memory_max}" : "# MemoryMax は未設定"}
 
     # ProtectSystem=strict のもとで書けるのは /var/lib/openbao だけ(StateDirectory が例外として開ける)
     StateDirectory=openbao

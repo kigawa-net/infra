@@ -126,7 +126,8 @@ module "openbao_node" {
   sudo_password   = data.external.sudo_password[0].result.value
 
   node_id              = var.node_id
-  wg_address           = var.wg_address
+  wg_address           = var.openbao_address
+  after_units          = var.openbao_after_units
   fqdn                 = var.fqdn
   peers                = var.peers
   openbao_version      = var.openbao_version
@@ -135,6 +136,8 @@ module "openbao_node" {
   acme_email           = var.acme_email
   acme_staging         = var.acme_staging
   wipe_data_on_failure = var.wipe_data_on_failure
+  memory_high          = var.openbao_memory_high
+  memory_max           = var.openbao_memory_max
 }
 
 # journald の上限(他のノードと同じく、/run の ramdisk 圧迫対策、k8s-system#259)

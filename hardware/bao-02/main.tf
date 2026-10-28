@@ -126,7 +126,8 @@ module "openbao_node" {
   sudo_password   = data.external.sudo_password[0].result.value
 
   node_id              = var.node_id
-  wg_address           = var.wg_address
+  wg_address           = var.openbao_address
+  after_units          = var.openbao_after_units
   fqdn                 = var.fqdn
   peers                = var.peers
   openbao_version      = var.openbao_version

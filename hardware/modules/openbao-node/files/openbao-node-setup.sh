@@ -205,5 +205,12 @@ if ! systemctl is-active --quiet openbao; then
 elif [ "$config_changed" = 1 ]; then
   systemctl restart openbao || die "再起動に失敗しました"
 fi
+# Type=simple の unit は、`systemctl start` が成功しても、直後に設定エラーで落ちることがある(2.7.2 の disable_mlock など)。
+# 少し待って、動き続けていることを確認する(失敗したら、直近のログを出して止める)
+sleep "${OPENBAO_START_WAIT:-5}"
+if ! systemctl is-active --quiet openbao; then
+  journalctl -u openbao --no-pager -n 10 >&2 2>/dev/null || true
+  die "起動後に OpenBao が止まりました(上のログを確認)"
+fi
 
 echo "openbao-node: 完了($(systemctl is-active openbao))。未初期化のため、bao operator init は手動で行うこと"
