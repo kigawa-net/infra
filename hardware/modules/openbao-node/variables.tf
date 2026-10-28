@@ -29,7 +29,7 @@ variable "node_id" {
 }
 
 variable "wg_address" {
-  description = "WireGuard 上の IPv4 アドレス(単独、CIDR なし)。listener・api_addr・cluster_addr に使う"
+  description = "Raft のネットワーク上のこのノードの IPv4 アドレス(単独、CIDR なし)。WireGuard の IP か、EasyTier のオーバーレイの IP。listener と cluster_addr に使う。オーバーレイ(ハブを通らない直結)にするときは after_units に easytier.service を足す"
   type        = string
 
   validation {
@@ -39,7 +39,7 @@ variable "wg_address" {
 }
 
 variable "peers" {
-  description = "raft の他のノード(retry_join の宛先と /etc/hosts の対応)。fqdn は証明書の名前、address は WireGuard の IPv4。自分自身が含まれていても無視する(fqdn で判定する)"
+  description = "raft の他のノード(retry_join の宛先と /etc/hosts の対応)。fqdn は証明書の名前、address は Raft のネットワーク上の IPv4(wg_address と同じネットワーク)。自分自身が含まれていても無視する(fqdn で判定する)"
   type = list(object({
     fqdn    = string
     address = string
@@ -119,4 +119,32 @@ variable "wipe_data_on_failure" {
   description = "true のときだけ、失敗時に /var/lib/openbao を消す(初回構築の失敗からの復旧用)。初期化後の誤削除を防ぐため、既定は false"
   type        = bool
   default     = false
+}
+
+variable "memory_high" {
+  description = "systemd の MemoryHigh(例: 1000M)。超えると、メモリの回収が強くなり、遅くなる(kill はされない)。空なら設定しない。RAM が少ないホスト(bao-03 は 1.9GB)で、OpenBao の暴走が EasyTier や sshd を巻き込む前に、抑えるために使う"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.memory_high == "" || can(regex("^[0-9]+[KMGT]$", var.memory_high))
+    error_message = "memory_high は、空か、数字と単位(K/M/G/T)で指定する(例: 1000M)。"
+  }
+}
+
+variable "memory_max" {
+  description = "systemd の MemoryMax(例: 1300M)。超えると、OpenBao だけが OOM で止められ、Restart=on-failure で戻る(ホスト全体の OOM で、sshd や EasyTier が巻き込まれるのを防ぐ)。空なら設定しない。memory_high より大きくすること"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.memory_max == "" || can(regex("^[0-9]+[KMGT]$", var.memory_max))
+    error_message = "memory_max は、空か、数字と単位(K/M/G/T)で指定する(例: 1300M)。"
+  }
+}
+
+variable "after_units" {
+  description = "openbao.service が、起動の順序を待つ systemd の unit(After= と Wants=)。listener が bind するアドレスを持つインターフェースの unit を入れる(WireGuard なら wg-quick@wg0.service、EasyTier のオーバーレイなら easytier.service)"
+  type        = list(string)
+  default     = ["wg-quick@wg0.service"]
 }

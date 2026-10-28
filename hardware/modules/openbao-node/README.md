@@ -37,11 +37,13 @@ OpenBao のノード(raft の voter 1 台)を、SSH provisioner で構築する 
 
 ### systemd unit の硬化
 
-`User=openbao`、`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`MemoryDenyWriteExecute`、`LimitCORE=0`、`SystemCallFilter=@system-service`、`CapabilityBoundingSet=CAP_IPC_LOCK`(mlock のため)。データは `StateDirectory=openbao` で `/var/lib/openbao` だけに書ける。
+`User=openbao`、`NoNewPrivileges`、`ProtectSystem=strict`、`ProtectHome`、`PrivateTmp`、`PrivateDevices`、`MemoryDenyWriteExecute`、`LimitCORE=0`、`SystemCallFilter=@system-service`、`CapabilityBoundingSet=`(空。全て落とす)。データは `StateDirectory=openbao` で `/var/lib/openbao` だけに書ける。
 
 ### mlock と swap
 
-`disable_mlock = false` とし、`LimitMEMLOCK=infinity` と `CAP_IPC_LOCK` で mlock を有効にする。swap の有無に依存しない。
+**OpenBao 2.x は mlock をやめた**(2.7.2 で確認: 設定に `disable_mlock` があると、`OpenBao has dropped support for mlock` で起動に失敗する)。そのため、`disable_mlock` は書かず、`LimitMEMLOCK` と `CAP_IPC_LOCK` も持たせない。メモリを swap に出さない対策は、swap を無効にする(bao-02 / bao-03 は swap なし)か、暗号化する(https://openbao.org/docs/install/#post-installation-hardening)。
+
+セットアップの script は、`systemctl start` の後に数秒待ち(`OPENBAO_START_WAIT`、既定 5)、`openbao` が動き続けているかを確認する。起動直後に設定エラーで落ちても、失敗として止まり、直近のログを出す。
 
 ## 初期化・鍵について
 

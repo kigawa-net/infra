@@ -5,9 +5,9 @@ variable "enabled" {
 }
 
 variable "openbao_node_enabled" {
-  description = "true のときだけ OpenBao を入れる(enabled = true も必要)。false なら WireGuard と journald-limit だけを適用する。cloudflare_api_token_bitwarden_id・peers・openbao_deb_sha256 が揃ってから true にする"
+  description = "true のときだけ OpenBao を入れる(enabled = true も必要)。false なら WireGuard・journald-limit・EasyTier・SSH 堅牢化だけを適用する(OpenBao は 2026-10-28 に導入済みなので true)。cloudflare_api_token_bitwarden_id・peers・openbao_deb_sha256 が揃ってから true にする"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "host" {
@@ -93,12 +93,14 @@ variable "wireguard_server_allowed_ips" {
 }
 
 variable "peers" {
-  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は WireGuard の IPv4。未設定のままにしている"
+  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は Raft のネットワーク(EasyTier のオーバーレイ)の IPv4"
   type = list(object({
     fqdn    = string
     address = string
   }))
-  default = []
+  default = [
+    { fqdn = "bao-03.kigawa.net", address = "10.250.0.31" },
+  ]
 
   validation {
     condition = alltrue([
@@ -169,6 +171,20 @@ variable "easytier_peers" {
   description = "もう一方の公開ノードへの接続先(初期接続先)"
   type        = list(string)
   default     = ["tcp://74.208.55.86:11010"]
+}
+
+# Raft のネットワーク。EasyTier のオーバーレイ(ハブを通らない直結。docs/openbao-implementation-design.md「Raft の経路」)を使う。
+# WireGuard(ハブ経由)に戻すときは、openbao_address を wg_address にし、openbao_after_units を wg-quick@wg0.service だけにする。
+variable "openbao_address" {
+  description = "OpenBao が listen し、cluster_addr に使うアドレス(単独、CIDR なし)。EasyTier のオーバーレイの IP(10.250.0.1)"
+  type        = string
+  default     = "10.250.0.1"
+}
+
+variable "openbao_after_units" {
+  description = "openbao.service が起動の順序を待つ unit。オーバーレイを使うので easytier.service を含める"
+  type        = list(string)
+  default     = ["wg-quick@wg0.service", "easytier.service"]
 }
 
 variable "easytier_overlay_allow" {
