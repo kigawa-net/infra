@@ -12,10 +12,23 @@ Microsoft(`oidc-ms`)と Keycloak(`oidc-keycloak`)は、同じ形で後から足�
 2. client ID と client secret を bws に入れる(別々のシークレット)。
 3. 許可するメールアドレスを 1 つ決める(`ADMIN_EMAIL`)。
 
-## 1. 設定(あなたの端末。リーダーに向ける。Root Token で行う初回だけの作業)
+## 0.5 接続の準備(あなたの端末)
+
+- **`bao` CLI**: サーバと同じ 2.7.2 の `.deb` から `usr/bin/bao` だけを取り出して入れる(`dpkg -i` はサービスが入るので使わない)。
+  URL・SHA256 は `hardware/modules/openbao-node/variables.tf` と同じ。
+- **接続**: ノードは、オーバーレイの IP とループバックでしか待ち受けない(`bao-02.kigawa.net` は端末から引けない)。
+  SSH トンネルで、ループバックの 8200 を転送し、証明書の名前は `BAO_TLS_SERVER_NAME` で合わせる。
 
 ```bash
-export BAO_ADDR=https://bao-02.kigawa.net:8200      # 今のリーダー(sys/health が 200 のノード)
+ssh -fN -o ExitOnForwardFailure=yes -L 18200:127.0.0.1:8200 <user>@<bao-02 の IP>   # 終わったら pkill -f 'L 18200:'
+export BAO_ADDR=https://127.0.0.1:18200
+export BAO_TLS_SERVER_NAME=bao-02.kigawa.net
+bao status | grep -E 'Sealed|HA Mode'     # Sealed false / HA Mode active(リーダー)を確認
+```
+
+## 1. 設定(Root Token で行う初回だけの作業)
+
+```bash
 read -rs BAO_TOKEN; export BAO_TOKEN                 # Initial Root Token を貼る(画面に出ない)
 
 # Policy
@@ -44,7 +57,7 @@ jq -n --arg mail "$ADMIN_EMAIL" '{
 
 ```bash
 unset BAO_TOKEN
-bao login -method=oidc -path=oidc-google role=admin   # ブラウザで Google 認証 → token の policies に admin
+bao login -method=oidc -path=oidc-google role=admin >/dev/null   # 出力に token が出るので捨てる。ブラウザで Google 認証 → token の policies に admin
 bao token lookup | grep -E 'policies|ttl'
 bao kv put secret/_oidc_test ok=1 && bao kv delete secret/_oidc_test   # secret/ が KV v2 でなければ先に有効化する
 ```
@@ -62,3 +75,10 @@ bao token revoke -self
 
 以後に root が必要なときは `bao operator generate-root`(Unseal key 3/5 が要る)。
 **注意**: 失効後に Google へ入れなくなると、管理操作ができない。OIDC が壊れた場合の復旧も `generate-root` になる。
+
+## 実施記録
+
+- 2026-10-29: `auth/oidc-google`・`admin` Policy・role を作成。OIDC ログインで `policies [admin default]` を確認。
+  admin で `policy list`・`auth list`・`secrets list`・`operator raft list-peers` が通ることを確認(bao-02 leader、bao-03 follower)。
+  Initial Root Token を失効した。
+- 気づき: `bao login` の出力には token が含まれる。チャットなどに貼らない(貼った場合は `bao token revoke -self`)。
