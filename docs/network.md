@@ -2,7 +2,7 @@
 
 このドキュメントでは、kigawa-net インフラストラクチャのネットワーク構成について説明します。
 
-> **注記(2026-10-27):** alice は Terraform 上すでに廃止済み(`hardware/alice/` は存在せず、`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載がある)。本書の alice に関する記述は廃止前の設計の履歴であり、現行構成は [IONOS ゲートウェイ設計書](ionos-gateway-design.md) と [全体ネットワーク・VPN基盤設計書](network-vpn-architecture-design.md) を参照する。
+> **注記(2026-10-29):** alice は Terraform 上すでに廃止済み(`hardware/alice/` には `.tf` がなく、`.terraform` と `.terraform.lock.hcl` の残骸だけが残っている。`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載がある)。本書の「4. ゲートウェイ (Alice)」節と、構成図・IP 割り当て表の alice に関する記述は廃止前の設計の履歴であり、現行構成は「現行のゲートウェイと VPN」節、[IONOS ゲートウェイ設計書](ionos-gateway-design.md)、[全体ネットワーク・VPN基盤設計書](network-vpn-architecture-design.md) を参照する。
 
 ## 概要
 
@@ -27,7 +27,8 @@
     - **Kubernetes サービスネットワーク**: kube-vip 等を通じて広告される場合があります。
 - **kube-vip との BGP**: 同一ホストの kube-vip と FRR の BGP は張れません(FRR は `127.0.0.x` を BGP の自分側に使えず、自ノードのアドレスを neighbor に指定できず、kube-vip が送る next-hop は自ノードのアドレスのため `martian or self next-hop` で破棄されます)。kube-vip は VIP を保持ノードのインターフェースに付けるだけで、広告は直結経路の再配布が担います。kube-vip の `bgp_peeraddress`(`127.0.0.2`)は、消さずに残します(ピア 0 件だと kube-vip が落ちる)。FRR は接続を拒否するだけで、kube-vip のログに接続エラーが出ます。詳細は `hardware/modules/bgp-frr/README.md`。
 - **移行の記録**: `hardware/modules/bgp-frr/RUNBOOK-step2-k8s1.md`(切り替え手順と、k8s1・k8s2・k8s4 の実施結果)。
-- **Alice Gateway (FRR)**: `alice` ノードで [FRR (Free Range Routing)](https://frrouting.org/) が動作しています。
+- **外部ピア(現行)**: IONOS(AS65030)と Oracle(AS65040)と eBGP で接続する。Soichiro は AS65020(`hardware/ionos/variables.tf` の `soichiro_asn`)。詳細は「現行のゲートウェイと VPN」節。
+- **Alice Gateway (FRR)(廃止済み)**: かつて `alice` ノードで [FRR (Free Range Routing)](https://frrouting.org/) が動作しています。
     - **役割**: 外部ピアとの接続、OSPFによる内部ルートの学習、WireGuardインターフェース経由のルーティング。
 
 ### 2. DNS インフラストラクチャ
@@ -93,7 +94,7 @@ workerノードは `192.168.1.0/24` のみに接続され、BGPピアではな�
 送出してしまい到達できない(issue #154 / #193)。DNS VIP `10.0.0.53` や Keycloak/Ingress
 VIP `10.0.0.240` に届かず、CoreDNSのforward失敗やadmin-panelのJWKS取得失敗の原因になる。
 
-対策として、全workerに以下の静的経路を入れる。k8s1/k8s2/k8s4 は自宅LAN側にもアドレスを持ち
+対策として、全 worker(worker1 / 3 / 4 / 5)に以下の静的経路を入れる。k8s1/k8s2/k8s4 は自宅LAN側にもアドレスを持ち
 `ip_forward=1` のため、これらの keepalived(VRRP)が持つ **Core Router VIP(`192.168.1.200`)** を
 next-hop にする(#241)。
 
@@ -111,7 +112,7 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
   流れ続け、`no route to host` になった(2026-10-05、k8s2 のダウン中に worker3 が NotReady になった)。
   VRRP の failover(約 1 秒)に任せることで、この固定を無くす。負荷分散はなくなる(MASTER の 1 台に集まる)。
 
-- 定義: `hardware/modules/cluster-route`(Terraform。`k8s-worker3` / `k8s-worker5` から利用)
+- 定義: `hardware/modules/cluster-route`(Terraform。`k8s-worker1` / `k8s-worker3` / `k8s-worker4` / `k8s-worker5` から利用)
 - 自己修復: `cluster-route.timer` が1分ごとに `cluster-route.service` を再実行する
   (`ip route replace` は冪等)。経路が何らかの理由で失われても最大1分で復旧する
   (2026-10-03、経路が失われたままCoreDNSのタイムアウトが約3時間続いた事象への対策)
@@ -123,11 +124,7 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
   ```
 - `k8s-worker4` も、`hardware/k8s-worker4` から、同じ `cluster-route` モジュール(タイマー付き)で管理する(#193。
   2026-10-16 に、手動設定の経路が消えたまま戻らず、worker4 上の CoreDNS が `10.0.0.53` に届かなくなった)。
-- 注意: `k8s-worker1` は現状 `hardware/` に Terraform 定義がなく、同じ経路を手動で設定している
-  (2026-10-06 に、Core Router VIP 1 本に変更。`/usr/local/bin/cluster-route.sh` と `cluster-route.service`。
-  変更前のスクリプトは `/root/cluster-route.sh.bak-20261006`)。
-  `cluster-route.timer`(1 分ごとの再適用)は無いので、経路が消えても自動では復旧しない。
-  IaC への取り込みは #198 で追跡する。
+- `k8s-worker1` も、`hardware/k8s-worker1` から、同じ `cluster-route` モジュールで管理する(#323)。固定アドレスとデフォルト経路は `modules/static-network` で管理する(#317)。以前は手動設定(`/usr/local/bin/cluster-route.sh`)で、`cluster-route.timer` が無く、経路が消えても自動では復旧しなかった。
 
 ### 3. 高可用性 (VRRP / Keepalived / kube-vip)
 
@@ -164,9 +161,29 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
     - 自動適用: `hardware/modules/kube-vip` を変更して main にマージすると、GitHub Actions(`terraform.yml`)が利用元(k8s1・k8s2・k8s4)を 1 台ずつ apply します(`max-parallel: 1`、`fail-fast` なし)。
     - テスト: `bash hardware/modules/kube-vip/test-kube-vip-health.sh`(偽の curl / ip を使い、実機には触れません)。
 
-### 4. ゲートウェイ (Alice)
+### 4. 現行のゲートウェイと VPN
 
-`alice` ノードは、ネットワークの境界ゲートウェイとして以下の機能を果たします。
+alice 廃止後の現行構成(値は各 `hardware/*/variables.tf` の既定値。実機の状態は未確認)。詳細は [IONOS ゲートウェイ設計書](ionos-gateway-design.md) と [全体ネットワーク・VPN基盤設計書](network-vpn-architecture-design.md)。
+
+- **WireGuard(IONOS hub)**: `172.31.254.0/24`。ionos(`74.208.55.86`、`172.31.254.2`)が hub。k8s1 は `172.31.254.11`、k8s2 は `172.31.254.12`、k8s4 は `172.31.254.1`。bao-02 は `.30`、bao-03 は `.31`。
+- **WireGuard(IONOS 専用リンク、#238)**: ionos ↔ k8s4 が `172.31.252.0/30`(IONOS 側 `.1`・`wg-gw4`、k8s4 側 `.2`・`wg-ionos-gw`、ポート 51821、BGP の `local_pref` 200)で主。ionos ↔ k8s2 が `172.31.252.4/30`(IONOS 側 `.5`・`wg-gw2`、k8s2 側 `.6`・`wg-ionos`、ポート 51822、`local_pref` 150)で予備。
+- **WireGuard(Oracle)**: k8s4 の `wg-oracle`(`172.31.253.0/24`、k8s4 が `.1`)。
+- **EasyTier Overlay**: `10.250.0.0/24`(network 名 `kigawa-net`、v2.6.4、11010)。WireGuard・FRR とは別に並行稼働する。下表のとおり。
+
+  | ノード | Overlay IP | `easytier_enabled` の既定 |
+  |---|---|---|
+  | bao-02(ServerCheap) | `10.250.0.1` | true |
+  | ionos | `10.250.0.2` | true |
+  | k8s4(Inuyama Gateway) | `10.250.0.11` | true(#395) |
+  | k8s1 | `10.250.0.12` | **true**(2026-10-29 有効化。#405) |
+  | k8s2 | `10.250.0.13` | true(#400) |
+  | bao-03 | `10.250.0.31` | true |
+
+  control-plane 3 台の導入と接続の確認結果は [設計書 §4.1.1](network-vpn-architecture-design.md) に記録済み。Relay 切替と Direct への復帰の実測は未実施。
+
+### 4.1 旧ゲートウェイ (Alice)(廃止済み・履歴)
+
+廃止前、`alice` ノードは、ネットワークの境界ゲートウェイとして以下の機能を果たしていました。
 
 - **FRR**:
     - BGP/OSPFによるルーティング制御。
@@ -183,6 +200,8 @@ ip route replace 10.0.0.0/24 nexthop via 192.168.1.200 weight 1
         - k8s2 (`172.31.255.12`) — 直接ピア
 
 ## ネットワーク構成図
+
+> 次の2つの図(1. 物理・論理トポロジー、2. BGP ピアリング構成)は廃止前の alice を含む構成の履歴。現行の外部接続は上の「現行のゲートウェイと VPN」節を参照する。
 
 ### 1. 物理・論理トポロジー
 
@@ -209,8 +228,8 @@ graph TB
         end
 
         subgraph "Kubernetes Workers"
-            worker3[k8s-worker3<br/>10.0.0.30]
-            worker5[k8s-worker5<br/>10.0.0.40]
+            worker3[k8s-worker3<br/>192.168.1.130]
+            worker5[k8s-worker5<br/>192.168.1.150]
         end
 
         Router[Physical Router<br/>10.0.0.1]
@@ -293,12 +312,18 @@ Inuyamaサイト（`10.0.0.0/24`）では、管理の容易性と将来の拡張
 | 10.0.0.103 | k8s1 (Node) | 静的割当 | CP (Node) |
 | 10.0.0.120 | k8s2 (Node) | 静的割当 | CP (Node) |
 | 10.0.0.140 | k8s4 (Node) | 静的割当 | CP (Node) |
-| 10.0.0.30 | k8s-worker3 | 静的割当 | Worker |
-| 10.0.0.40 | k8s-worker5 | 静的割当 | Worker |
+| 192.168.1.228 | k8s-worker1 | 静的割当(`modules/static-network`) | Worker。旧 DHCP アドレス 192.168.1.105 も残してあり、.228 が消えている間の SSH 接続先(`static_network_ssh_host`)になる |
+| 192.168.1.130 | k8s-worker3 | 静的割当 | Worker |
+| 192.168.1.121 | k8s-worker4 | 手動設定(IaC は `cluster-route` のみ。アドレスは IaC 管理外) | Worker |
+| 192.168.1.150 | k8s-worker5 | 静的割当 | Worker |
+| 192.168.1.200 | Core Router VIP | Keepalived (VRRP) | ゲートウェイ |
 | 10.0.0.240 | Ingress VIP | kube-vip / BGP | VIP |
 | 10.0.0.241 | Minecraft VIP | kube-vip / BGP | VIP |
-| 161.248.62.66 | Alice Gateway (Public) | 静的割当 | Alice |
-| 172.31.255.2/24 | Alice Gateway (WG) | WireGuard | Alice |
+| 74.208.55.86 | IONOS Gateway (Public) | 静的割当 | IONOS |
+| 172.31.254.2/24 | IONOS Gateway (WG hub) | WireGuard | IONOS |
+| 10.250.0.0/24 | EasyTier Overlay | EasyTier | Overlay |
+| 161.248.62.66 | Alice Gateway (Public、廃止済み) | 静的割当 | Alice |
+| 172.31.255.2/24 | Alice Gateway (WG、廃止済み) | WireGuard | Alice |
 | 172.31.255.1 | Inuyama Gateway (WG) | WireGuard | Inuyama |
 | 172.31.255.11 | k8s1 (WG) | WireGuard | Inuyama |
 | 172.31.255.12 | k8s2 (WG) | WireGuard | Inuyama |
