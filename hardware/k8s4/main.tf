@@ -1035,7 +1035,7 @@ module "overlay_firewall" {
   source = "../modules/overlay-firewall"
   count  = var.easytier_enabled ? 1 : 0
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
@@ -1049,7 +1049,7 @@ module "easytier" {
   count      = var.easytier_enabled ? 1 : 0
   depends_on = [module.overlay_firewall]
 
-  host            = var.host
+  host            = var.server_ip
   ssh_user        = var.ssh_user
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
