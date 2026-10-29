@@ -113,9 +113,3 @@ variable "overlay_allow" {
     error_message = "overlay_allow は 22/tcp のような形式で指定する。"
   }
 }
-
-variable "overlay_iptables_firewall" {
-  description = "true のとき、ufw ではなく iptables で、Overlay(overlay_address のネットワーク)からの受信を overlay_allow だけに絞る。ufw を使わないホスト(control-plane など)向け(ufw が無効なホストでは overlay_firewall は何も遮断しない)。ルールは easytier.service の ExecStartPost / ExecStopPost に結びつく。overlay_firewall とは同時に使わない"
-  type        = bool
-  default     = false
-}

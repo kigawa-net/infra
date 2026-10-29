@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # overlay-fw-iptables.sh のオフラインテスト。状態を持つ偽の iptables と systemctl を使うので、実機のファイアウォールには触れない。
-# 使い方: bash hardware/modules/easytier/test-overlay-fw-iptables.sh
+# 使い方: bash hardware/modules/overlay-firewall/test-overlay-fw-iptables.sh
 set -u
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

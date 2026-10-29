@@ -402,7 +402,7 @@ variable "easytier_peers" {
 }
 
 variable "easytier_overlay_allow" {
-  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。既定は空で、Overlay からは何も受けない(ICMP を除く)。control-plane は ufw を使わないので、iptables で絞る(modules/easytier の overlay_iptables_firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)"
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。既定は空で、Overlay からは何も受けない(ICMP を除く)。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)"
   type        = list(string)
   default     = []
 }

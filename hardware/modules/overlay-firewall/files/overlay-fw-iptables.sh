@@ -2,7 +2,7 @@
 # ufw を使わないホスト(control-plane など)で、Overlay からの受信を iptables で許可リスト制にする。
 # 必須の環境変数: OF_CIDR(Overlay のネットワーク。例: 10.250.0.0/24)。任意: OF_ALLOW(空白区切りの 22/tcp など。既定は空)。
 # ルールは、easytier.service の ExecStartPost(apply)/ ExecStopPost(remove)に結びつける。再起動しても残り、tunnel が無いときは外れる。
-# easytier.service は再起動しない(tunnel を切らない)。
+# easytier.service は再起動しない(tunnel を切らない)。easytier より先に適用すれば、Overlay が上がる前に遮断が入る(送信元アドレスで絞るので、interface は要らない)。
 # OF_CONF / OF_HELPER / OF_DROPIN_DIR は、テスト(test-overlay-fw-iptables.sh)で差し替える。
 set -eo pipefail
 export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
