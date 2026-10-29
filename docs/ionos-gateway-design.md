@@ -4,6 +4,8 @@
 **対象拠点:** `ionos`
 **設計方針:** [alice ゲートウェイ設計書](alice-gateway-design.md) と同一アーキテクチャ(WireGuard hub + FRR BGP + HAProxy)を、`alice` とは別拠点の独立した公開ゲートウェイとして並列に追加する。
 
+> **注記(2026-10-29):** alice は廃止済み(`hardware/alice/` には `.tf` がなく、`.terraform` の残骸だけが残っている)。現在の ionos は、alice の代替でも「2本目」でもなく、現行の公開ゲートウェイである。本書の alice との比較は設計時点の記録として残す。k8s4 / k8s2 との専用リンク(#238)と EasyTier(`10.250.0.2`)は本書の範囲外で、[`docs/network.md`](network.md) の「現行のゲートウェイと VPN」節に記載する。
+
 `alice` を置き換えるものではなく、`alice` 障害時にも運用継続できる2本目の公開経路として位置づける。役割・公開ポート・Firewall方針は alice ゲートウェイ設計書と同一のため、本書では ionos 固有の差分のみを記載する。
 
 ---
@@ -68,4 +70,4 @@ alice と同じ方針(`179/tcp` は WireGuard内部のみ許可)を、ionos の 
 
 ## 4. HAProxy 転送先
 
-ionos の HAProxy も alice と同じ inuyama backend VIP (`inuyama_ingress_vip` = `192.168.1.240`, `minecraft_backend_vip` = `192.168.1.241`) に転送する。DNS/GSLBでの alice・ionos 間の振り分け方針(Active-Active か Active-Standby か)は別途決定が必要。
+ionos の HAProxy も alice と同じ inuyama backend VIP (`inuyama_ingress_vip` = `10.0.0.240`, `minecraft_backend_vip` = `10.0.0.241`。`hardware/ionos/variables.tf` の既定値) に転送する。DNS/GSLBでの alice・ionos 間の振り分け方針(Active-Active か Active-Standby か)は別途決定が必要。

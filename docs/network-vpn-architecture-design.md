@@ -61,7 +61,8 @@ ServerCheap・IONOS は、できるだけアプリケーションや認証基盤
 | EasyTier Overlay | `10.250.0.0/24` | P2P・Relay |
 | 既存WireGuard | `172.31.254.0/24` | IONOS側 |
 | 旧alice WireGuard | `172.31.255.0/24` | ServerCheapへ移行検討 |
-| P2P試験用 | `172.31.253.0/30` | 独立試験 |
+| P2P試験用 | `172.31.253.0/30` | 独立試験の案(**使用不可**: `hardware/k8s4` の `wg-oracle` が `172.31.253.0/24` を使用中で、この範囲は重なる。試験用には別の範囲を選ぶこと。現状の用途は未確認) |
+| IONOS 専用リンク | `172.31.252.0/30`(k8s4)、`172.31.252.4/30`(k8s2) | ionos ↔ k8s4(主)・k8s2(予備)のデータプレーン(#238) |
 | Kubernetes Pod | `10.244.0.0/16` | 既存Flannel |
 | Kubernetes Service | `10.96.0.0/12` | 既存Service |
 
@@ -86,9 +87,10 @@ EasyTier の役割は次の3つです。
 | ServerCheap | `10.250.0.1` |
 | IONOS | `10.250.0.2` |
 | Inuyama Gateway(k8s4) | `10.250.0.11` |
-| Inuyama control-plane(k8s1) | `10.250.0.12` |
-| Inuyama control-plane(k8s2) | `10.250.0.13` |
-| Soichiro Gateway | `10.250.0.21` |
+| k8s1 | `10.250.0.12` |
+| k8s2 | `10.250.0.13` |
+| Soichiro Gateway | `10.250.0.21`(案。未導入) |
+| bao-03(host-hye1) | `10.250.0.31` |
 
 ### 4.1.1 実機での確認状況
 
@@ -101,7 +103,7 @@ EasyTier の役割は次の3つです。
 | 2026-10-29 | Inuyama の control-plane 3 台(k8s4 `10.250.0.11`・k8s1 `10.250.0.12`・k8s2 `10.250.0.13`)に EasyTier v2.6.4 を導入(#391・#395・#399・#401・#405)。ufw のないホストなので、iptables の `EASYTIER-OVERLAY` チェーンで Overlay からの受信を絞る(`modules/overlay-firewall`) | 3 台とも `easytier` が `active`、公開 Peer 2 台・bao-03 に p2p で接続(loss 0.0%)。control-plane 同士は LAN の発見で 0.28〜0.44ms の直接接続。公開ノードとの遅延は 144〜185ms。bao-02 から 3 台の Overlay へ `ping` は通り、6443・10250・22 は遮断(対照の 127.0.0.1:22・74.208.55.86:22 は接続できた)。`kubectl get nodes` は全ノード `Ready`、k8s2 の MAAS のサービスも `active` |
 
 - 設定ファイル(`/etc/easytier/easytier.toml`、`ipv4` / `dhcp` / `listeners` / `[network_identity]` / `[[peer]]`)の書式は、v2.6.4 で通ることを確認した。
-- 同じ Overlay に、管理者が追加した別のノード(`host-hye1`、`10.250.0.31`)も参加している。
+- bao-03(`host-hye1`、`10.250.0.31`)も同じ Overlay に参加している(`hardware/bao-03`)。
 - Overlay からの受信は、送信元アドレス(`10.250.0.0/24`)で絞っている。インターフェース名で絞るには EasyTier の設定の変更と再起動が要り、メッシュが切れるため。ICMP は ufw の `before.rules` で許可されるので、ping は通る。許可は `easytier_overlay_allow`(既定は空。bao-02 だけ Raft 用に 8200/tcp・8201/tcp)で足し、足したルールは外しても自動では消えない(`ufw delete` が要る)。
 - bao-02 から bao-03 の Overlay の IP(`bao-03.kigawa.net:8200`)へ、TLS・HTTP とも届くことを確認した。bao-03 は HTTP 503 `Vault is sealed` を返す。OpenBao が未初期化(`bao operator init` と Unseal が未実施。設計書 `docs/openbao-implementation-design.md` §6 のとおり、人間が端末で行う)のためで、ネットワークの異常ではない。このため、OpenBao の Raft のリーダー選出と、`easytier` の再起動が Raft に与える影響は、初期化が済むまで確認できない。
 - control-plane への EasyTier の SSH 接続先は `var.server_ip`(`10.0.0.x`)にする。CI の実行環境は WireGuard 経由で `10.0.0.x` にだけ届き、`var.host`(`192.168.1.x`)には届かないため(#399)。
@@ -126,9 +128,11 @@ EasyTier の役割は次の3つです。
 | --- | --- |
 | AS65000 | Inuyama Kubernetes内部 |
 | AS65010 | Inuyama外部接続用 |
-| AS65020 | ServerCheapへの移管候補(旧 alice が使用していた AS) |
+| AS65020 | Soichiro(`hardware/ionos/variables.tf` の `soichiro_asn`)。旧 alice が使用していた AS でもある |
 | AS65030 | IONOS |
-| AS65040 | Soichiro新規提案 |
+| AS65040 | Oracle(`hardware/ionos/variables.tf` の `oracle_asn`) |
+
+ServerCheap(bao-02)は BGP を張っていない(`hardware/bao-02` に FRR の設定はなく、WireGuard `172.31.254.30` と EasyTier のみ)。ServerCheap 用の AS の割り当ては未確定。
 
 Inuyama 側の `local-as 65010 no-prepend replace-as` を考慮し、既存 iBGP フルメッシュに変更を加えないことを原則とします。
 
@@ -234,7 +238,7 @@ EasyTier の状態取得方法は、固定するバージョンの CLI/API を�
 
 ## 9. aliceからServerCheapへの移行
 
-> **現状(2026-10-27 時点):** alice は Terraform 上すでに廃止済みです(`hardware/alice/` は存在せず、`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載があります)。現行の WireGuard は IONOS 側(`172.31.254.0/24`)です。以下の手順のうち、alice 側の WireGuard・FRR の撤去は完了済みとして扱い、残作業は DNS・監視・CI/CD・ドキュメントの参照と、alice 実体 VPS の停止状況の確認です。
+> **現状(2026-10-29 時点):** alice は Terraform 上すでに廃止済みです(`hardware/alice/` には `.tf` がなく、`.terraform` の残骸だけが残っています。`hardware/k8s4/main.tf` に「aliceは廃止済み」の記載があります)。現行の WireGuard は IONOS 側(`172.31.254.0/24`)です。以下の手順のうち、alice 側の WireGuard・FRR の撤去は完了済みとして扱い、残作業は DNS・監視・CI/CD・ドキュメントの参照と、alice 実体 VPS の停止状況の確認です。
 
 既存リポジトリを確認したところ、`docs/network.md` と `docs/wireguard-network-map-design.md` では alice 側の WireGuard 接続構成に差があります。後者は alice–k8s4 の単一リンクを現状として扱っています。
 
