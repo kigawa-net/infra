@@ -87,7 +87,7 @@ EasyTier の役割は次の3つです。
 | ServerCheap | `10.250.0.1` |
 | IONOS | `10.250.0.2` |
 | Inuyama Gateway(k8s4) | `10.250.0.11` |
-| k8s1 | `10.250.0.12`(既定は無効) |
+| k8s1 | `10.250.0.12` |
 | k8s2 | `10.250.0.13` |
 | Soichiro Gateway | `10.250.0.21`(案。未導入) |
 | bao-03(host-hye1) | `10.250.0.31` |
@@ -100,14 +100,14 @@ EasyTier の役割は次の3つです。
 | 2026-10-28 | 公開 Peer 2 台の相互接続(`easytier-cli peer`) | p2p(tcp)で直接接続。遅延 11.63ms、パケットロス 0.0% |
 | 2026-10-28 | Overlay からの受信の絞り込み(ufw、#368・#369)。ionos・bao-02 で、Overlay(`10.250.0.0/24`)の送信元を拒否し、許可リストだけを通す | ionos: `DENY IN 10.250.0.0/24` が先頭(許可リストは空)。bao-02: Raft 用の 8200/8201 の allow が deny より前にある。適用後も 3 台が p2p で接続(遅延 11〜35ms、loss 0.0%)、`ping 10.250.0.2` は 3/3 で通る |
 | 2026-10-28 | bao-03(`host-hye1`、`10.250.0.31`)の Overlay からの受信の絞り込み(#376・#377) | bao-03: 8201/tcp・8200/tcp の allow が `DENY IN 10.250.0.0/24` より前(1〜3 番)。`easytier` と `openbao` が `active`。bao-02(遅延 31.77ms)・ionos(同 34.13ms)に p2p で接続、loss 0.0%、`ping 10.250.0.1` は 3/3 |
-| 2026-10-29 | k8s4(Inuyama Gateway、`10.250.0.11`)で EasyTier を有効化(#395。SSH 接続先の修正は #398・#399) | `easytier_enabled` の既定が true(`hardware/k8s4/variables.tf`)。**NAT 配下からの接続の実測は未実施** |
-| 2026-10-29 | k8s2(`10.250.0.13`)で EasyTier を有効化(#400・#401) | `easytier_enabled` の既定が true(`hardware/k8s2/variables.tf`)。**実測は未実施**。k8s1(`10.250.0.12`)は既定 false のまま未有効化 |
+| 2026-10-29 | Inuyama の control-plane 3 台(k8s4 `10.250.0.11`・k8s1 `10.250.0.12`・k8s2 `10.250.0.13`)に EasyTier v2.6.4 を導入(#391・#395・#399・#401・#405)。ufw のないホストなので、iptables の `EASYTIER-OVERLAY` チェーンで Overlay からの受信を絞る(`modules/overlay-firewall`) | 3 台とも `easytier` が `active`、公開 Peer 2 台・bao-03 に p2p で接続(loss 0.0%)。control-plane 同士は LAN の発見で 0.28〜0.44ms の直接接続。公開ノードとの遅延は 144〜185ms。bao-02 から 3 台の Overlay へ `ping` は通り、6443・10250・22 は遮断(対照の 127.0.0.1:22・74.208.55.86:22 は接続できた)。`kubectl get nodes` は全ノード `Ready`、k8s2 の MAAS のサービスも `active` |
 
 - 設定ファイル(`/etc/easytier/easytier.toml`、`ipv4` / `dhcp` / `listeners` / `[network_identity]` / `[[peer]]`)の書式は、v2.6.4 で通ることを確認した。
 - bao-03(`host-hye1`、`10.250.0.31`)も同じ Overlay に参加している(`hardware/bao-03`)。
 - Overlay からの受信は、送信元アドレス(`10.250.0.0/24`)で絞っている。インターフェース名で絞るには EasyTier の設定の変更と再起動が要り、メッシュが切れるため。ICMP は ufw の `before.rules` で許可されるので、ping は通る。許可は `easytier_overlay_allow`(既定は空。bao-02 だけ Raft 用に 8200/tcp・8201/tcp)で足し、足したルールは外しても自動では消えない(`ufw delete` が要る)。
 - bao-02 から bao-03 の Overlay の IP(`bao-03.kigawa.net:8200`)へ、TLS・HTTP とも届くことを確認した。bao-03 は HTTP 503 `Vault is sealed` を返す。OpenBao が未初期化(`bao operator init` と Unseal が未実施。設計書 `docs/openbao-implementation-design.md` §6 のとおり、人間が端末で行う)のためで、ネットワークの異常ではない。このため、OpenBao の Raft のリーダー選出と、`easytier` の再起動が Raft に与える影響は、初期化が済むまで確認できない。
-- 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、NAT 配下のノード(Inuyama の k8s4・k8s2、Soichiro)の接続(k8s4・k8s2 は有効化済みだが実測は未実施。k8s1 は未有効化)、Overlay 経由の SSH が拒否されること(ufw の順序は確認済み)、OpenBao の Raft のリーダー選出(初期化後)。
+- control-plane への EasyTier の SSH 接続先は `var.server_ip`(`10.0.0.x`)にする。CI の実行環境は WireGuard 経由で `10.0.0.x` にだけ届き、`var.host`(`192.168.1.x`)には届かないため(#399)。
+- 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、Soichiro の接続(見送り中。Terraform のモジュールと LAN の範囲が未定)、OpenBao の Raft のリーダー選出(初期化後)。
 
 両公開ノードを初期接続先として登録し、特定の1台だけに依存しない構成にします。
 

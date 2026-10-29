@@ -175,11 +175,11 @@ alice 廃止後の現行構成(値は各 `hardware/*/variables.tf` の既定値�
   | bao-02(ServerCheap) | `10.250.0.1` | true |
   | ionos | `10.250.0.2` | true |
   | k8s4(Inuyama Gateway) | `10.250.0.11` | true(#395) |
-  | k8s1 | `10.250.0.12` | **false**(未有効化) |
+  | k8s1 | `10.250.0.12` | **true**(2026-10-29 有効化。#405) |
   | k8s2 | `10.250.0.13` | true(#400) |
   | bao-03 | `10.250.0.31` | true |
 
-  k8s4・k8s2 は有効化済みだが、NAT 配下からの接続の実測は未実施([設計書 §4.1.1](network-vpn-architecture-design.md))。
+  control-plane 3 台の導入と接続の確認結果は [設計書 §4.1.1](network-vpn-architecture-design.md) に記録済み。Relay 切替と Direct への復帰の実測は未実施。
 
 ### 4.1 旧ゲートウェイ (Alice)(廃止済み・履歴)
 

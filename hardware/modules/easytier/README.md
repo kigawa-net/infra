@@ -21,7 +21,7 @@ module "easytier" {
 }
 ```
 
-組み込み済み(2026-10-29 時点の `easytier_enabled` の既定): ionos・bao-02・bao-03・k8s4・k8s2 は true、k8s1 は false。採用バージョンは v2.6.4。Relay 切替と Direct への復帰の実測は未実施(`docs/easytier-relay-test.md`)。新しいノードに組み込む前に、Secret を Bitwarden に登録すること。
+組み込み済み(2026-10-29 時点の `easytier_enabled` の既定): ionos・bao-02・bao-03・k8s4・k8s1・k8s2 はすべて true。採用バージョンは v2.6.4。Relay 切替と Direct への復帰の実測は未実施(`docs/easytier-relay-test.md`)。新しいノードに組み込む前に、Secret を Bitwarden に登録すること。
 
 ## 動作
 
