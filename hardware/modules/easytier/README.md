@@ -12,7 +12,7 @@ module "easytier" {
   ssh_user         = var.ssh_user
   ssh_private_key  = local.ssh_key
   sudo_password    = local.sudo_password
-  easytier_version = "2.7.0"        # 採用バージョンは未確定。実測してから固定する
+  easytier_version = "2.6.4"        # 採用バージョン(docs/network-vpn-architecture-design.md §4.1)
   easytier_sha256  = "<自分で計算した zip の SHA-256>"
   network_name     = "kigawa-net"
   network_secret   = local.easytier_network_secret   # bws_get_value で取得する
@@ -21,7 +21,7 @@ module "easytier" {
 }
 ```
 
-まだどのノードにも組み込んでいない。組み込む前に、Secret を Bitwarden に登録し、dev で Relay 切替と Direct への復帰を実測すること。
+組み込み済み(2026-10-29 時点の `easytier_enabled` の既定): ionos・bao-02・bao-03・k8s4・k8s2 は true、k8s1 は false。採用バージョンは v2.6.4。Relay 切替と Direct への復帰の実測は未実施(`docs/easytier-relay-test.md`)。新しいノードに組み込む前に、Secret を Bitwarden に登録すること。
 
 ## 動作
 
