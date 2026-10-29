@@ -175,3 +175,52 @@ variable "wireguard_ionos_server_allowed_ips" {
   type        = list(string)
   default     = ["172.31.254.2/32"]
 }
+
+# EasyTier(kigawa-net/infra#390、docs/network-vpn-architecture-design.md §4.1)。
+# false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。有効化は 1 台ずつ、別の PR で行う。
+variable "easytier_enabled" {
+  description = "true のときだけ EasyTier を入れる(NAT 配下のノードとして、公開 Peer 2 台へ接続する)"
+  type        = bool
+  default     = false
+}
+
+variable "easytier_network_secret_bitwarden_id" {
+  description = "EasyTier のネットワーク Secret の bws の ID(easytier-network-secret)。ionos・bao-02・bao-03 と同じ値"
+  type        = string
+  default     = "698da56c-a169-4837-93a1-b4f00107b513"
+}
+
+variable "easytier_network_name" {
+  type    = string
+  default = "kigawa-net"
+}
+
+variable "easytier_version" {
+  description = "採用バージョン(docs/network-vpn-architecture-design.md §4.1)。GitHub の latest(prerelease でない最新)"
+  type        = string
+  default     = "2.6.4"
+}
+
+variable "easytier_sha256" {
+  description = "easytier-linux-x86_64-v2.6.4.zip の SHA-256(自分でダウンロードして計算し、GitHub の digest とも一致を確認した値)。easytier_version を上げるときは、必ず更新する"
+  type        = string
+  default     = "61b659eaedba658fa66fe47d17e1426cdd77e5d02fa15fed447bb4357c09dfd6"
+}
+
+variable "easytier_overlay_address" {
+  description = "このノードの EasyTier の Overlay アドレス(設計書 §4.1。k8s4 が Inuyama Gateway の 10.250.0.11)"
+  type        = string
+  default     = "10.250.0.12/24"
+}
+
+variable "easytier_peers" {
+  description = "初期接続先の公開 Peer(ServerCheap = bao-02 と IONOS)。特定の 1 台だけに依存しない"
+  type        = list(string)
+  default     = ["tcp://207.231.111.196:11010", "tcp://74.208.55.86:11010"]
+}
+
+variable "easytier_overlay_allow" {
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。既定は空で、Overlay からは何も受けない(ICMP を除く)。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)"
+  type        = list(string)
+  default     = []
+}
