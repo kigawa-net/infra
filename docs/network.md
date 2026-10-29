@@ -312,9 +312,9 @@ Inuyamaサイト（`10.0.0.0/24`）では、管理の容易性と将来の拡張
 | 10.0.0.103 | k8s1 (Node) | 静的割当 | CP (Node) |
 | 10.0.0.120 | k8s2 (Node) | 静的割当 | CP (Node) |
 | 10.0.0.140 | k8s4 (Node) | 静的割当 | CP (Node) |
-| 192.168.1.228 | k8s-worker1 | 静的割当(`modules/static-network`) | Worker |
+| 192.168.1.228 | k8s-worker1 | 静的割当(`modules/static-network`) | Worker。旧 DHCP アドレス 192.168.1.105 も残してあり、.228 が消えている間の SSH 接続先(`static_network_ssh_host`)になる |
 | 192.168.1.130 | k8s-worker3 | 静的割当 | Worker |
-| 192.168.1.121 | k8s-worker4 | 静的割当 | Worker |
+| 192.168.1.121 | k8s-worker4 | 手動設定(IaC は `cluster-route` のみ。アドレスは IaC 管理外) | Worker |
 | 192.168.1.150 | k8s-worker5 | 静的割当 | Worker |
 | 192.168.1.200 | Core Router VIP | Keepalived (VRRP) | ゲートウェイ |
 | 10.0.0.240 | Ingress VIP | kube-vip / BGP | VIP |
