@@ -89,9 +89,30 @@ locals {
     StateDirectory=openbao
     StateDirectoryMode=0700
 
+    # 監査ログ(audit device の file)の置き場所。ProtectSystem=strict のもとでは /var/log は読み取り専用なので、
+    # LogsDirectory で、/var/log/openbao だけを書き込み可にする(作成と所有者は systemd が行う)
+    LogsDirectory=openbao
+    LogsDirectoryMode=0750
+
     [Install]
     WantedBy=multi-user.target
     UNIT
+
+  # 監査ログのローテーション。OpenBao の audit file は SIGHUP で開き直すので、postrotate で reload する(= SIGHUP。Unseal の状態は変わらない)
+  logrotate_conf = <<-LR
+    /var/log/openbao/audit.log {
+        daily
+        rotate 14
+        compress
+        delaycompress
+        missingok
+        notifempty
+        create 0600 openbao openbao
+        postrotate
+            /bin/systemctl reload openbao >/dev/null 2>&1 || true
+        endscript
+    }
+    LR
 
   stage = "/home/${var.ssh_user}/.openbao-node-stage"
 
@@ -108,6 +129,7 @@ resource "null_resource" "openbao_node" {
     deb_sha256           = var.openbao_deb_sha256
     config_sha           = sha256(local.config)
     unit_sha             = sha256(local.service_unit)
+    logrotate_sha        = sha256(local.logrotate_conf)
     setup_sha            = sha256(local.setup_script)
     wipe_data_on_failure = tostring(var.wipe_data_on_failure)
     fqdn                 = var.fqdn
@@ -159,6 +181,11 @@ resource "null_resource" "openbao_node" {
   provisioner "file" {
     content     = local.hosts_entries
     destination = "${local.stage}/hosts.entries"
+  }
+
+  provisioner "file" {
+    content     = local.logrotate_conf
+    destination = "${local.stage}/openbao.logrotate"
   }
 
   provisioner "remote-exec" {
