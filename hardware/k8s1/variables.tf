@@ -179,9 +179,9 @@ variable "wireguard_ionos_server_allowed_ips" {
 # EasyTier(kigawa-net/infra#390、docs/network-vpn-architecture-design.md §4.1)。
 # false のときは、何も作らず、Bitwarden にも触れない(plan は no-op)。有効化は 1 台ずつ、別の PR で行う。
 variable "easytier_enabled" {
-  description = "true のときだけ EasyTier を入れる(NAT 配下のノードとして、公開 Peer 2 台へ接続する)"
+  description = "true のときだけ EasyTier を入れる(NAT 配下のノードとして、公開 Peer 2 台へ接続する)。有効化: 2026-10-29(control-plane では k8s4・k8s2 の次。これで 3 台)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "easytier_network_secret_bitwarden_id" {
