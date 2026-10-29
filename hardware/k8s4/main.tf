@@ -1014,3 +1014,39 @@ module "node_dns" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+# EasyTier のネットワーク Secret(bws から読む。空なら止める)
+data "external" "easytier_network_secret" {
+  count = var.easytier_enabled ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    if [ -z "${var.easytier_network_secret_bitwarden_id}" ]; then echo "easytier_network_secret_bitwarden_id が未設定" >&2; exit 1; fi
+    value=$(bws_get_value "${var.easytier_network_secret_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "easytier_network_secret: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
+# Inuyama(NAT 配下)の Overlay ノード。公開 Peer 2 台へ接続する。WireGuard・FRR・BGP・Kubernetes には触れない。
+# control-plane は ufw を使わないため、Overlay からの受信は iptables で許可リスト制にする(既定は何も許可しない)。
+module "easytier" {
+  source = "../modules/easytier"
+  count  = var.easytier_enabled ? 1 : 0
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  easytier_version = var.easytier_version
+  easytier_sha256  = var.easytier_sha256
+  network_name     = var.easytier_network_name
+  network_secret   = data.external.easytier_network_secret[0].result.value
+  overlay_address  = var.easytier_overlay_address
+  peers            = var.easytier_peers
+
+  overlay_iptables_firewall = true
+  overlay_allow             = var.easytier_overlay_allow
+}
