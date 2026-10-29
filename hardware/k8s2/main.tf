@@ -102,7 +102,8 @@ module "bgp" {
   ibgp_hold_seconds      = 9
 
   # BIRD の protocol direct 相当。API VIP は kube-vip の保持ノードで直結経路になる。
-  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32"]
+  # 192.168.1.0/24 は worker の LAN。bao-02/03 へ eBGP で広告する(下の external_bgp_peers)。export は、BGP の RIB に入っていないと効かない。
+  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32", "192.168.1.0/24"]
   # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
   enable_kube_vip_peer = false
   # k8s2 のカーネルには、wireguard の extra_post_up で 172.31.254.2/32 dev wg1 が既にあるため、next-hop 補助経路は不要。
@@ -113,7 +114,7 @@ module "bgp" {
   # k8s4(inuyama)の冗長化として、k8s2もionosと直接eBGPを張る2本目の
   # ゲートウェイにする(issue #116)。k8s4が落ちてもこのセッション経由で
   # ionos<->クラスタLANの経路を維持できる。
-  external_bgp_peers = [
+  external_bgp_peers = concat([
     {
       local_ip        = trimsuffix(var.wireguard_ionos_address, "/32")
       local_as        = var.inuyama_asn
@@ -135,7 +136,28 @@ module "bgp" {
       import_prefixes = var.ionos_link_import_enabled ? ["172.31.254.0/24", "10.255.10.12/32"] : []
       export_prefixes = ["10.0.0.0/24"]
     },
-  ]
+    ],
+    # OpenBao の bao-02 / bao-03(EasyTier のオーバーレイ上の eBGP。設計: hardware/modules/frr-overlay-peer)。
+    # 相手へは 10.0.0.0/24 と 192.168.1.0/24 だけを出し、相手からは何も取り込まない。**必ず、リストの最後に足すこと**(添字で EXT-<添字> が決まる)。
+    var.easytier_enabled ? [
+      {
+        local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "10.250.0.1"
+        neighbor_as     = 65041
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+      {
+        local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "10.250.0.31"
+        neighbor_as     = 65042
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+    ] : []
+  )
 }
 
 module "kube_vip" {
