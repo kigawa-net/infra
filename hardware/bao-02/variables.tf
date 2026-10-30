@@ -202,7 +202,7 @@ variable "frr_overlay_enabled" {
 variable "wg_table_off" {
   description = "true のとき、wg0 の wg-quick 設定に Table = off を入れ、AllowedIPs(10.0.0.0/24)からのカーネル経路を作らない。10.0.0.0/24 は BGP(overlay)で学ぶので、overlay 経由になる。wg_kernel_routes は PostUp で入れ直す。AllowedIPs は変えない。wg0 が再起動する(数秒、WireGuard の経路が切れる)。frr_overlay_enabled で BGP を確認したあとに、1 台ずつ適用する"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "wg_kernel_routes" {
