@@ -196,7 +196,7 @@ variable "easytier_overlay_allow" {
 variable "frr_overlay_enabled" {
   description = "true のとき、FRR を入れ、Inuyama の control-plane(overlay 上の 10.250.0.11/12/13)と eBGP を張る(modules/frr-overlay-peer)。10.0.0.0/24 と 192.168.1.0/24 を overlay 経由で学ぶ。有効化は 2 段階: (1) この変数だけ true で適用し、BGP の確立と経路を確認する。(2) そのあと wg_table_off を true にして適用する"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "wg_table_off" {
