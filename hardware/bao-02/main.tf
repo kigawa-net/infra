@@ -110,6 +110,9 @@ module "wireguard" {
   server_public_key  = var.wireguard_server_public_key
   server_endpoint    = var.wireguard_server_endpoint
   server_allowed_ips = var.wireguard_server_allowed_ips
+  # 10.0.0.0/24 のカーネル経路を、wg0 ではなく BGP(overlay)に任せる(wg_table_off)。false のときは従来どおり(triggers も変わらない)。
+  table_off     = var.wg_table_off
+  extra_post_up = var.wg_table_off ? [for p in var.wg_kernel_routes : "ip route replace ${p} dev %i"] : []
 }
 
 # OpenBao ノードの構築(バージョン・TLS は modules/openbao-node を参照)
@@ -204,4 +207,24 @@ module "easytier" {
   # Overlay からの受信は、許可リスト(既定は空)だけに絞る(設計書 §7、kigawa-net/infra#368)
   overlay_firewall = true
   overlay_allow    = var.easytier_overlay_allow
+}
+
+
+# OpenBao の bao-02 と、Inuyama の control-plane(overlay 上の eBGP)。WireGuard の経路は変えず、10.0.0.0/24 と 192.168.1.0/24 を overlay から学ぶ。
+# 設計と戻し方: hardware/modules/frr-overlay-peer/README.md。frr_overlay_enabled = false のときは何も作らない。
+module "frr_overlay" {
+  source     = "../modules/frr-overlay-peer"
+  count      = var.enabled && var.frr_overlay_enabled ? 1 : 0
+  depends_on = [module.easytier]
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key[0].result.value
+  sudo_password   = data.external.sudo_password[0].result.value
+
+  router_id       = var.openbao_address
+  local_as        = var.frr_local_as
+  remote_as       = var.frr_remote_as
+  neighbors       = var.frr_neighbors
+  import_prefixes = var.frr_import_prefixes
 }
