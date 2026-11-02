@@ -49,7 +49,7 @@ MAAS(3.7.4)には、Wake on LAN の電源ドライバが無い(`amt`・`ipmi`・
 **`webhook` 電源ドライバ**で、各 Rack の **127.0.0.1:5290** のサービス(`files/maas-wol-webhook.py`、systemd の `maas-wol-webhook.service`)を呼ぶ。
 
 - `POST /wake?mac=<MAC>`: LAN(`wol_broadcast`。既定は `lan_cidr` の最後のアドレス)にマジックパケット(UDP 9 と 7)を送る。
-- `POST /off?mac=<MAC>`: WoL では電源を切れないので、何もしない(200 `{"status": "unsupported"}`)。
+- `POST /off?mac=<MAC>`: **シャットダウンの表に、その MAC があるときだけ、SSH で対象ノードを shutdown する**(下の「SSH によるシャットダウン」。kigawa-net/infra#416)。表に無い MAC、表が無い・壊れているときは、従来どおり 200 `{"status": "unsupported"}`(何もしない)。
 - `GET /status?mac=<MAC>[&ip=<IPv4>]`: ping が通れば `{"status": "running"}`、通らなければ `{"status": "stopped"}`。確かめる IP は、`ip=` と、`dhcpd.leases` にある、その MAC の有効なリース(commissioning 中の DHCP のアドレス)。
   MAAS の `power_on_regex` / `power_off_regex` の既定(`status.*\:.*running` / `stopped`)と合う。
   **`/wake` の直後、`WAKE_GRACE_SEC` 秒(既定 300)は、ping が通らなくても `running` を返す。** MAAS は、電源オンの要求のあと、数十秒だけ、状態が `off` から `on` に変わるのを待つ。
@@ -71,7 +71,40 @@ maas <profile> machine update <system_id> power_type=webhook \
 - `power_query_uri` の `ip=` は、固定の IP(例: 192.168.1.150)。commissioning 中の DHCP のアドレスは、`dhcpd.leases` から、サービスが自分で調べる。
 - **MAAS の UI の `Power on` は、マシンの状態が `Broken` / `Deployed` / `Deploying` のときだけ**押せる(MAAS の仕様)。`Ready` のマシンは、**Commission** または **Deploy** が、電源を入れて始める(WoL が送られる)。
   `Failed testing` のマシンは、**Override failed testing** で `Ready` にしてから、Commission する。
-- 電源オフは、できない(WoL の限界)。commission / deploy の後の電源オフは、手動、または OS から(`shutdown`)。
+- WoL だけでは、電源オフはできない(WoL の限界)。BMC の無いノードの電源オフは、**SSH によるシャットダウン**(下の節)で行う。設定していない場合は、手動、または OS から(`shutdown`)。
+
+### SSH によるシャットダウン(`/off`。kigawa-net/infra#416)
+
+BMC の無い k8s-worker5(192.168.1.150)を、MAAS の電源オフ(Power off / Release など)で切れるようにする。**既定は無効**(`wol_shutdown_*` を渡さない限り、`/off` は `unsupported` のまま)。
+
+- **有効化の条件**: `wol_shutdown_targets`・`wol_shutdown_private_key`・`wol_shutdown_known_hosts` の **3 つをそろえて**渡し、`wol_webhook_enabled = true` にしたとき。一部だけだと、plan が precondition で失敗する。
+- **表**(Rack の `/etc/maas-wol-webhook/shutdown-targets.json`、0644。`install.sh` が `SHUTDOWN_TARGETS_SRC` から置く): `{"<MAC 小文字コロン区切り>": {"host": "<IPv4>", "user": "maas-shutdown"}}`。鍵は `shutdown.key`(0600)、known_hosts は `known_hosts`(0644)。ディレクトリは 0700 root。
+- **`/off?mac=<MAC>` の動作**:
+  - 表に無い MAC、表が無い・壊れている: 200 `{"status": "unsupported"}`(壊れている場合は、警告を journald に出す)。
+  - ping が通らない(停止済み): SSH しない。200 `{"status": "stopped"}`。
+  - SSH が成功: 200 `{"status": "stopping"}`。以後も `/status` は、ping が通る間は `running` を返す(MAAS が `stopped` になるまで待つ)。
+  - SSH が失敗・タイムアウト(15 秒): 502 `{"error": ...}`(MAAS は Power error として扱う)。ssh の stderr は、HTTP の応答には出さず、journald にだけ出す。
+- **ssh の引数**(shell を通さず、リストで渡す): `-F /dev/null -i <鍵> -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<known_hosts> -o ConnectTimeout=5 -o ServerAliveInterval=5 ... <user>@<host>`。**リモートコマンドは渡さない**(対象ノード側の forced command が、`sudo -n /usr/sbin/shutdown -h now` だけを決める)。host は IPv4、user は `^[a-z_][a-z0-9_-]{0,31}$` で検証し、`-` 始まりは拒否する(オプションの注入を防ぐ)。
+- **対象ノード側の受け口**: `hardware/k8s-worker5`(変数 `maas_shutdown_public_key` と `maas_shutdown_allowed_from`。既定は無効)。ユーザー `maas-shutdown`(ログインは公開鍵のみ、パスワードはロック、`/bin/sh`)、`authorized_keys` の `restrict,from="<Rack の IP>",command="/usr/bin/sudo -n /usr/sbin/shutdown -h now" <公開鍵>`、sudoers の 1 行。公開鍵を空に戻すと、ユーザーと sudoers を消す。
+- **鍵の作り方**(パスフレーズ無し。BatchMode のため):
+  ```
+  ssh-keygen -t ed25519 -N '' -f <作業用の場所>/maas-shutdown
+  ```
+  公開鍵の 1 行を、k8s-worker5 の `maas_shutdown_public_key` に、秘密鍵を Rack 用の `wol_shutdown_private_key` に渡す。**作業用の鍵ファイルは、使い終わったら消す。** 鍵の保管先(OpenBao など)からの取得は、**別 issue**(この module は、変数で受けるだけ)。
+- **known_hosts の取り方(ssh-keyscan。実行はしない。手順のみ)**:
+  1. 対象ノードのホスト鍵を、信頼できる経路で確かめる: 対象ノードで `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`(フィンガープリント)。
+  2. Rack と同じ LAN から取る: `ssh-keyscan -t ed25519 192.168.1.150`。出力の行(`192.168.1.150 ssh-ed25519 AAAA...`)を、`wol_shutdown_known_hosts` に渡す。
+  3. 手順 2 の鍵のフィンガープリント(`ssh-keygen -lf -`)が、手順 1 と一致することを確かめてから使う(初回の信頼を、キーのすり替えに任せない)。ホスト鍵が変わるのは、ノードの OS を入れ直したときだけ。
+- **Rack の IP(`maas_shutdown_allowed_from`)**: Rack が、ノードへ SSH するときの送信元アドレス(k8s2 なら 192.168.1.20、k8s4 なら 192.168.1.120。LAN 側のアドレス)。`from=` が一致しないと、ログインできない。
+- **変更の影響**: `wol_script_hash` / `wol_install_hash`(webhook のスクリプト)が変わると、既存の Rack(k8s2 / k8s4)の `null_resource` は**再作成される**(既存の `triggers` の仕様)。その apply では、Rack の導入・更新の手順も、もう一度走る(いずれも冪等)。計画(plan)で、この置き換えを確認すること。
+- **無効にするときの順序(鍵が Rack に残る)**: `wol_webhook_enabled = false` にしても、**既に置いた鍵・表・known_hosts(`/etc/maas-wol-webhook/`)は消えず、サービスも止まらない**(「無効のときは、何もしない」という、このモジュールの既存の仕様)。SSH のシャットダウンをやめるときは、**先に `wol_shutdown_*` を空にして apply**(インストーラが、3 つのファイルを消す)してから、`wol_webhook_enabled` を変える。worker5 側も、`maas_shutdown_public_key` を空にして apply すると、ユーザーと sudoers が消える。
+- **実機で未確認(この PR の時点)**:
+  1. systemd のサンドボックス(`RestrictAddressFamilies=AF_INET AF_UNIX`、`CapabilityBoundingSet=CAP_NET_RAW`、`ProtectHome=true`、`ReadOnlyPaths=/var/lib/maas <CONF_DIR>`)の下で、`/usr/bin/ssh` が、鍵と known_hosts を読み、接続できるか(`-F /dev/null` と、`UserKnownHostsFile`・`-i` の明示により、`~/.ssh` は読まない想定)。
+  2. `shutdown -h now` の後、ssh が終了コード 0 で返るか。接続が先に切れると 255 になりうる。その場合、MAAS は 502(実際は停止している)を受ける。
+  3. `from=` の送信元アドレス、`usermod -L` のロックされたアカウントでの公開鍵ログイン(sshd の設定に依存)。
+  4. Rack に `openssh-client` があること(Ubuntu server の既定に含まれる想定。`install.sh` は、無ければ中止する)。
+  5. worker5 の WoL 復帰(deploy 済みの OS での Wake on LAN)は、見込みだが未実証。
+- **テスト**: `hardware/modules/maas-rack/test-maas-wol-webhook.sh`(インストーラの 3 つそろい・一部・無効化、Python の `/off` の各経路)と、`hardware/k8s-worker5/test-maas-shutdown-target.sh`(受け口の公開鍵・from の検証、sudoers の検証失敗、無効化)。いずれも偽のコマンドを使い、実機には触れない。
 - WoL には、対象機の BIOS と NIC の設定(Wake on LAN の有効化)と、S5(停止)でも NIC に給電されることが必要。
 
 ## secret の扱い
@@ -132,6 +165,8 @@ bash hardware/modules/maas-rack/test-maas-rack.sh          # install / rollback 
 bash hardware/modules/maas-rack/test-maas-rack-upgrade.sh  # upgrade(偽の apt-get / systemctl)
 bash hardware/modules/maas-rack/test-maas-rack-shim.sh     # shim(3.7.4 の Rack の回避)
 bash hardware/modules/maas-rack/test-maas-wol-webhook.sh   # WoL の webhook(インストーラ + Python の単体テスト)
+python3 -I hardware/modules/maas-rack/test_maas_wol_webhook.py   # webhook の単体テスト(/off の SSH の経路を含む。偽の ssh を使う)
+bash hardware/k8s-worker5/test-maas-shutdown-target.sh    # worker5 の shutdown の受け口(偽のユーザー管理コマンド・visudo)
 ```
 
 `maas-rack-upgrade.sh` は、使い捨ての systemd 付き Ubuntu 24.04 コンテナで、実際の apt を使い、3.6.6 → 3.7.4 の更新を検証済み(2026-10-24)。

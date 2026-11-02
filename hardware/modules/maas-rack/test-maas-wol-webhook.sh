@@ -11,7 +11,7 @@ ok() { pass=$((pass + 1)); echo "ok   - $1"; }
 ng() { fail=$((fail + 1)); echo "FAIL - $1"; [ -f "${sb:-/nonexistent}/out" ] && tail -6 "$sb/out" | sed 's/^/       | /'; }
 chk() { if ( eval "$2" ); then ok "$1"; else ng "$1"; fi; }
 
-# 環境変数: ACTIVE=0(systemctl is-active が inactive を返す)、PYFAIL=1(python3 が失敗する)
+# 環境変数: ACTIVE=0(systemctl is-active が inactive を返す)、PYFAIL=1(python3 が失敗する)、KEYGEN_FAIL=1(ssh-keygen -y が失敗する)
 mksb() {
   sb=$(mktemp -d)
   mkdir -p "$sb/bin" "$sb/sbin" "$sb/units"
@@ -28,12 +28,30 @@ EOF
 [ "${PYFAIL:-0}" = 1 ] && exit 1
 exit 0
 EOF
+  # SSH のシャットダウンの設定の検査(ssh-keygen -y -f)と、ssh の存在の確認だけ。実際の鍵は読まない
+  cat > "$sb/bin/ssh-keygen" <<EOF
+#!/bin/bash
+echo "ssh-keygen \$*" >> "$sb/calls"
+[ "${KEYGEN_FAIL:-0}" = 1 ] && exit 1
+exit 0
+EOF
+  cat > "$sb/bin/ssh" <<EOF
+#!/bin/bash
+exit 0
+EOF
   chmod +x "$sb"/bin/*
 }
 
-run() { # 引数: 追加の環境変数(KEY=VAL ...)
+run() { # 引数: 追加の環境変数(KEY=VAL ...)。CONF_DIR は、必ず一時ディレクトリにする(実機の /etc に触れない)
   [ -f "$sb/src.py" ] || cp "$PYSRC" "$sb/src.py"
-  env EXTRA_PATH="$sb/bin" SBIN_DIR="$sb/sbin" UNIT_DIR="$sb/units" SRC="$sb/src.py" BCAST=192.168.1.255 SKIP_VERIFY=1 VERIFY_TRIES=2 "$@" bash "$INSTALL" > "$sb/out" 2>&1
+  env EXTRA_PATH="$sb/bin" SBIN_DIR="$sb/sbin" UNIT_DIR="$sb/units" CONF_DIR="$sb/conf" SRC="$sb/src.py" BCAST=192.168.1.255 SKIP_VERIFY=1 VERIFY_TRIES=2 "$@" bash "$INSTALL" > "$sb/out" 2>&1
+}
+
+# シャットダウンの設定の元ファイル(中身はダミー。秘密鍵の形式は、偽の ssh-keygen が判定する)
+mkshutdown_src() {
+  printf '%s\n' '{"02:39:7a:2e:13:f0": {"host": "192.168.1.150", "user": "maas-shutdown"}}' > "$sb/t.json"
+  printf '%s\n' 'DUMMY-PRIVATE-KEY-FOR-TEST' > "$sb/k"
+  printf '%s\n' '192.168.1.150 ssh-ed25519 DUMMY-HOST-KEY' > "$sb/kh"
 }
 
 # ---- 1. 初回 ----
@@ -89,6 +107,60 @@ rm -rf "$sb"
 mksb
 run SKIP_VERIFY=0; rc=$?
 chk "応答する: 成功" '[ "$rc" = 0 ]'
+rm -rf "$sb"
+
+# ---- 6b. SSH によるシャットダウン(/off。kigawa-net/infra#416)の設定 ----
+mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KEY_SRC="$sb/k" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh"; rc=$?
+chk "設定が 3 つそろう: 成功し、表・鍵・known_hosts を置く" '[ "$rc" = 0 ] && [ -f "$sb/conf/shutdown-targets.json" ] && [ -f "$sb/conf/shutdown.key" ] && [ -f "$sb/conf/known_hosts" ]'
+chk "設定が 3 つそろう: ディレクトリ 0700、鍵 0600、表と known_hosts 0644" '[ "$(stat -c %a "$sb/conf")" = 700 ] && [ "$(stat -c %a "$sb/conf/shutdown.key")" = 600 ] && [ "$(stat -c %a "$sb/conf/shutdown-targets.json")" = 644 ] && [ "$(stat -c %a "$sb/conf/known_hosts")" = 644 ]'
+chk "設定が 3 つそろう: 元のファイル(鍵を含む)を消した" '[ ! -e "$sb/t.json" ] && [ ! -e "$sb/k" ] && [ ! -e "$sb/kh" ]'
+chk "設定が 3 つそろう: 鍵の形式を、置く前に(元のファイルで)ssh-keygen -y -f で検査した" 'grep -q "^ssh-keygen -y -f $sb/k\$" "$sb/calls"'
+chk "設定が 3 つそろう: ユニットに、CONF_DIR の読み取り専用と SHUTDOWN_* の環境変数" 'grep -q "^ReadOnlyPaths=/var/lib/maas $sb/conf\$" "$sb/units/maas-wol-webhook.service" && grep -qx "Environment=SHUTDOWN_KEY=$sb/conf/shutdown.key" "$sb/units/maas-wol-webhook.service"'
+chk "設定が 3 つそろう: 出力に SSH の有効を表示し、鍵の中身は出さない" 'grep -q "SSH のシャットダウン: 有効" "$sb/out" && ! grep -q "DUMMY-PRIVATE-KEY" "$sb/out"'
+: > "$sb/calls"
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KEY_SRC="$sb/k" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh"; rc=$?
+chk "設定が同じ: 変更なし(再起動しない)" '[ "$rc" = 0 ] && grep -q "変更なし" "$sb/out" && ! grep -q "^systemctl restart" "$sb/calls"'
+rm -rf "$sb"
+
+mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KEY_SRC="$sb/k"; rc=$?
+chk "一部だけ(known_hosts が無い): ABORT し、何も置かず、元のファイルも残す" '[ "$rc" = 1 ] && grep -q "3 つそろえる" "$sb/out" && [ ! -e "$sb/conf/shutdown.key" ] && [ -f "$sb/t.json" ] && [ -f "$sb/k" ] && [ ! -s "$sb/calls" ]'
+rm -rf "$sb"
+
+mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh"; rc=$?
+chk "一部だけ(鍵が無い): ABORT" '[ "$rc" = 1 ] && [ ! -e "$sb/conf/known_hosts" ] && [ -f "$sb/kh" ]'
+rm -rf "$sb"
+
+KEYGEN_FAIL=1 mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KEY_SRC="$sb/k" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh"; rc=$?
+chk "鍵の形式が不正: ABORT し、鍵を置かない(元のファイルは残す)" '[ "$rc" = 1 ] && grep -q "秘密鍵の形式が不正" "$sb/out" && [ ! -e "$sb/conf/shutdown.key" ] && [ -f "$sb/k" ]'
+rm -rf "$sb"
+
+mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/nonexistent.json" SHUTDOWN_KEY_SRC="$sb/k" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh"; rc=$?
+chk "元のファイルが無い: ABORT" '[ "$rc" = 1 ] && grep -q "空、または無い" "$sb/out" && [ ! -e "$sb/conf/known_hosts" ]'
+rm -rf "$sb"
+
+mksb
+mkshutdown_src
+run SHUTDOWN_TARGETS_SRC="$sb/t.json" SHUTDOWN_KEY_SRC="$sb/k" SHUTDOWN_KNOWN_HOSTS_SRC="$sb/kh" >/dev/null
+mkshutdown_src
+run >/dev/null; rc=$?
+chk "無効化(3 つとも空): 成功し、CONF_DIR の 3 ファイルを消す" '[ "$rc" = 0 ] && [ ! -e "$sb/conf/shutdown-targets.json" ] && [ ! -e "$sb/conf/shutdown.key" ] && [ ! -e "$sb/conf/known_hosts" ]'
+chk "無効化: 出力に SSH の無効を表示" 'grep -q "SSH のシャットダウン: 無効" "$sb/out"'
+rm -rf "$sb"
+
+mksb
+run >/dev/null; rc=$?
+chk "設定を一度も渡さない: 成功し、CONF_DIR に何も置かない" '[ "$rc" = 0 ] && { [ ! -d "$sb/conf" ] || [ -z "$(ls -A "$sb/conf")" ]; }'
 rm -rf "$sb"
 
 # ---- 7. 静的な確認 ----

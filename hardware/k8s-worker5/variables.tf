@@ -50,3 +50,25 @@ variable "core_router_vip" {
   type        = string
   default     = "192.168.1.200"
 }
+
+variable "maas_shutdown_public_key" {
+  description = "MAAS の /off(webhook)が、このノードを SSH で shutdown するための、専用ユーザー maas-shutdown の公開鍵(ssh-ed25519 の 1 行)。空(既定)なら、受け口を作らず、既にあれば消す(kigawa-net/infra#416)"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.maas_shutdown_public_key == "" || can(regex("^ssh-ed25519 [A-Za-z0-9+/]+=*( [A-Za-z0-9@._+-]+)?$", var.maas_shutdown_public_key))
+    error_message = "maas_shutdown_public_key は、ssh-ed25519 で始まる 1 行の公開鍵にする(改行やオプションは不可)。"
+  }
+}
+
+variable "maas_shutdown_allowed_from" {
+  description = "maas-shutdown の authorized_keys の from= に入れる、MAAS の Rack の LAN 側の IPv4(k8s2 なら 192.168.1.20、k8s4 なら 192.168.1.120)。公開鍵を指定するときは、必須"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for ip in var.maas_shutdown_allowed_from : can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", ip))])
+    error_message = "maas_shutdown_allowed_from は、IPv4 のアドレスのリストにする(例: [\"192.168.1.20\"])。"
+  }
+}
