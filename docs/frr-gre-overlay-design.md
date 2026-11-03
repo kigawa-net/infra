@@ -63,9 +63,14 @@ bao から LAN へ送るパケットの送信元は、既定ではトンネル�
 EasyTier の `tun0` の MTU(既定 1380 の見込み。**実機で未確認**)から、GRE の 24 バイトを引く。トンネルの MTU は、`1300` 程度にして、control-plane で転送する TCP の MSS を、`gre-*` で絞る(`iptables -t mangle ... -o gre+ -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu`)。
 
 ### 6.2 ファイアウォール
-- **bao-02/03(ufw):** `tun0` で、control-plane の Overlay のアドレスから、`gre`(プロトコル 47)を許可する。Overlay の送信元の deny より前に入れる(`insert 1`)。トンネル上の `179/tcp` は、`gre-*` のインターフェースと、トンネルのアドレスで許可する。
-- **control-plane(iptables、`modules/overlay-firewall`):** Overlay の送信元(`10.250.0.0/24`)の INPUT は DROP が既定。GRE(プロトコル 47)の許可が要る。いまの許可リストは「ポート/プロトコル」の形式なので、ポートなしのプロトコルを許可できるように、モジュールを拡張する。
-- #413 で足した「Overlay からの `179/tcp` の許可」は、トンネルへ移したあと、不要になる。外す。
+トンネルごとに、`gre-overlay-tunnel` モジュールが、`iptables` の INPUT の先頭へ、次の 2 つの許可を入れる(`manage_firewall`、既定 true)。
+
+- GRE: `-i tun0 -p gre -s <相手の Overlay のアドレス> -j ACCEPT`
+- トンネルの中の BGP: `-i gre-<名前> -p tcp --dport 179 -s <相手のトンネル内のアドレス> -j ACCEPT`
+
+共有モジュール(`modules/overlay-firewall`、`modules/easytier`)は変えない。変えると、control-plane・ionos・bao の自動 apply の対象になるため。INPUT の先頭に入れるので、ufw(bao)の `iptables` のルールの前に入り、ufw のルールは触らない。control-plane の `overlay-firewall` は、`easytier.service` の起動のたびに、DROP のチェインへの飛ばし先を INPUT の先頭へ入れ直す。許可が 2 番目に押されないよう、`gre-overlay.service` に `PartOf=easytier.service` を付け、easytier の再起動に連動させて、許可を入れ直す。
+
+#413 が足した「Overlay からの `179/tcp` の許可」は、トンネルへ移したあと、不要になる。外す。
 
 ### 6.3 トンネルの永続化
 `systemd` の oneshot(`gre-overlay.service`)で、`ip tunnel add ... mode gre local <自分の Overlay> remote <相手の Overlay> ttl 64`、アドレス、MTU、`up` を行う。`easytier.service` の後に起動する。`terraform` の `null_resource` で入れる(新モジュール)。
@@ -81,7 +86,7 @@ zebra は、距離 0 のカーネルの経路を、BGP(距離 20)より優先す
 ## 7. Terraform の変更(PR を分ける)
 
 1. `modules/gre-overlay-tunnel`(新規。bao 側と control-plane 側の両方で使う。既定は無効)。
-2. `modules/overlay-firewall` に、ポートなしのプロトコル(`gre`)の許可を足す。bao の ufw に、`gre` の許可を足す。
+2. `gre-overlay-tunnel` に、GRE とトンネル上の 179/tcp の許可を足す(§6.2。共有モジュールは変えない)。
 3. `frr-overlay-peer`(#413)の neighbor を、トンネルのアドレスにする。control-plane の `external_bgp_peers` も、トンネルのアドレスにする(**リストの末尾に足す**。添字で FRR のポリシー名が決まるため)。`timers 3 9` と `set src` を足す。
 4. WireGuard の経路を外す(§6.4 の 2〜4 の確認の後)。
 
