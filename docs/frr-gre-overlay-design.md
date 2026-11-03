@@ -101,18 +101,36 @@ zebra は、距離 0 のカーネルの経路を、BGP(距離 20)より優先す
 
 `10.0.0.120`(k8s2)が返せたのは、k8s2 自身が Overlay の `tun0` を持ち、`10.250.0.1` への戻りを `tun0` で直接返せるため。worker は Overlay に参加していないので、戻りの経路が要る。
 
-### 8.1 worker の戻りの経路
-`k8s-worker3` の plan(PR #413 のブランチ)で、`module.cluster_route` が `must be replaced` と出た。#413 が足した worker の静的経路(`extra_destination_cidrs` の `10.250.0.0/24`)は、まだ適用されていない。このため、worker は、`10.250.0.1` 宛ての返事を、既定の経路(家庭用ルーター)へ送り、届かない。
+### 8.1 worker の戻りの経路(2026-11-03 の更新: #413 のマージを反映)
 
-戻りの経路は、次の 2 つが考えられる。
+`k8s-worker3` の plan(#413 のブランチ)で、`module.cluster_route` が `must be replaced` と出た。#413 が足した worker の静的経路(`extra_destination_cidrs` の `10.250.0.0/24`)は、その時点で未適用だった。このため、worker は、`10.250.0.1` 宛ての返事を、既定の経路(家庭用ルーター)へ送り、届かなかった。
 
-1. **worker の静的経路**(`10.250.0.0/24` を control-plane へ。#413 が追加済み)。Inuyama の Pod から bao-02/03 へ届かせる向き(Pod → worker の送信元 NAT → control-plane → Overlay)にも、同じ経路が要るので、どのみち必要。
-2. control-plane で、`grechk` から LAN へ出るパケットを SNAT する。戻りが control-plane に集まり、GRE にそろう。worker の変更は要らないが、LAN の側で、送信元が bao のアドレスでなくなる。
+その後、#413 が main にマージされ(2026-11-03 01:58)、9 モジュールの自動 apply がすべて成功した。`kubectl get nodes` も全ノード `Ready` だった。#413 には、本書の確認の後で、次のコミットが入っていた。
 
-**方針: 1 を採る。** 2 は、1 が要る Pod → bao の向きを解決しないので、足さない。#413 の worker の適用(plan が `must be replaced` のもの)を、先に済ませる。
+- **worker の静的経路**(`10.250.0.0/24` を control-plane へ): worker 4 台に適用された。
+- **control-plane の MASQUERADE**(`modules/overlay-firewall` の `snat_source_cidr`、既定 `192.168.1.0/24`): LAN(Pod・node)から `tun0` へ出る通信の送信元を、その control-plane の Overlay のアドレスに書き換える。k8s1 に手動で入れて、worker1 の Pod から bao-02/03 の `8200/tcp` へ届くことを、#413 の作者が確認している(本書では未確認)。
+
+向きごとに整理すると、次のとおり。
+
+| 向き | 例 | #413 で解決するか |
+| --- | --- | --- |
+| LAN → Overlay(LAN が始める) | Pod → bao-02/03 | **解決。** MASQUERADE で、戻りが control-plane の Overlay のアドレスへ返る |
+| Overlay → LAN(bao が始める) | bao-02/03 → bao-01 の VIP(Raft) | **未解決。** MASQUERADE は、LAN から出る向きだけ。宛先が `10.0.0.x` のパケットは、EasyTier が運ばない。**GRE 方式が必要** |
+
+前回までの本書の方針は「SNAT は足さない」だった。LAN → Overlay の向きでは、#413 が SNAT で解決したので、この方針は古い。GRE 方式の対象は、Overlay → LAN の向きだけになる。
+
+GRE 方式の戻りは、worker の静的経路(適用済み)と、`SET-SRC` による送信元の固定(§5)に頼る。
+
+#### MASQUERADE と GRE の戻りの相互作用(仮説。未検証)
+GRE で行きに通った control-plane と、戻りが通る control-plane が違うと(worker の gateway の選択は、BGP の ECMP とは独立)、戻りのパケット(送信元 `192.168.1.x`、宛先 `10.250.0.x`)が、別の control-plane の MASQUERADE に当たる(その control-plane には、この接続の conntrack がなく、新規の接続として扱われるため)。bao から見ると、戻りの送信元が、別の control-plane の Overlay のアドレスに変わり、接続が成立しない可能性がある。
+
+GRE 方式の実装の前に、次のいずれかを確かめる。
+
+1. 戻りが、必ず行きと同じ control-plane を通る(経路の固定、または、行きを、戻りの経路に合わせる)。
+2. MASQUERADE の対象から、bao のアドレス宛てで、かつ GRE 経由で始まった接続の戻りを外す。
 
 ## 9. 未決事項
 - #413 との整理。#413 は、bao-02/03 の neighbor を Overlay のアドレスで張っている。本書の方式は、これをトンネルのアドレスに置き換える。#413 を先にマージするか、#413 を本方式に合わせて直すかを、決める。
-- 戻りを GRE にそろえるか(§5)。§8.1 のとおり、worker の静的経路(#413 の適用)を前提にし、SNAT は足さない。
+- 戻りを GRE にそろえるか(§5)。§8.1 のとおり、worker の静的経路は適用済み。LAN → Overlay の向きは、#413 の MASQUERADE で解決済み。GRE の戻りが MASQUERADE に当たる問題(§8.1 の仮説)を、先に確かめる。
 - ionos ↔ control-plane の BGP(WireGuard)を、同じ方式で移すか(本書は bao-02/03 だけを扱う)。
 - bao は別の担当が作業中のため、実装の前に、担当と調整する。
