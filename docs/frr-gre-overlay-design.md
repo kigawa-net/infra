@@ -85,13 +85,34 @@ zebra は、距離 0 のカーネルの経路を、BGP(距離 20)より優先す
 3. `frr-overlay-peer`(#413)の neighbor を、トンネルのアドレスにする。control-plane の `external_bgp_peers` も、トンネルのアドレスにする(**リストの末尾に足す**。添字で FRR のポリシー名が決まるため)。`timers 3 9` と `set src` を足す。
 4. WireGuard の経路を外す(§6.4 の 2〜4 の確認の後)。
 
-## 8. 先に確かめること(実機、Terraform なし)
-- EasyTier が、GRE(プロトコル 47)を運ぶか。bao-02 と k8s1 の間に、手動で 1 本だけトンネルを張り、`ping` が通るかを見る(`ip tunnel del` で戻せる)。
-- `ip_gre` のカーネルモジュールが、bao-02/03 と control-plane で使えるか。
-- `tun0` の MTU。
+## 8. 実機の確認(2026-11-03、bao-02 ↔ k8s1。Terraform なし)
+
+手動で、bao-02 と k8s1 の間に 1 本だけ GRE トンネル(`grechk`、`172.31.250.2` ↔ `.3`、MTU 1300)を張って確かめた。終わったら、トンネルと、`iptables` の INPUT の先頭に足した GRE の許可(`-i tun0 -p gre -s <相手>`)を消し、元に戻している。
+
+| 項目 | 結果 |
+| --- | --- |
+| EasyTier が GRE を運ぶか | **運ぶ。** トンネルのアドレス間の `ping` が 3/3(約 141ms)。`tcpdump -i tun0` で、`GREv0` が両方向に見える |
+| MTU | `tun0` の MTU は **1360**(見込みの 1380 より小さい)。1272 バイト(トンネルの MTU 1300 いっぱい、分割なし)の `ping` が 2/2 で通る。トンネルの MTU 1300 で足りる |
+| `ip_gre` | bao-02・k8s1 の両方で読み込める |
+| `rp_filter`(k8s1) | `all`・`default`・`tun0`・`grechk` のすべてで `2`(loose)。送信元 `10.250.0.1` のパケットを `grechk` で受けても落ちない |
+| `FORWARD`(k8s1) | `ip_forward = 1`、ポリシーは `ACCEPT`(kube-proxy・flannel のチェーンはある) |
+| トンネル経由で LAN へ | bao-02 に `/32` の一時的な経路を足し、送信元を `10.250.0.1` にして試した。`10.0.0.120`(k8s2)へ **4/4 で通る**(約 148ms)。k8s1 の `tcpdump` で、`grechk In` → `ens18 Out` を確認 |
+| worker への戻り | **戻らない。** `192.168.1.130`(k8s-worker3)宛ては、`grechk In` → `ens18 Out` で k8s1 から LAN へ出るが、返事が来ない |
+
+`10.0.0.120`(k8s2)が返せたのは、k8s2 自身が Overlay の `tun0` を持ち、`10.250.0.1` への戻りを `tun0` で直接返せるため。worker は Overlay に参加していないので、戻りの経路が要る。
+
+### 8.1 worker の戻りの経路
+`k8s-worker3` の plan(PR #413 のブランチ)で、`module.cluster_route` が `must be replaced` と出た。#413 が足した worker の静的経路(`extra_destination_cidrs` の `10.250.0.0/24`)は、まだ適用されていない。このため、worker は、`10.250.0.1` 宛ての返事を、既定の経路(家庭用ルーター)へ送り、届かない。
+
+戻りの経路は、次の 2 つが考えられる。
+
+1. **worker の静的経路**(`10.250.0.0/24` を control-plane へ。#413 が追加済み)。Inuyama の Pod から bao-02/03 へ届かせる向き(Pod → worker の送信元 NAT → control-plane → Overlay)にも、同じ経路が要るので、どのみち必要。
+2. control-plane で、`grechk` から LAN へ出るパケットを SNAT する。戻りが control-plane に集まり、GRE にそろう。worker の変更は要らないが、LAN の側で、送信元が bao のアドレスでなくなる。
+
+**方針: 1 を採る。** 2 は、1 が要る Pod → bao の向きを解決しないので、足さない。#413 の worker の適用(plan が `must be replaced` のもの)を、先に済ませる。
 
 ## 9. 未決事項
 - #413 との整理。#413 は、bao-02/03 の neighbor を Overlay のアドレスで張っている。本書の方式は、これをトンネルのアドレスに置き換える。#413 を先にマージするか、#413 を本方式に合わせて直すかを、決める。
-- 戻りを GRE にそろえるか(§5)。
+- 戻りを GRE にそろえるか(§5)。§8.1 のとおり、worker の静的経路(#413 の適用)を前提にし、SNAT は足さない。
 - ionos ↔ control-plane の BGP(WireGuard)を、同じ方式で移すか(本書は bao-02/03 だけを扱う)。
 - bao は別の担当が作業中のため、実装の前に、担当と調整する。
