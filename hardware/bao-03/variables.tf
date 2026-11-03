@@ -246,3 +246,10 @@ variable "frr_import_prefixes" {
   type        = list(string)
   default     = ["10.0.0.0/24", "192.168.1.0/24"]
 }
+
+# GRE トンネル(FRR をトンネル上の BGP で動かすための土台。設計書 §7 の 1・2。既定は無効)。
+variable "gre_overlay_enabled" {
+  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel。設計: docs/frr-gre-overlay-design.md)。既定は false(何も作らない)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)"
+  type        = bool
+  default     = false
+}

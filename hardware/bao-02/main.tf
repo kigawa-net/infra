@@ -228,3 +228,24 @@ module "frr_overlay" {
   neighbors       = var.frr_neighbors
   import_prefixes = var.frr_import_prefixes
 }
+
+# Overlay 上の GRE トンネル(設計: docs/frr-gre-overlay-design.md §2〜§3)。gre_overlay_enabled = false のときは何も作らない。
+# bao 側は ufw で、相手の Overlay からの gre と、トンネル上の 179/tcp を許可する(§6.2)。
+module "gre_overlay" {
+  source     = "../modules/gre-overlay-tunnel"
+  count      = var.enabled && var.gre_overlay_enabled ? 1 : 0
+  depends_on = [module.easytier]
+
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key[0].result.value
+  sudo_password   = data.external.sudo_password[0].result.value
+
+  overlay_address = split("/", var.easytier_overlay_address)[0]
+  firewall        = "ufw"
+  peers = [
+    { name = "k8s4", overlay_address = "10.250.0.11", local_tunnel_cidr = "172.31.250.0/31", peer_tunnel_address = "172.31.250.1" },
+    { name = "k8s1", overlay_address = "10.250.0.12", local_tunnel_cidr = "172.31.250.2/31", peer_tunnel_address = "172.31.250.3" },
+    { name = "k8s2", overlay_address = "10.250.0.13", local_tunnel_cidr = "172.31.250.4/31", peer_tunnel_address = "172.31.250.5" },
+  ]
+}
