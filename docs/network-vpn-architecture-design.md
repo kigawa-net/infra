@@ -107,6 +107,113 @@ EasyTier の役割は次の3つです。
 - control-plane への EasyTier の SSH 接続先は `var.server_ip`(`10.0.0.x`)にする。CI の実行環境は WireGuard 経由で `10.0.0.x` にだけ届き、`var.host`(`192.168.1.x`)には届かないため(#399)。
 - 未確認: 公開 Peer 停止時の Relay 切替と Direct への復帰、Soichiro の接続(見送り中。Terraform のモジュールと LAN の範囲が未定)、OpenBao の Raft のリーダー選出(初期化後)。
 
+### 4.1.2 Secure Mode への移行
+
+Secure Mode の Terraform 対応は `hardware/modules/easytier` に実装済み。各 root module の `easytier_secure_mode_enabled` は既定で `false` とし、設定変更だけで稼働中 overlay を切断しない。Secure Mode は EasyTier 2.6.0 以降が必要で、現在固定している v2.6.4 は要件を満たす。
+
+有効化前に、Terraform 管理下の 6 台(bao-03 `10.250.0.31` を含む)と追加参加端末を含む全 peer のバージョン・Secure Mode 対応を確認する。EasyTier の Secure Mode は新しい peer から旧 peer への接続互換性を保証しないため、部分適用を通常運用にしない。WireGuard の管理・OpenBao 経路を維持し、保守時間内に全 peer の設定を切り替え、`easytier-cli peer` と Overlay 疎通を確認する。異常時は `easytier_secure_mode_enabled=false` に戻して apply する。
+
+#### 切替前の条件
+
+1. OpenBao、Kubernetes、SSH の代替管理経路として WireGuard と現地コンソールを維持する。EasyTier 経由だけの管理接続で作業しない。
+2. `easytier-cli peer` で現在の peer 一覧を保存し、`bao-02` / IONOS から全 Overlay IP への ping、OpenBao の 8200/8201、`kubectl get nodes` が正常な状態を記録する。
+3. `bao-02`, IONOS, `bao-03`, `k8s4`, `k8s1`, `k8s2` と、Terraform 外の端末を含む全 peer が EasyTier v2.6.4 以上であることを確認する。非対応・所在不明の peer があれば切替を始めない。
+4. 6 つの Terraform root すべてで `easytier_secure_mode_enabled=true` にした plan を作り、EasyTier 設定とサービス再起動以外の差分がないことを確認する。bao-02 の plan には `/etc/easytier/credentials.json` が加わることも確認する。Terraform 外の peer は別途 Secure Mode 設定を準備する。
+
+#### 適用順序
+
+EasyTier の移行ガイドに従い、legacy peer が接続できる Secure Mode 対応 peer を先に用意し、その後クライアント側を切り替える。Secure Mode を有効にしたクライアントは legacy peer に接続できないため、各段階で下記の確認が通らなければ次へ進まない。
+
+1. **IONOS** を Secure Mode に切り替える。EasyTier peer が復帰し、IONOS から `bao-02` および既存 Overlay peer に接続できることを確認する。
+2. **bao-02** を切り替える。IONOS との相互接続、Overlay 疎通、OpenBao Raft の 3 voter と leader 状態を確認する。
+3. **bao-03** を切り替える。bao-02 / IONOS との peer 接続、OpenBao の 8200/8201、Raft 状態を確認する。
+4. **k8s4** (Inuyama gateway) を切り替え、公開 peer 2 台への接続と `kubectl get nodes` の `Ready` を確認する。
+5. **k8s1**, 次に **k8s2** を 1 台ずつ切り替える。各 apply 後に peer 接続と全 control-plane node の `Ready` を確認する。
+6. Terraform 外の EasyTier peer・管理端末も Secure Mode へ切り替える。全 peer の一覧に legacy peer が残っていないことを確認する。
+
+#### 実機適用ランブック
+
+以下は infra リポジトリのルートで実行する。`hardware/run.sh` は BWS から backend / provisioner 資格情報を読むため、作業端末で `BWS_ACCESS_TOKEN` を設定しておく。EasyTier 経由だけに依存しない SSH / WireGuard / 現地コンソールを確保する。
+
+**1. 現状記録と事前確認**
+
+- 全 peer の一覧・バージョン・接続種別(Direct / Relay)を `easytier-cli peer` で記録する。
+- 各ノードで `easytier-core --version` を確認し、Terraform 外の端末も含め v2.6.4 以上であることを確認する。
+- bao-02 と bao-03 で `bao status`、`bao operator raft list-peers` を実行し、3 voter と quorum が正常なことを記録する。
+- control-plane から `kubectl get nodes -o wide` を実行し、全 node が `Ready` であることを記録する。
+- bao-02 / IONOS から各 peer の Overlay IP へ `ping -c 3 <overlay-ip>` を実行する。bao-02 から bao-03 の `8200/tcp`・`8201/tcp` も確認する。
+- Terraform 外の peer の Secure Mode 設定・適用担当・適用時刻を決める。未確認 peer があれば中止する。
+
+**2. 6 root の plan を先に作成して確認**
+
+plan は root ごとに生成する。各 plan に EasyTier 設定更新と `easytier.service` 再起動以外の意図しない変更がないことを確認し、全 root の plan が揃うまで apply しない。
+
+```bash
+./hardware/run.sh ionos plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-ionos.tfplan
+./hardware/run.sh bao-02 plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-bao-02.tfplan
+./hardware/run.sh bao-03 plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-bao-03.tfplan
+./hardware/run.sh k8s4 plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-k8s4.tfplan
+./hardware/run.sh k8s1 plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-k8s1.tfplan
+./hardware/run.sh k8s2 plan -input=false -var='easytier_secure_mode_enabled=true' -out=/tmp/easytier-secure-k8s2.tfplan
+```
+
+各 plan は次のように確認する。Terraform plan ファイルには Secret が含まれる可能性があるため、`/tmp` から移動・共有・コミットせず、作業後に削除する。
+
+```bash
+./hardware/run.sh ionos show /tmp/easytier-secure-ionos.tfplan
+```
+
+他の root も同様に `show` する。予期しないリソース変更、VM 再作成、OpenBao / Kubernetes の変更があれば apply せず原因を解消する。
+
+**3. root を順に apply**
+
+保存済み plan を適用する。各 apply の後に次節の確認を行い、成功した場合だけ次のコマンドへ進む。Terraform root は別々の state なので `-target` は使用しない。
+
+```bash
+./hardware/run.sh ionos apply -input=false /tmp/easytier-secure-ionos.tfplan
+./hardware/run.sh bao-02 apply -input=false /tmp/easytier-secure-bao-02.tfplan
+./hardware/run.sh bao-03 apply -input=false /tmp/easytier-secure-bao-03.tfplan
+./hardware/run.sh k8s4 apply -input=false /tmp/easytier-secure-k8s4.tfplan
+./hardware/run.sh k8s1 apply -input=false /tmp/easytier-secure-k8s1.tfplan
+./hardware/run.sh k8s2 apply -input=false /tmp/easytier-secure-k8s2.tfplan
+```
+
+bao-02 の apply 後、`/etc/easytier/credentials.json` の存在・所有者 root と、親ディレクトリ `/etc/easytier` の mode `0700` を WireGuard 経由で確認する。credential ファイルの内容は表示しない。
+
+**4. 各段階での確認**
+
+- IONOS / bao-02 / bao-03 適用後: 両公開 peer と各 OpenBao peer で `easytier-cli peer` を確認し、両公開 peer への経路と Overlay IP の ping を確認する。OpenBao は `bao status` と `bao operator raft list-peers` で 3 voter と quorum を確認する。
+- k8s4 / k8s1 / k8s2 適用後: EasyTier peer と Overlay IP の ping を確認し、`kubectl get nodes -o wide` が全 node `Ready`、`kubectl get --raw='/readyz?verbose'` が成功することを確認する。
+- いずれかの peer が戻らない、ping が継続して失敗する、Raft quorum が失われる、control-plane が `NotReady` になる場合は次の apply をしない。
+
+**5. Terraform 外 peer の切替と完了確認**
+
+各端末・手動管理 peer も EasyTier Secure Mode を設定して再接続する。全 peer が `easytier-cli peer` に表示され、legacy peer が残らず、OpenBao と Kubernetes の確認が事前記録と一致した場合に移行完了とする。その後にだけ短期 credential の発行を開始する。
+
+**6. ロールバック**
+
+問題が出た root では WireGuard 経由で次を実行し、Secure Mode を無効にしてサービスを戻す。`<root>` は問題のあった root 名に置き換える。次の root の apply は止め、OpenBao / Kubernetes の状態を確認する。
+
+```bash
+./hardware/run.sh <root> plan -input=false -var='easytier_secure_mode_enabled=false' -out=/tmp/easytier-secure-rollback.tfplan
+./hardware/run.sh <root> show /tmp/easytier-secure-rollback.tfplan
+./hardware/run.sh <root> apply -input=false /tmp/easytier-secure-rollback.tfplan
+```
+
+plan に Secure Mode の無効化と EasyTier service 再起動以外の差分がないことを確認してから適用する。復旧後、EasyTier peer・OpenBao quorum・Kubernetes Ready が正常化したことを確認する。
+
+全 root の切替完了後、秘密値を含み得る plan ファイルを削除する。
+
+```bash
+rm -f /tmp/easytier-secure-*.tfplan
+```
+
+#### 短期 credential 発行の準備
+
+全 peer の Secure Mode 化完了後、bao-02 を credential 管理 peer とし、`/etc/easytier/credentials.json` に発行状態が永続化されることを確認する。短期 credential は `easytier-cli credential generate --ttl 600` で発行し、relay と subnet proxy の権限は付けない。この credential は移行前には発行・配布しない。
+
+この変更は Terraform 設定の準備であり、実機への `terraform apply` は行っていない。全 peer 切替と実測確認が完了するまで、GitHub-hosted runner 用 credential の発行には使用しない。
+
 両公開ノードを初期接続先として登録し、特定の1台だけに依存しない構成にします。
 
 ただし、EasyTier の Relay 切替と直接 P2P への復帰は、採用バージョンで実測する必要があります。

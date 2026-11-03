@@ -635,13 +635,14 @@ module "easytier" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  easytier_version = var.easytier_version
-  easytier_sha256  = var.easytier_sha256
-  network_name     = var.easytier_network_name
-  network_secret   = data.external.easytier_network_secret[0].result.value
-  overlay_address  = var.easytier_overlay_address
-  peers            = var.easytier_peers
-  ufw_allow        = ["11010/tcp", "11010/udp"]
+  easytier_version    = var.easytier_version
+  easytier_sha256     = var.easytier_sha256
+  secure_mode_enabled = var.easytier_secure_mode_enabled
+  network_name        = var.easytier_network_name
+  network_secret      = data.external.easytier_network_secret[0].result.value
+  overlay_address     = var.easytier_overlay_address
+  peers               = var.easytier_peers
+  ufw_allow           = ["11010/tcp", "11010/udp"]
 
   # Overlay からの受信は、許可リスト(既定は空)だけに絞る(設計書 §7、kigawa-net/infra#368)
   overlay_firewall = true

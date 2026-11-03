@@ -24,6 +24,7 @@ variable "easytier_version" {
     condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+$", var.easytier_version))
     error_message = "easytier_version は 2.7.0 のような形式で指定する(`v` は付けない)。"
   }
+
 }
 
 variable "easytier_arch" {
@@ -62,6 +63,24 @@ variable "network_secret" {
   description = "EasyTier のネットワーク Secret。Bitwarden から取得して渡す(Git に平文で置かない)。ノード上では 0600 の設定ファイルにだけ書く"
   type        = string
   sensitive   = true
+}
+
+variable "secure_mode_enabled" {
+  description = "EasyTier Secure Mode を有効にする。全参加ノードが対応バージョンであることを確認してから、移行手順に従って切り替える"
+  type        = bool
+  default     = false
+}
+
+variable "credential_file" {
+  description = "Secure Mode の管理ノードで発行 credential を永続化するファイル。未指定なら credential 発行状態を保存しない"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.credential_file == null || startswith(var.credential_file, "/")
+    error_message = "credential_file は絶対パスで指定する。"
+  }
 }
 
 variable "overlay_address" {

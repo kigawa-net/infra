@@ -9,10 +9,18 @@ locals {
     ipv4 = "${var.overlay_address}"
     dhcp = false
     listeners = [${join(", ", [for l in var.listeners : "\"${l}\""])}]
+%{if var.secure_mode_enabled && var.credential_file != null}
+    credential_file = "${var.credential_file}"
+%{endif}
 
     [network_identity]
     network_name = "${var.network_name}"
     network_secret = "${var.network_secret}"
+%{if var.secure_mode_enabled}
+
+    [secure_mode]
+    enabled = true
+%{endif}
     %{for p in var.peers~}
 
     [[peer]]
@@ -22,6 +30,15 @@ locals {
 }
 
 resource "null_resource" "easytier" {
+  lifecycle {
+    precondition {
+      condition = !var.secure_mode_enabled || tonumber(split(".", var.easytier_version)[0]) > 2 || (
+        tonumber(split(".", var.easytier_version)[0]) == 2 && tonumber(split(".", var.easytier_version)[1]) >= 6
+      )
+      error_message = "Secure Mode には EasyTier 2.6.0 以降が必要。"
+    }
+  }
+
   triggers = {
     host             = var.host
     easytier_version = var.easytier_version
