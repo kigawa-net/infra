@@ -236,3 +236,10 @@ variable "easytier_snat_source_cidr" {
   type        = string
   default     = "192.168.1.0/24"
 }
+
+# GRE トンネル(FRR をトンネル上の BGP で動かすための土台。設計書 §7 の 1・2。既定は無効)。
+variable "gre_overlay_enabled" {
+  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は false(何も作らない)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。control-plane 側は、相手(bao-02/03)からの gre を、overlay_firewall の overlay_allow で許可する。"
+  type        = bool
+  default     = false
+}

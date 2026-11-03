@@ -1,6 +1,6 @@
 # FRR でルーティングする: Overlay 上の GRE トンネル方式の設計
 
-**状態:** 設計(未実装)。実機は変更しない。
+**状態:** 設計。§7 の 1(`modules/gre-overlay-tunnel`、#426)と 2(`overlay-firewall` の `gre`、`modules/gre-overlay-ufw`、ノードへの配線)は実装済みで、`gre_overlay_enabled` の既定は `false`(何も作らない)。MSS の clamp(§6.1)と、BGP の neighbor の切り替え(§7 の 3 以降)は未実装。
 **関連:** PR #413(Overlay 上の eBGP)、[BGP の隣接を Overlay へ移す設計](easytier-bgp-migration-design.md)(§3.1 の問題が、実機で確認された)。
 
 ## 1. 背景

@@ -1063,7 +1063,7 @@ module "overlay_firewall" {
   sudo_password   = data.external.sudo_password.result.value
 
   overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
-  overlay_allow    = var.easytier_overlay_allow
+  overlay_allow    = concat(var.easytier_overlay_allow, var.gre_overlay_enabled ? ["gre"] : [])
   snat_source_cidr = var.easytier_snat_source_cidr
 }
 
@@ -1083,4 +1083,22 @@ module "easytier" {
   network_secret   = data.external.easytier_network_secret[0].result.value
   overlay_address  = var.easytier_overlay_address
   peers            = var.easytier_peers
+}
+
+# Overlay 上の GRE トンネル(設計: docs/frr-gre-overlay-design.md §2〜§3)。gre_overlay_enabled = false のときは何も作らない。
+# gre の許可は、overlay_firewall の overlay_allow に足す(有効なときだけ)。
+module "gre_overlay" {
+  source     = "../modules/gre-overlay-tunnel"
+  count      = var.easytier_enabled && var.gre_overlay_enabled ? 1 : 0
+  depends_on = [module.overlay_firewall]
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  tunnels = [
+    { name = "bao02", local = "10.250.0.11", remote = "10.250.0.1", address = "172.31.250.1/31" },
+    { name = "bao03", local = "10.250.0.11", remote = "10.250.0.31", address = "172.31.250.7/31" },
+  ]
 }

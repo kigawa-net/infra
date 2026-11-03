@@ -104,4 +104,18 @@ check "remove で MASQUERADE が消える" 0 "$(grep -c '^rule:nat:' "$work/stat
 reset; OF_CIDR=10.250.0.0/24 OF_SNAT_SRC=192.168.1.0/24 OF_SNAT_IFACE=tun9 run
 check "OF_SNAT_IFACE で出力インターフェースを変えられる" 1 "$(grep -cxF 'rule:nat:POSTROUTING -s 192.168.1.0/24 -o tun9 -j MASQUERADE' "$work/state")"
 
+# 8. ポートなしのプロトコル(gre): -p gre -j ACCEPT を DROP より前に入れる。ポートの許可と混ぜても壊れない
+reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="gre" run; rc=$?
+check "gre を許可リストに入れても成功する" 0 "$rc"
+check "gre の ACCEPT を 1 つ入れる(ポートなし)" 1 "$(chain_rules | grep -cxF -- '-p gre -j ACCEPT')"
+check "gre の ACCEPT に --dport を付けない" 0 "$(chain_rules | grep -c -- 'gre.*--dport')"
+check "gre があっても DROP が最後" "-j DROP" "$(chain_rules | tail -n1)"
+check "gre のとき、ルール数は 4(established・icmp・gre・DROP)" 4 "$(chain_rules | wc -l)"
+reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="179/tcp gre 22/tcp" run
+check "ポートと gre を混ぜても、22/tcp は従来どおり許可される" 1 "$(chain_rules | grep -cxF -- '-p tcp --dport 22 -j ACCEPT')"
+check "ポートと gre を混ぜたとき、gre の ACCEPT は 1 つ" 1 "$(chain_rules | grep -cxF -- '-p gre -j ACCEPT')"
+check "ポートと gre を混ぜても、DROP が最後" "-j DROP" "$(chain_rules | tail -n1)"
+reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="gre" run; helper apply; helper apply
+check "gre を再 apply しても、ACCEPT が重複しない" 1 "$(chain_rules | grep -cxF -- '-p gre -j ACCEPT')"
+
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
