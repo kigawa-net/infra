@@ -249,7 +249,7 @@ variable "frr_import_prefixes" {
 
 # GRE トンネル(FRR をトンネル上の BGP で動かすための土台。設計書 §7 の 1・2。既定は無効)。
 variable "gre_overlay_enabled" {
-  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は false(何も作らない)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。GRE と、トンネル上の 179/tcp の許可は、modules/gre-overlay-tunnel の manage_firewall(iptables の INPUT の先頭)が入れる。"
+  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は true(2026-11-04 に有効化。bao-03 のトンネルは gre-k8s4・gre-k8s1・gre-k8s2)。false にしても、次の apply でトンネルは消えないので、手動で止める(modules/gre-overlay-tunnel/README.md)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。GRE と、トンネル上の 179/tcp の許可は、modules/gre-overlay-tunnel の manage_firewall(iptables の INPUT の先頭)が入れる。"
   type        = bool
-  default     = false
+  default     = true
 }
