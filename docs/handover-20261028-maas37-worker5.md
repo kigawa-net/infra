@@ -45,19 +45,24 @@
 6. worker5 の再構築: OSD を止め(1 コピーで運用)→ ディスクと USB の交換 → MAAS で commission / deploy → `terraform apply` で join。join は、**`kube-public/cluster-info` が存在せず**失敗し、一時的に作って join し、直後に削除した。
 
 ## 5. 未完了(優先順)
-1. **Ceph の回復の完了**: 劣化と remapped が 0 になるまで待つ(数時間)。`ceph status` で確認。
-2. **osd.7 の purge**: osd.7 は `out` にしてある。全 PG が clean になり、`ceph osd safe-to-destroy osd.7` が「安全」を返したら、次を実行する(**clean になる前に purge しない。データを失う**)。
-   ```
-   ceph osd purge 7 --yes-i-really-mean-it
-   kubectl -n kigawa-system-rook-ceph delete deployment rook-ceph-osd-7
-   ceph osd unset noout
-   ```
-   (セッション内のバックグラウンドのスクリプトが、同じことを自動で行う設定だが、**セッションが終わると止まる**。手動で確認すること。)
-3. **`noout` の解除**(上の手順 2 の最後)。回復後も残すと、OSD が out にならず、障害時に再複製が始まらない。
-4. **`kube-public/cluster-info` が無い件の判断**: 他のノードの再 join で同じ問題が起きる。**意図的な削除(セキュリティ事故の対応)だったか不明**。意図でなければ、`kubeadm init phase bootstrap-token` で再作成(恒久)。意図なら、join のたびに、一時的に作って削除する(手順は「6-E」)。
-5. **MAAS の電源オフ**: WoL では電源を切れない。MAAS の UI の `Power off` は、機械が起動していると失敗する。webhook の `/off` で、SSH による shutdown に対応する PR が、必要(Rack に、シャットダウン専用の鍵と、sudo の限定ルール)。
-6. **#316、#317 の Issue の更新と、クローズの判断**(取り込みの完了、worker5 の復帰は達成済み)。
-7. ほかのノード(特に DHCP に依存するもの)の洗い出し: worker1 以外にも、DHCP のリースに依存する端末が、ないか(このセッションでは未確認)。
+**2026-11-04 に更新。** 元の 7 項目の状況は、次のとおり。
+
+| # | 項目 | 状況 |
+|---|---|---|
+| 1 | Ceph の回復の完了 | **完了**(2026-10-30 11:26。degraded / misplaced が 0、全 PG が clean)。mClock の `osd_max_backfills` などは、回復のために一時的に上げ、元に戻した(1 / false / balanced) |
+| 2 | osd.7 の purge | **完了**(`safe-to-destroy` を確認してから purge。`rook-ceph-osd-7` の Deployment は、Rook が先に削除済み) |
+| 3 | `noout` の解除 | **完了** |
+| 4 | `kube-public/cluster-info` | **再作成した**(恒久)。CA と `https://k8s.kigawa.net:6443` だけの kubeconfig。`kubeadm init phase bootstrap-token` ではなく、`kubectl create configmap` で作った(control-plane に SSH しなかったため。形式は同じ)。`jws-kubeconfig-<token-id>` の署名は、まだ無い(有効な bootstrap token が 0 件)。次の join で `kubeadm token create` をすると、controller が署名を付ける見込み(未検証)。**6-E の「一時的に作って削除する」手順は、不要になった** |
+| 5 | MAAS の電源オフ | **PR 作成済み(#417、#416)・未マージ・実機未検証**。`/off` を SSH の shutdown に対応。Bearer 認証、専用ユーザーと forced command、sudoers の限定。鍵・token の保管と取得は、別 issue(#440)。実機の試験は、worker5 が OSD を持つため、`noout` と drain の後に、承認を取って行う |
+| 6 | #316、#317 の更新 | **コメントで更新した**(Ceph の復旧、DHCP 依存ノードの確認)。**クローズは、運用受け入れと #417 の実機試験の後**(PR のマージで自動で閉じる運用にはなっていない) |
+| 7 | DHCP 依存ノードの洗い出し | **完了**。k8s1・k8s2・k8s4・worker1・worker3・worker4・worker5 の 7 台は、すべて静的(経路は `proto static`、netplan に `dhcp4` なし、動的アドレス 0)。**k8s ノード以外の LAN 上の端末は、未確認** |
+
+### 残っていること
+- **#417 のレビューとマージ。** マージ前に plan を確認する(k8s2 / k8s4 の `maas_rack` の `null_resource` が置き換えになる)。
+- **#440**: 電源オフ用の SSH 鍵と webhook token を、OpenBao で保管し、Terraform から取得する(`platform/openbao-config` が、まだ無い)。
+- **#441**: 既存の `echo '…' | sudo -S` を、秘密を文字列に埋め込まない方式(`lib/secret-stage.sh`)にそろえる。
+- **#316、#317 のクローズ判断**(上の 6)。
+- Ceph の警告が 3 件残っている(`mon fr` の空き容量 23%、deep-scrub の遅れ 2 PG、Telemetry の再同意)。今回の作業とは別の対応。
 
 ## 6. 手順書(再現に必要な知識)
 ### A. MAAS の API(Region の Pod の中で maas CLI を実行する)
@@ -89,7 +94,7 @@
 ### E. worker5 の再 deploy(OS の入れ直し)
 1. 先に `ceph osd set noout` → `cordon` → `drain`(OSD の Pod は、PDB で退避されないので、`kubectl scale deploy rook-ceph-osd-<ID> --replicas=0`)。
 2. 停止 → OSD の SATA ケーブルを外す(インストーラが消さないよう)→ **USB メモリは抜く**(Rook の `deviceFilter: sd.` が、空のディスクを OSD にするため)→ MAAS で commission → deploy(storage layout は flat)。
-3. `terraform apply` で join。join には `kube-public/cluster-info` が必要(5-4 を参照)。一時的に作る場合は、CA と API サーバーの URL だけの ConfigMap を作り、join の直後に削除する。
+3. `terraform apply` で join。join には `kube-public/cluster-info` が必要(**2026-11-02 に恒久的に再作成済み**。無ければ、CA と API サーバーの URL だけの ConfigMap を作る)。
 4. OSD のケーブルを戻して起動 → osd の Deployment を `replicas=1` に戻し、Rook の operator を再起動して再検出させる。
 
 ### F. DHCP
@@ -102,7 +107,7 @@
 - k8s のノードを、DHCP に依存させない(固定にする)。
 - MAAS の Region の Pod を作り直したら、古い Region コントローラーを消す。
 - `maas-build` の `GIT_TOKEN` は失効している。イメージのタグは、手で更新が必要(CI が自動で `region.yaml` を更新できない)。
-- `cluster-info` を、承認なしに作らない(共有クラスタの変更)。
+- `kube-public/cluster-info` を、削除しない(2026-11-02 に再作成した。join に必要)。共有クラスタの変更は、承認なしにしない。
 - Terraform の state を、手元の 1.13 で書かない。
 
 ## 8. 秘密情報・セキュリティ
