@@ -1,6 +1,7 @@
 #!/bin/bash
 # ufw を使わないホスト(control-plane など)で、Overlay からの受信を iptables で許可リスト制にする。
-# 必須の環境変数: OF_CIDR(Overlay のネットワーク。例: 10.250.0.0/24)。任意: OF_ALLOW(空白区切りの 22/tcp など。既定は空)。
+# 必須の環境変数: OF_CIDR(Overlay のネットワーク。例: 10.250.0.0/24)。任意: OF_ALLOW(空白区切りの 22/tcp や gre など。既定は空)。
+#   gre のようにポートを持たないプロトコルは、そのまま -p gre で許可する(GRE トンネル用。設計書 §6.2)。
 # 任意: OF_SNAT_SRC(例: 192.168.1.0/24)。空でなければ、その送信元から OF_SNAT_IFACE(既定 tun0)へ出る通信を MASQUERADE する。
 #   EasyTier は宛先が Overlay の IP のパケットしか peer へ送らないので、Overlay 外の送信元(LAN の Pod や node)の応答は
 #   bao 側の EasyTier で捨てられる。ルーターの Overlay の IP に書き換えると、応答は必ず同じルーターへ戻る。
@@ -54,7 +55,10 @@ apply() {
   iptables -A \$chain -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A \$chain -p icmp -j ACCEPT
   for rule in \$ALLOW; do
-    iptables -A \$chain -p "\${rule#*/}" --dport "\${rule%/*}" -j ACCEPT
+    case "\$rule" in
+      */*) iptables -A \$chain -p "\${rule#*/}" --dport "\${rule%/*}" -j ACCEPT ;;
+      *) iptables -A \$chain -p "\$rule" -j ACCEPT ;;  # ポートなしのプロトコル(gre など。設計書 §6.2)
+    esac
   done
   iptables -A \$chain -j DROP
   iptables -C INPUT -s "\$CIDR" -j \$chain 2>/dev/null || iptables -I INPUT 1 -s "\$CIDR" -j \$chain
