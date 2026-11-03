@@ -253,3 +253,9 @@ variable "gre_overlay_enabled" {
   type        = bool
   default     = true
 }
+
+variable "sealed_alert_webhook_bitwarden_id" {
+  description = "OpenBao が Sealed になったときの通知先(Discord Webhook の URL)の bws の ID(issue #444)。空のときは通知を入れない。Discord でチャンネルの Webhook を作り、その URL を Bitwarden のシークレットに保存してから、ID を設定する"
+  type        = string
+  default     = ""
+}

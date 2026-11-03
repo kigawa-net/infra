@@ -57,6 +57,20 @@ data "external" "cloudflare_api_token" {
   ]
 }
 
+# Sealed(Unseal が必要)になったときの Discord 通知の Webhook URL(issue #444)。
+# ID が空のときは Bitwarden に触れず、通知を入れない(module に空文字を渡す)。
+data "external" "sealed_alert_webhook" {
+  count = local.node_enabled && var.sealed_alert_webhook_bitwarden_id != "" ? 1 : 0
+
+  program = ["bash", "-c", <<-EOT
+    source "${path.module}/../../lib/bws-retry.sh"
+    value=$(bws_get_value "${var.sealed_alert_webhook_bitwarden_id}") || exit 1
+    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "sealed_alert_webhook: bws secret is empty" >&2; exit 1; fi
+    jq -n --arg value "$value" '{"value": $value}'
+  EOT
+  ]
+}
+
 # 有効化の前提を、まとめて検査する(空のまま apply して、SSH の失敗や、壊れた設定を作らないため)。
 resource "terraform_data" "enable_check" {
   count = var.enabled ? 1 : 0
@@ -141,6 +155,8 @@ module "openbao_node" {
   wipe_data_on_failure = var.wipe_data_on_failure
   memory_high          = var.openbao_memory_high
   memory_max           = var.openbao_memory_max
+
+  sealed_alert_webhook_url = length(data.external.sealed_alert_webhook) > 0 ? data.external.sealed_alert_webhook[0].result.value : ""
 }
 
 # journald の上限(他のノードと同じく、/run の ramdisk 圧迫対策、k8s-system#259)
