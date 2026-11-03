@@ -188,7 +188,49 @@ variable "openbao_after_units" {
 }
 
 variable "easytier_overlay_allow" {
-  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。OpenBao の Raft(8200/8201)を Overlay(tun0)経由で通すため(host-hardening の extra_interfaces = [\"tun0\"])。Overlay の送信元の deny は、tun0 向けの許可より先に評価されるので、ここに入れないと塞がれる(docs/openbao-implementation-design.md「Raft の経路」)。足したルールは、外しても自動では消えない(ufw delete が要る)"
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。OpenBao の Raft(8200/8201)を Overlay(tun0)経由で通すため。179/tcp は、Inuyama の control-plane との eBGP(frr_overlay_enabled)用(host-hardening の extra_interfaces = [\"tun0\"])。Overlay の送信元の deny は、tun0 向けの許可より先に評価されるので、ここに入れないと塞がれる(docs/openbao-implementation-design.md「Raft の経路」)。足したルールは、外しても自動では消えない(ufw delete が要る)"
   type        = list(string)
-  default     = ["8200/tcp", "8201/tcp"]
+  default     = ["8200/tcp", "8201/tcp", "179/tcp"]
+}
+
+variable "frr_overlay_enabled" {
+  description = "true のとき、FRR を入れ、Inuyama の control-plane(overlay 上の 10.250.0.11/12/13)と eBGP を張る(modules/frr-overlay-peer)。10.0.0.0/24 と 192.168.1.0/24 を overlay 経由で学ぶ。有効化は 2 段階: (1) この変数だけ true で適用し、BGP の確立と経路を確認する。(2) そのあと wg_table_off を true にして適用する"
+  type        = bool
+  default     = true
+}
+
+variable "wg_table_off" {
+  description = "true のとき、wg0 の wg-quick 設定に Table = off を入れ、AllowedIPs(10.0.0.0/24)からのカーネル経路を作らない。10.0.0.0/24 は BGP(overlay)で学ぶので、overlay 経由になる。wg_kernel_routes は PostUp で入れ直す。AllowedIPs は変えない。wg0 が再起動する(数秒、WireGuard の経路が切れる)。frr_overlay_enabled で BGP を確認したあとに、1 台ずつ適用する"
+  type        = bool
+  default     = true
+}
+
+variable "wg_kernel_routes" {
+  description = "wg_table_off のとき、PostUp で入れる wg0 の経路(カーネル経路が要るもの)。172.31.254.0/24(hub と他のスポーク)。10.0.0.0/24 は入れない(BGP の overlay 経路を使う)"
+  type        = list(string)
+  default     = ["172.31.254.0/24"]
+}
+
+variable "frr_local_as" {
+  description = "FRR の AS 番号(bao-02 の AS)。Inuyama(65010)・IONOS(65030)・Oracle・Kubernetes の既存の AS と衝突させない(65041 は未使用を確認済み)"
+  type        = number
+  default     = 65041
+}
+
+variable "frr_remote_as" {
+  description = "Inuyama の control-plane が名乗る AS 番号(local-as の inuyama_asn、65010)。neighbor の remote-as に使う"
+  type        = number
+  default     = 65010
+}
+
+variable "frr_neighbors" {
+  description = "eBGP の neighbor(Inuyama の control-plane の overlay の IP。k8s4 = 10.250.0.11、k8s1 = 10.250.0.12、k8s2 = 10.250.0.13)"
+  type        = list(string)
+  default     = ["10.250.0.11", "10.250.0.12", "10.250.0.13"]
+}
+
+variable "frr_import_prefixes" {
+  description = "neighbor から受け取る prefix(完全一致)。10.0.0.0/24(クラスタ LAN)と 192.168.1.0/24(worker の LAN)"
+  type        = list(string)
+  default     = ["10.0.0.0/24", "192.168.1.0/24"]
 }

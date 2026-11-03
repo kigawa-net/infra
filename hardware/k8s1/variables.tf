@@ -220,7 +220,19 @@ variable "easytier_peers" {
 }
 
 variable "easytier_overlay_allow" {
-  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。既定は空で、Overlay からは何も受けない(ICMP を除く)。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)"
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)。179/tcp は、bao-02/03 との eBGP(overlay 上の BGP セッション)用。FRR は設定した neighbor 以外の接続を受けない"
   type        = list(string)
-  default     = []
+  default     = ["179/tcp"]
+}
+
+variable "inuyama_asn" {
+  description = "Inuyama の control-plane が外部(eBGP)に名乗る AS 番号。k8s4 と同じ値(65010)。bao-02/03 との eBGP で使う"
+  type        = number
+  default     = 65010
+}
+
+variable "easytier_snat_source_cidr" {
+  description = "LAN(Pod・node)から Overlay(tun0)へ出る通信を MASQUERADE する送信元。EasyTier は宛先が Overlay の IP のパケットしか peer へ送らないので、LAN の送信元(192.168.1.x)の応答は bao 側で捨てられる。ルーター(この node)の Overlay の IP に書き換えると、応答はこの node へ戻る。VIP を持つ node が変わっても動くよう、control-plane 3 台すべてに入れる(modules/overlay-firewall)。空なら入れない"
+  type        = string
+  default     = "192.168.1.0/24"
 }
