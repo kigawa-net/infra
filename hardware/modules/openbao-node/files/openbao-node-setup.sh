@@ -198,6 +198,10 @@ if place "$STAGE_DIR/openbao.service" "$unit" 0644 root:root; then
   systemctl daemon-reload || die "daemon-reload に失敗しました"
 fi
 
+# 監査ログのローテーション(logrotate の設定)。ログの置き場所は、unit の LogsDirectory=openbao(/var/log/openbao)
+install -d -m 0755 "$root/etc/logrotate.d" || die "logrotate.d を作れません"
+place "$STAGE_DIR/openbao.logrotate" "$root/etc/logrotate.d/openbao" 0644 root:root || true
+
 # 8. 起動・反映。初期化はしない(未初期化の sealed 状態で待機する)。証明書の更新は deploy hook が reload する
 systemctl enable openbao >/dev/null || die "enable に失敗しました"
 if ! systemctl is-active --quiet openbao; then

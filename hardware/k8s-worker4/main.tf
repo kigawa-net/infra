@@ -45,6 +45,8 @@ module "cluster_route" {
   sudo_password   = data.external.sudo_password.result.value
   # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
   gateways = [var.core_router_vip]
+  # EasyTier のオーバーレイ(10.250.0.0/24)。Inuyama の Pod から bao-02/03 へ届けるため(control-plane の tun が出口になる)
+  extra_destination_cidrs = ["10.250.0.0/24"]
 }
 
 # 内部ドメイン(kigawa.net など)を、kresd に向ける。ノードは、自宅ルーターで k8s.kigawa.net を引いており、

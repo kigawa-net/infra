@@ -45,3 +45,23 @@ listener "tcp" {
 telemetry {
   unauthenticated_metrics_access = false
 }
+
+# 監査デバイス(宣言的。OpenBao 2.x は、API(sys/audit)での有効化を拒否する)。
+# 起動と SIGHUP のときに、アクティブなノードで有効になる。全ノードで同じ設定にする。
+# 2 つ以上を有効にする: どれか 1 つでも書けるうちは動き続ける。全部が書けなくなると、OpenBao は全リクエストを拒否する。
+# 秘密の値は HMAC でハッシュ化されて記録される(ログ自体は、機密として扱う)。
+audit "file" "file" {
+  description = "監査ログ(/var/log/openbao/audit.log)。logrotate が日次で回し、SIGHUP で開き直す"
+  options {
+    file_path = "/var/log/openbao/audit.log"
+    mode      = "0600"
+  }
+}
+
+audit "syslog" "syslog" {
+  description = "監査ログ(syslog。ジャーナルに入る)。ファイルが書けなくなったときの、もう 1 つの経路"
+  options {
+    tag      = "openbao-audit"
+    facility = "AUTH"
+  }
+}

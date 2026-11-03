@@ -27,12 +27,29 @@ variable "overlay_cidr" {
 }
 
 variable "overlay_allow" {
-  description = "Overlay からの受信を許可するポート(例: [\"22/tcp\"])。空なら、Overlay からは何も受けない(ICMP を除く)"
+  description = "Overlay からの受信を許可するポート(例: [\"22/tcp\"])。ポートを持たないプロトコルは \"gre\" のように書く(GRE トンネル用、設計書 §6.2)。空なら、Overlay からは何も受けない(ICMP を除く)"
   type        = list(string)
   default     = []
 
   validation {
-    condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r))])
-    error_message = "overlay_allow は 22/tcp のような形式で指定する。"
+    condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r)) || r == "gre"])
+    error_message = "overlay_allow は 22/tcp のような形式、または gre で指定する。"
   }
+}
+
+variable "snat_source_cidr" {
+  description = "空でなければ、この送信元(例: 192.168.1.0/24。LAN の Pod・node)から snat_iface へ出る通信を MASQUERADE する。Overlay 外の送信元の応答を、bao 側の EasyTier が捨てるのを避けるため(送信元をルーターの Overlay の IP にする)。空なら何もしない"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.snat_source_cidr == "" || can(cidrhost(var.snat_source_cidr, 0))
+    error_message = "snat_source_cidr は 192.168.1.0/24 のような CIDR 形式、または空にする。"
+  }
+}
+
+variable "snat_iface" {
+  description = "snat_source_cidr の通信を MASQUERADE する出力インターフェース(EasyTier の tun)"
+  type        = string
+  default     = "tun0"
 }

@@ -88,6 +88,8 @@ module "cluster_route" {
   sudo_password   = data.external.sudo_password.result.value
   # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
   gateways = [var.core_router_vip]
+  # EasyTier のオーバーレイ(10.250.0.0/24)。Inuyama の Pod から bao-02/03 へ届けるため(control-plane の tun が出口になる)
+  extra_destination_cidrs = ["10.250.0.0/24"]
 
   # デフォルト経路(LAN)が通っていることが前提なので、static_network のあとに適用する。
   depends_on = [module.static_network]

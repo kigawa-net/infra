@@ -97,7 +97,28 @@ module "bgp" {
   ibgp_hold_seconds      = 9
 
   # BIRD の protocol direct 相当。API VIP は kube-vip の保持ノードで直結経路になる。
-  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32"]
+  # 192.168.1.0/24 は worker の LAN。bao-02/03 へ eBGP で広告する(下の external_bgp_peers)。export は、BGP の RIB に入っていないと効かない。
+  redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32", "192.168.1.0/24"]
+  # OpenBao の bao-02 / bao-03(EasyTier のオーバーレイ上の eBGP。設計: hardware/modules/frr-overlay-peer)。
+  # 相手へは 10.0.0.0/24 と 192.168.1.0/24 だけを出し、相手からは何も取り込まない。k8s1 は、まだ外部の peer を持たない(初めての eBGP)。
+  external_bgp_peers = var.easytier_enabled ? [
+    {
+      local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = "10.250.0.1"
+      neighbor_as     = 65041
+      import_prefixes = []
+      export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+    },
+    {
+      local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
+      local_as        = var.inuyama_asn
+      neighbor_ip     = "10.250.0.31"
+      neighbor_as     = 65042
+      import_prefixes = []
+      export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+    },
+  ] : []
   # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
   enable_kube_vip_peer = false
   # k8s1 のカーネルには 172.31.254.2/32 dev wg1 が既にあるため、next-hop 補助経路は不要。
@@ -306,8 +327,9 @@ module "overlay_firewall" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  overlay_cidr  = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
-  overlay_allow = var.easytier_overlay_allow
+  overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
+  overlay_allow    = concat(var.easytier_overlay_allow, var.gre_overlay_enabled ? ["gre"] : [])
+  snat_source_cidr = var.easytier_snat_source_cidr
 }
 
 module "easytier" {
@@ -327,4 +349,22 @@ module "easytier" {
   network_secret      = data.external.easytier_network_secret[0].result.value
   overlay_address     = var.easytier_overlay_address
   peers               = var.easytier_peers
+}
+
+# Overlay 上の GRE トンネル(設計: docs/frr-gre-overlay-design.md §2〜§3)。gre_overlay_enabled = false のときは何も作らない。
+# gre の許可は、overlay_firewall の overlay_allow に足す(有効なときだけ)。
+module "gre_overlay" {
+  source     = "../modules/gre-overlay-tunnel"
+  count      = var.easytier_enabled && var.gre_overlay_enabled ? 1 : 0
+  depends_on = [module.overlay_firewall]
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+
+  tunnels = [
+    { name = "bao02", local = "10.250.0.12", remote = "10.250.0.1", address = "172.31.250.3/31" },
+    { name = "bao03", local = "10.250.0.12", remote = "10.250.0.31", address = "172.31.250.9/31" },
+  ]
 }

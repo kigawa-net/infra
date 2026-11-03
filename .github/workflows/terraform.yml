@@ -32,6 +32,16 @@ on:
           - plan
           - apply
 
+# apply(main への push と手動実行)の run は、1 つずつ直列に走らせる。R2 の state にはロックが無いので、
+# 並行して走ると、先の run の apply が終わる前の state で、あとの run が plan し、同じ変更を 2 度 apply する
+# (2026-10-29: #393・#397 のマージの apply が約 7 秒差で重なり、OpenBao が 2 度再起動して封印された。#414)。
+# 待っている run は、新しいものだけが残る(古い待機は取り消される。新しい run は、最新の main を plan し直すので、変更は失われない)。
+# 実行中の apply は、取り消さない(途中で止めると、ホストの設定が中途半端になる)。
+# PR の plan は、apply と別の group にし、同じ PR の古い plan だけを取り消す。
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('terraform-plan-{0}', github.ref) || 'terraform-apply' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   detect-modules:
     # git diff/jqのみで内部ネットワークへの到達性が不要なため、

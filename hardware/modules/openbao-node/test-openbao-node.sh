@@ -68,6 +68,10 @@ else
 fi
 
 check "ui は無効" 1 "$(grep -c '^ui *= *false$' "$conf")"
+check "監査デバイス(file)が宣言されている" 1 "$(grep -c '^audit "file" "file"' "$conf")"
+check "監査デバイス(syslog)が宣言されている" 1 "$(grep -c '^audit "syslog" "syslog"' "$conf")"
+check "監査ログのパス" 1 "$(grep -c 'file_path *= *"/var/log/openbao/audit.log"' "$conf")"
+check "監査デバイスは 2 つ以上(片方が書けなくても止まらない)" 1 "$([ "$(grep -c '^audit "' "$conf")" -ge 2 ] && echo 1 || echo 0)"
 check "disable_mlock を書かない(2.x は mlock をやめた。書くと起動に失敗する)" 0 "$(grep -c "^[^#]*disable_mlock" "$conf")"
 check "listener が 2 つ(WireGuard IP と loopback)" 2 "$(grep -c '^listener "tcp"' "$conf")"
 check "WireGuard IP の 8200 / 8201 で待ち受ける" 1 "$(grep -c 'address *= *"192.0.2.1:8200"' "$conf")"
@@ -188,6 +192,7 @@ write_stage() {
   printf '[Unit]\nDescription=test\n' > "$sb/stage/openbao.service"
   printf 'dns_cloudflare_api_token = %s\n' "$TOKEN_VALUE" > "$sb/stage/cloudflare.ini"
   printf '192.0.2.1 %s\n192.0.2.3 %s\n' "$FQDN" "$PEER_FQDN" > "$sb/stage/hosts.entries"
+  printf '/var/log/openbao/audit.log {\n    daily\n}\n' > "$sb/stage/openbao.logrotate"
 }
 # new_sandbox <name>: sandbox を作り、既存の /etc/hosts(無関係な行を含む)と stage を置く
 new_sandbox() {
@@ -259,6 +264,7 @@ check "hosts: peer の fqdn を WireGuard の IP に向ける" 1 "$(grep -c "^19
 check "hosts: 既存の行を残す" 1 "$(grep -c '^127.0.0.1 localhost$' "$sb/root/etc/hosts")"
 check "設定は配置される" 1 "$(exists "$sb/root/etc/openbao/openbao.hcl")"
 check "unit は配置される" 1 "$(exists "$sb/root/etc/systemd/system/openbao.service")"
+check "logrotate の設定が配置される" 1 "$(exists "$sb/root/etc/logrotate.d/openbao")"
 check "/var/lib/openbao が作られる" 1 "$(exists "$sb/root/var/lib/openbao")"
 check "start が呼ばれる" 1 "$(grep -c '^systemctl start openbao' "$calls")"
 check "証明書の発行は start より前" 1 "$(c=$(grep -n '^certbot certonly' "$calls" | cut -d: -f1); s=$(grep -n '^systemctl start openbao' "$calls" | cut -d: -f1); [ -n "$c" ] && [ -n "$s" ] && [ "$c" -lt "$s" ] && echo 1 || echo 0)"

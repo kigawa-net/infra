@@ -323,7 +323,20 @@ variable "easytier_peers" {
 }
 
 variable "easytier_overlay_allow" {
-  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。既定は空で、Overlay からは何も受けない(ICMP を除く)。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)"
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)。179/tcp は、bao-02/03 との eBGP(overlay 上の BGP セッション)用。FRR は設定した neighbor 以外の接続を受けない"
   type        = list(string)
-  default     = []
+  default     = ["179/tcp"]
+}
+
+variable "easytier_snat_source_cidr" {
+  description = "LAN(Pod・node)から Overlay(tun0)へ出る通信を MASQUERADE する送信元。EasyTier は宛先が Overlay の IP のパケットしか peer へ送らないので、LAN の送信元(192.168.1.x)の応答は bao 側で捨てられる。ルーター(この node)の Overlay の IP に書き換えると、応答はこの node へ戻る。VIP を持つ node が変わっても動くよう、control-plane 3 台すべてに入れる(modules/overlay-firewall)。空なら入れない"
+  type        = string
+  default     = "192.168.1.0/24"
+}
+
+# GRE トンネル(FRR をトンネル上の BGP で動かすための土台。設計書 §7 の 1・2。既定は無効)。
+variable "gre_overlay_enabled" {
+  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は true(2026-11-04 に有効化。k8s2 のトンネルは gre-bao02・gre-bao03)。false にしても、次の apply でトンネルは消えないので、手動で止める(modules/gre-overlay-tunnel/README.md)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。control-plane 側は、相手(bao-02/03)からの gre を、overlay_firewall の overlay_allow で許可する。"
+  type        = bool
+  default     = true
 }

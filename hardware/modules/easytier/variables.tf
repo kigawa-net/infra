@@ -17,7 +17,7 @@ variable "sudo_password" {
 }
 
 variable "easytier_version" {
-  description = "導入する EasyTier のバージョン(例: 2.7.0。`v` は付けない)。採用バージョンは未確定のため既定値は置かない。Relay 切替と Direct への復帰を、このバージョンで実測してから固定すること(docs/network-vpn-architecture-design.md §4.1)"
+  description = "導入する EasyTier のバージョン(例: 2.7.0。`v` は付けない)。既定値は置かず、各ノードで明示する(現在は 2.6.4 を採用)。Relay 切替と Direct への復帰の実測は未実施(docs/network-vpn-architecture-design.md §4.1)"
   type        = string
 
   validation {
