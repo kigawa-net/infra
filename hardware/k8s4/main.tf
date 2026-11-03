@@ -1062,8 +1062,9 @@ module "overlay_firewall" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 
-  overlay_cidr  = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
-  overlay_allow = var.easytier_overlay_allow
+  overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
+  overlay_allow    = var.easytier_overlay_allow
+  snat_source_cidr = var.easytier_snat_source_cidr
 }
 
 module "easytier" {

@@ -406,3 +406,9 @@ variable "easytier_overlay_allow" {
   type        = list(string)
   default     = ["179/tcp"]
 }
+
+variable "easytier_snat_source_cidr" {
+  description = "LAN(Pod・node)から Overlay(tun0)へ出る通信を MASQUERADE する送信元。EasyTier は宛先が Overlay の IP のパケットしか peer へ送らないので、LAN の送信元(192.168.1.x)の応答は bao 側で捨てられる。ルーター(この node)の Overlay の IP に書き換えると、応答はこの node へ戻る。VIP を持つ node が変わっても動くよう、control-plane 3 台すべてに入れる(modules/overlay-firewall)。空なら入れない"
+  type        = string
+  default     = "192.168.1.0/24"
+}
