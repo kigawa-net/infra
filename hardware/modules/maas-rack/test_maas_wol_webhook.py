@@ -108,8 +108,8 @@ class Server(unittest.TestCase):
         self.env.stop()
         os.unlink(self.leases.name)
 
-    def req(self, method, path):
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None)
+    def req(self, method, path, headers=None):
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None, headers=headers or {})
         try:
             with urllib.request.urlopen(r, timeout=5) as resp:
                 return resp.status, json.load(resp)
@@ -239,16 +239,26 @@ class Shutdown(unittest.TestCase):
 
     setUp_base = Server.setUp
     tearDown = Server.tearDown
-    req = Server.req
+
+    TOKEN = "TEST-TOKEN-0123456789abcdefghijklmnop"  # ダミー(32 文字以上)
+    AUTH = {"Authorization": "Bearer TEST-TOKEN-0123456789abcdefghijklmnop"}
+
+    def req(self, method, path, headers=None):
+        # 既定は、正しいトークン付き。認証を試すテストは、headers を明示する
+        return Server.req(self, method, path, headers=self.AUTH if headers is None else headers)
 
     def setUp(self):
         self.setUp_base()
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
         self.table = os.path.join(self.tmp, "shutdown-targets.json")
+        self.token_file = os.path.join(self.tmp, "auth-token")
+        with open(self.token_file, "w") as f:
+            f.write(self.TOKEN + "\n")
         os.environ["SHUTDOWN_TARGETS"] = self.table  # self.env(mock.patch.dict)が、tearDown で元に戻す
         os.environ["SHUTDOWN_KEY"] = "/tmp/fake-key-for-test"
         os.environ["SHUTDOWN_KNOWN_HOSTS"] = "/tmp/fake-kh-for-test"
+        os.environ["AUTH_TOKEN_FILE"] = self.token_file
         self.pings["192.168.1.150"] = True  # 対象は、起動している
 
     def use_table(self, obj):
@@ -347,6 +357,75 @@ class Shutdown(unittest.TestCase):
         self.assertEqual(self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")[1]["status"], "running")
         self.pings.clear()
         self.assertEqual(self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")[1]["status"], "stopped")
+
+    # ---- 認証(/off。MAAS の power_token を、Authorization: Bearer で受ける。#417)----
+    def test_off_without_token_is_401_and_no_ssh(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertEqual((code, body["error"]), (401, "unauthorized"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_wrong_or_malformed_token_is_401(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        for hdr in ("Bearer " + self.TOKEN + "x", "Bearer wrong", "Bearer ", "Basic " + self.TOKEN, self.TOKEN, "bearer " + self.TOKEN):
+            code, body = self.req("POST", f"/off?mac={MAC}", headers={"Authorization": hdr})
+            self.assertEqual(code, 401, hdr)
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_correct_token_runs_as_before(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")  # 既定は、正しいトークン
+        self.assertEqual((code, body["status"]), (200, "stopping"))
+        self.assertEqual(len(fake.calls()), 1)
+
+    def test_off_token_file_missing_is_503_fail_closed(self):
+        self.use_table(self.GOOD)
+        os.environ["AUTH_TOKEN_FILE"] = os.path.join(self.tmp, "absent-token")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")  # 正しいトークンを送っても、設定が無いので 503
+        self.assertEqual((code, body["error"]), (503, "auth token not configured"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_token_file_empty_is_503_fail_closed(self):
+        self.use_table(self.GOOD)
+        with open(self.token_file, "w") as f:
+            f.write("\n")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual(code, 503)
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_empty_table_needs_no_auth(self):
+        # 表が空(機能が無効)の構成は、従来どおり認証なしで unsupported
+        os.environ["AUTH_TOKEN_FILE"] = os.path.join(self.tmp, "absent-token")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertEqual((code, body["status"]), (200, "unsupported"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_status_and_wake_need_no_auth(self):
+        self.use_table(self.GOOD)
+        code, body = self.req("POST", f"/wake?mac={MAC}", headers={})
+        self.assertEqual((code, body["status"]), (200, "sent"))
+        code, body = self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150", headers={})
+        self.assertEqual(code, 200)
+
+    def test_unauthorized_off_does_not_end_wake_grace(self):
+        # 認証に失敗した /off は、状態(WoL の猶予)に触れない
+        self.req("POST", f"/wake?mac={MAC}")
+        self.use_table(self.GOOD)
+        self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertIn(MAC, wol.WAKES)
+
+    def test_token_compared_with_hmac_compare_digest(self):
+        self.use_table(self.GOOD)
+        self.use_ssh(0)
+        with mock.patch.object(wol.hmac, "compare_digest", wraps=wol.hmac.compare_digest) as cd:
+            self.req("POST", f"/off?mac={MAC}")
+        self.assertTrue(cd.called)
 
     def test_load_targets_normalizes_mac(self):
         self.use_table({"02-39-7A-2E-13-F0": {"host": "192.168.1.150", "user": "maas-shutdown"}})

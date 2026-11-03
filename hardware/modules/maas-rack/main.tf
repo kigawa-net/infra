@@ -19,9 +19,16 @@ locals {
   wol_install_script = file("${path.module}/files/maas-wol-webhook-install.sh")
   wol_broadcast      = var.wol_broadcast != "" ? var.wol_broadcast : cidrhost(var.lan_cidr, -1)
 
-  # SSH によるシャットダウン(/off。kigawa-net/infra#416)。3 つそろったときだけ、webhook に設定を渡す。一部だけは、precondition で止める。
-  wol_shutdown_any = length(var.wol_shutdown_targets) > 0 || var.wol_shutdown_private_key != "" || var.wol_shutdown_known_hosts != ""
-  wol_shutdown_all = length(var.wol_shutdown_targets) > 0 && var.wol_shutdown_private_key != "" && var.wol_shutdown_known_hosts != ""
+  # 秘密(鍵・トークン・sudo パスワード)の一時置き場所と、その共通ヘルパー(lib/secret-stage.sh)。#417 のレビュー対応。
+  # tmpfs(/dev/shm)なので、再起動で消える。秘密は、file provisioner でこの場所へ送り、remote-exec のコマンド文字列には入れない。
+  # sudo には、パスワードのファイルを標準入力で渡す(sudo -S < file)。途中で失敗しても、次の apply の先頭(prepare)で消す。
+  secret_dir          = "/dev/shm/maas-wol-secrets"
+  secret_stage_script = file("${path.module}/../../../lib/secret-stage.sh")
+
+  # SSH によるシャットダウン(/off。kigawa-net/infra#416)。4 つ(表・鍵・known_hosts・認証トークン)そろったときだけ、webhook に設定を渡す。
+  # 一部だけは、precondition で止める。
+  wol_shutdown_any = length(var.wol_shutdown_targets) > 0 || var.wol_shutdown_private_key != "" || var.wol_shutdown_known_hosts != "" || var.wol_shutdown_auth_token != ""
+  wol_shutdown_all = length(var.wol_shutdown_targets) > 0 && var.wol_shutdown_private_key != "" && var.wol_shutdown_known_hosts != "" && var.wol_shutdown_auth_token != ""
   wol_shutdown_on  = local.wol_shutdown_all && var.wol_webhook_enabled
 
   wol_shutdown_targets_file = jsonencode(var.wol_shutdown_targets)
@@ -29,16 +36,16 @@ locals {
 
   # 有効なときだけ、再実行の条件に加える(無効のままなら、このキーは triggers に増えない。ただし、webhook のスクリプトを変えた PR では、
   # wol_script_hash / wol_install_hash が変わり、既存の host(k8s2 / k8s4)も再実行される。計画で確認すること)。
-  # 鍵の内容は、平文で triggers に入れない(sha256 のみ)。
+  # 鍵とトークンは、平文で triggers に入れない(sha256 のみ)。
   wol_shutdown_triggers = local.wol_shutdown_on ? {
     wol_shutdown_targets_hash     = sha256(local.wol_shutdown_targets_file)
     wol_shutdown_key_hash         = sha256(var.wol_shutdown_private_key)
     wol_shutdown_known_hosts_hash = sha256(local.wol_shutdown_hosts_file)
+    wol_shutdown_auth_token_hash  = sha256(var.wol_shutdown_auth_token)
   } : {}
 
-  # webhook の install に渡す、一時ファイルの場所(有効のときだけ。無効なら、install が CONF_DIR の設定を消す)
-  wol_shutdown_env       = local.wol_shutdown_on ? "SHUTDOWN_TARGETS_SRC=/tmp/maas-wol-shutdown-targets.json SHUTDOWN_KEY_SRC=/tmp/maas-wol-shutdown.key SHUTDOWN_KNOWN_HOSTS_SRC=/tmp/maas-wol-shutdown-known-hosts" : ""
-  wol_shutdown_tmp_files = "/tmp/maas-wol-shutdown.key /tmp/maas-wol-shutdown-targets.json /tmp/maas-wol-shutdown-known-hosts"
+  # webhook の install に渡す、置き場所のファイル(有効のときだけ。無効なら、install が CONF_DIR の設定を消す)
+  wol_shutdown_env = local.wol_shutdown_on ? "SHUTDOWN_TARGETS_SRC=${local.secret_dir}/shutdown-targets.json SHUTDOWN_KEY_SRC=${local.secret_dir}/shutdown.key SHUTDOWN_KNOWN_HOSTS_SRC=${local.secret_dir}/known-hosts SHUTDOWN_AUTH_TOKEN_SRC=${local.secret_dir}/auth-token" : ""
 }
 
 resource "null_resource" "maas_rack" {
@@ -53,7 +60,7 @@ resource "null_resource" "maas_rack" {
 
     precondition {
       condition     = !local.wol_shutdown_any || local.wol_shutdown_all
-      error_message = "maas-rack: wol_shutdown_targets・wol_shutdown_private_key・wol_shutdown_known_hosts は、3 つそろえて指定してください(一部だけは不可)。"
+      error_message = "maas-rack: wol_shutdown_targets・wol_shutdown_private_key・wol_shutdown_known_hosts・wol_shutdown_auth_token は、4 つそろえて指定してください(一部だけは不可)。"
     }
   }
 
@@ -82,6 +89,18 @@ resource "null_resource" "maas_rack" {
     host        = var.host
     user        = var.ssh_user
     private_key = var.ssh_private_key
+  }
+
+  # 最初に、秘密の置き場所を用意する。前回の apply で途中で切れた残骸は、ここで必ず消える(tmpfs。0600 の空のファイルを作る)。
+  provisioner "file" {
+    content     = local.secret_stage_script
+    destination = "/tmp/maas-secret-stage.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "bash /tmp/maas-secret-stage.sh prepare shutdown.key shutdown-targets.json known-hosts auth-token sudo-pass",
+    ]
   }
 
   provisioner "file" {
@@ -147,36 +166,41 @@ resource "null_resource" "maas_rack" {
     ]
   }
 
-  # SSH によるシャットダウン(/off)の設定を、一時ファイルに置く(秘密鍵を含む。ログに出さない)。直前の手順(webhook)で、必ず消す。
-  # 鍵は、先に 0600 で作ってから書く(file provisioner は、既存のファイルの権限を保つ)。無効のときは、空の内容を置いて、webhook の手順で消す。
-  provisioner "remote-exec" {
-    inline = [
-      "install -m 0600 /dev/null /tmp/maas-wol-shutdown.key",
-    ]
+  # SSH によるシャットダウン(/off)と、webhook の認証トークン、sudo パスワードを、tmpfs の置き場所へ送る(#417 のレビュー対応)。
+  # 秘密は、コマンド文字列(inline)に入れない。無効のときは、空の内容を置き、次の手順で消す。
+  provisioner "file" {
+    content     = var.sudo_password
+    destination = "${local.secret_dir}/sudo-pass"
   }
 
   provisioner "file" {
     content     = var.wol_shutdown_private_key
-    destination = "/tmp/maas-wol-shutdown.key"
+    destination = "${local.secret_dir}/shutdown.key"
   }
 
   provisioner "file" {
     content     = local.wol_shutdown_targets_file
-    destination = "/tmp/maas-wol-shutdown-targets.json"
+    destination = "${local.secret_dir}/shutdown-targets.json"
   }
 
   provisioner "file" {
     content     = local.wol_shutdown_hosts_file
-    destination = "/tmp/maas-wol-shutdown-known-hosts"
+    destination = "${local.secret_dir}/known-hosts"
+  }
+
+  provisioner "file" {
+    content     = var.wol_shutdown_auth_token
+    destination = "${local.secret_dir}/auth-token"
   }
 
   # MAAS 用の Wake on LAN の webhook(127.0.0.1 だけで待ち受け。ほかのサービスには触れない)。無効のときは、何もせず、置いたファイルだけ消す。
-  # SSH のシャットダウンは、wol_webhook_enabled が true で、3 つそろったときだけ有効(install が、CONF_DIR に置く。無効なら、CONF_DIR の設定を消す)。
+  # sudo のパスワードは、標準入力のファイル(sudo -S < file)で渡す。run は、終了コードを保って、置き場所を必ず消す。
+  # SSH のシャットダウンは、wol_webhook_enabled が true で、4 つそろったときだけ有効(install が、CONF_DIR に置く。無効なら、CONF_DIR の設定を消す)。
   provisioner "remote-exec" {
     inline = [
       var.wol_webhook_enabled ?
-      "echo '${var.sudo_password}' | sudo -S env BCAST='${local.wol_broadcast}' PORT='${var.wol_webhook_port}' SRC=/tmp/maas-wol-webhook.py ${local.wol_shutdown_env} bash /tmp/maas-wol-webhook-install.sh; rc=$?; rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh ${local.wol_shutdown_tmp_files}; exit $rc" :
-      "rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh ${local.wol_shutdown_tmp_files}",
+      "sudo -S bash /tmp/maas-secret-stage.sh run -- env BCAST='${local.wol_broadcast}' PORT='${var.wol_webhook_port}' SRC=/tmp/maas-wol-webhook.py ${local.wol_shutdown_env} bash /tmp/maas-wol-webhook-install.sh < ${local.secret_dir}/sudo-pass; rc=$?; rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh /tmp/maas-secret-stage.sh; exit $rc" :
+      "bash /tmp/maas-secret-stage.sh clean; rm -f /tmp/maas-wol-webhook.py /tmp/maas-wol-webhook-install.sh /tmp/maas-secret-stage.sh",
     ]
   }
 }

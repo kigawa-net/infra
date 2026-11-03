@@ -5,7 +5,9 @@ MAAS には Wake on LAN の電源ドライバが無い。`webhook` ドライバ(
 この Rack 上の 127.0.0.1 のサービスを呼ぶ。サービスは、LAN にマジックパケットを送り、ping と DHCP のリースで、状態を返す。
 
   POST /wake?mac=<MAC>                       マジックパケットを送る(電源オン)。200 {"status": "sent"}
-  POST /off?mac=<MAC>                        シャットダウンの表(SHUTDOWN_TARGETS)に、その MAC があるときだけ、
+  POST /off?mac=<MAC>                        Authorization: Bearer <AUTH_TOKEN_FILE のトークン> が必要(表が空の構成を除く。#417)。
+                                            表が空なら、認証なしで unsupported。表があるのにトークンが無い・空なら 503(fail closed)。
+                                            不一致は 401。認証の後、シャットダウンの表(SHUTDOWN_TARGETS)に、その MAC があるときだけ、
                                             対象ノードに SSH して shutdown を要求する(kigawa-net/infra#416)。
                                             ・表に無い MAC(表が無い・壊れている場合も含む): 200 {"status": "unsupported"}(従来どおり、何もしない)
                                             ・表にあり、ping が通らない(停止済み): 200 {"status": "stopped"}(SSH しない)
@@ -26,6 +28,7 @@ SHUTDOWN_KNOWN_HOSTS(既定 /etc/maas-wol-webhook/known_hosts)。
 シャットダウンの表(JSON): {"<MAC 小文字コロン区切り>": {"host": "<IPv4>", "user": "<ユーザー名>"}}
 SSH は、ノード側の forced command(authorized_keys の command=、sudo で shutdown だけ)が決める。ここではリモートコマンドを渡さない。
 """
+import hmac
 import json
 import os
 import re
@@ -45,6 +48,7 @@ SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 DEFAULT_SHUTDOWN_TARGETS = "/etc/maas-wol-webhook/shutdown-targets.json"
 DEFAULT_SHUTDOWN_KEY = "/etc/maas-wol-webhook/shutdown.key"
 DEFAULT_SHUTDOWN_KNOWN_HOSTS = "/etc/maas-wol-webhook/known_hosts"
+DEFAULT_AUTH_TOKEN_FILE = "/etc/maas-wol-webhook/auth-token"
 SSH_TIMEOUT_SEC = 15  # 対象ノードが応答しないとき、MAAS の要求を長く待たせないため
 
 
@@ -197,6 +201,19 @@ def shutdown_paths():
     )
 
 
+def auth_token_path():
+    return os.environ.get("AUTH_TOKEN_FILE", DEFAULT_AUTH_TOKEN_FILE)
+
+
+def load_auth_token(path):
+    """/off の認証トークンを返す。無い・空・読めないときは ""(呼び出し側は fail closed にする)。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().rstrip("\n")
+    except OSError:
+        return ""
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "maas-wol-webhook"
     bcast = os.environ.get("BCAST", "192.168.1.255")
@@ -231,13 +248,31 @@ class Handler(BaseHTTPRequestHandler):
             self.log_message("wake %s -> %s", mac, self.bcast)
             return self._reply(200, {"status": "sent", "mac": mac})
         if path == "/off":
-            WAKES.pop(mac, None)  # 猶予は終わりにする(以後、ping の結果だけで判定)
             return self._off(mac)
         return self._reply(404, {"error": "not found"})
 
+    def _bearer_ok(self, token):
+        """Authorization: Bearer <token> が、トークンと一致するか。定数時間で比較する(タイミングで推測させない)。"""
+        hdr = self.headers.get("Authorization", "")
+        prefix = "Bearer "
+        presented = hdr[len(prefix):] if hdr.startswith(prefix) else ""
+        return bool(presented) and hmac.compare_digest(presented.encode("utf-8"), token.encode("utf-8"))
+
     def _off(self, mac):
         targets_path, key_path, known_hosts_path = shutdown_paths()
-        ent = load_shutdown_targets(targets_path).get(mac)
+        table = load_shutdown_targets(targets_path)
+        if table:
+            # 表に 1 つでもエントリがあるときだけ、認証を要求する(表が空の構成は、従来どおり認証なしで unsupported)。
+            # トークンが無い・空のときは、認証を通せないので、fail closed(503。ssh しない)。
+            token = load_auth_token(auth_token_path())
+            if not token:
+                warn("/off: シャットダウンの表があるが、認証トークンが無い・空(%s)。ssh しない", auth_token_path())
+                return self._reply(503, {"error": "auth token not configured"})
+            if not self._bearer_ok(token):
+                self.log_message("off %s: 認証が通らない(401)", mac)
+                return self._reply(401, {"error": "unauthorized"})
+        WAKES.pop(mac, None)  # 猶予は終わりにする(以後、ping の結果だけで判定)。認証の後で行う
+        ent = table.get(mac)
         if ent is None:
             self.log_message("off %s: シャットダウンの表に無い(何もしない)", mac)
             return self._reply(200, {"status": "unsupported", "mac": mac})
