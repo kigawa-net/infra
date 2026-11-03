@@ -27,13 +27,13 @@ variable "overlay_cidr" {
 }
 
 variable "overlay_allow" {
-  description = "Overlay からの受信を許可するポート(例: [\"22/tcp\"])。空なら、Overlay からは何も受けない(ICMP を除く)"
+  description = "Overlay からの受信を許可するポート(例: [\"22/tcp\"])。ポートを持たないプロトコルは \"gre\" のように書く(GRE トンネル用、設計書 §6.2)。空なら、Overlay からは何も受けない(ICMP を除く)"
   type        = list(string)
   default     = []
 
   validation {
-    condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r))])
-    error_message = "overlay_allow は 22/tcp のような形式で指定する。"
+    condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r)) || r == "gre"])
+    error_message = "overlay_allow は 22/tcp のような形式、または gre で指定する。"
   }
 }
 
