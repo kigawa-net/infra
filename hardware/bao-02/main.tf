@@ -246,21 +246,3 @@ module "gre_overlay" {
     { name = "k8s2", local = "10.250.0.1", remote = "10.250.0.13", address = "172.31.250.4/31" },
   ]
 }
-
-# bao 側の ufw: 相手の Overlay からの gre(tun0)と、トンネル上の 179/tcp を許可する(設計書 §6.2)。
-module "gre_overlay_ufw" {
-  source     = "../modules/gre-overlay-ufw"
-  count      = var.enabled && var.gre_overlay_enabled ? 1 : 0
-  depends_on = [module.gre_overlay]
-
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
-
-  peers = [
-    { name = "k8s4", overlay_address = "10.250.0.11", tunnel_address = "172.31.250.1" },
-    { name = "k8s1", overlay_address = "10.250.0.12", tunnel_address = "172.31.250.3" },
-    { name = "k8s2", overlay_address = "10.250.0.13", tunnel_address = "172.31.250.5" },
-  ]
-}
