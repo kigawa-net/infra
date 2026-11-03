@@ -415,7 +415,7 @@ variable "easytier_snat_source_cidr" {
 
 # GRE トンネル(FRR をトンネル上の BGP で動かすための土台。設計書 §7 の 1・2。既定は無効)。
 variable "gre_overlay_enabled" {
-  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は false(何も作らない)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。control-plane 側は、相手(bao-02/03)からの gre を、overlay_firewall の overlay_allow で許可する。"
+  description = "true のとき、EasyTier の Overlay 上に、Overlay のアドレスを両端にした GRE トンネルを張る(modules/gre-overlay-tunnel)。既定は true(2026-11-04 に有効化。k8s4 のトンネルは gre-bao02・gre-bao03)。false にしても、次の apply でトンネルは消えないので、手動で止める(modules/gre-overlay-tunnel/README.md)。BGP の neighbor は、まだトンネルに切り替えない(設計書 §7 の 3)。control-plane 側は、相手(bao-02/03)からの gre を、overlay_firewall の overlay_allow で許可する。"
   type        = bool
-  default     = false
+  default     = true
 }
