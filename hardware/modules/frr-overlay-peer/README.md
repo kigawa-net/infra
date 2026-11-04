@@ -47,3 +47,6 @@ control-plane 側は、`external_bgp_peers` から bao-02/03 の peer を外し�
 ## テスト
 
 `bash hardware/modules/frr-overlay-peer/test-frr-overlay-peer.sh`(terraform のみ。描画した設定の prefix-list・neighbor・out の route-map を確認する)。
+
+## GRE トンネル内の neighbor(`tunnel_neighbors`)
+`modules/gre-overlay-tunnel` のトンネルの中で eBGP を張る(設計: `docs/frr-gre-overlay-design.md` §7 の 3)。`address` = 対向のトンネル内アドレス、`source` = 自分のトンネル内アドレス(`update-source`)。`timers 3 9` を付け、`SET-SRC` で、カーネルに入れる経路の送信元を `router_id`(Overlay の IP)に固定する。既定は空で、`neighbors`(Overlay のアドレス)と並走できる。切り替えが済んだら `neighbors` を空にする。

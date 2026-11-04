@@ -8,11 +8,12 @@ terraform {
 
 locals {
   frr_conf = templatefile("${path.module}/templates/frr.conf.tpl", {
-    router_id       = var.router_id
-    local_as        = var.local_as
-    remote_as       = var.remote_as
-    neighbors       = var.neighbors
-    import_prefixes = var.import_prefixes
+    router_id        = var.router_id
+    local_as         = var.local_as
+    remote_as        = var.remote_as
+    neighbors        = var.neighbors
+    tunnel_neighbors = var.tunnel_neighbors
+    import_prefixes  = var.import_prefixes
   })
 
   # bgp-frr と同じ dpkg のロック待ち・apt のリトライ。FRR の起動は、設定を置いてから、bgpd=yes で行う。

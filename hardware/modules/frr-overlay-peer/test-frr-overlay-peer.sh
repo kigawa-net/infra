@@ -25,7 +25,7 @@ render() { # 式(HCL)を渡すと、描画結果を標準出力に出す
 }
 
 # 描画: bao-02 相当(AS 65041、router-id 10.250.0.1、neighbor は Inuyama の 3 台)
-conf=$(render "templatefile(\"$tpl\", {router_id = \"10.250.0.1\", local_as = 65041, remote_as = 65010, neighbors = [\"10.250.0.11\", \"10.250.0.12\", \"10.250.0.13\"], import_prefixes = [\"10.0.0.0/24\", \"192.168.1.0/24\"]})")
+conf=$(render "templatefile(\"$tpl\", {router_id = \"10.250.0.1\", local_as = 65041, remote_as = 65010, neighbors = [\"10.250.0.11\", \"10.250.0.12\", \"10.250.0.13\"], import_prefixes = [\"10.0.0.0/24\", \"192.168.1.0/24\"], tunnel_neighbors = []})")
 printf '%s\n' "$conf" > "$work/bao02.conf"
 
 check "router bgp は local_as(65041)" 1 "$(grep -c '^router bgp 65041$' "$work/bao02.conf")"
@@ -45,8 +45,23 @@ check "network / redistribute が無い" 0 "$(grep -c '^  network \|redistribute
 check "ebgp-requires-policy が有効" 1 "$(grep -c '^ bgp ebgp-requires-policy$' "$work/bao02.conf")"
 check "ipv4 unicast の address-family で activate" 3 "$(grep -c '^  neighbor 10.250.0.1[123] activate$' "$work/bao02.conf")"
 
+check "tunnel_neighbors が空なら SET-SRC が無い" 0 "$(grep -c 'SET-SRC' "$work/bao02.conf")"
+
+# 描画: GRE トンネルの neighbor あり(bao-02 相当。旧 neighbor と並走)
+conf=$(render "templatefile(\"$tpl\", {router_id = \"10.250.0.1\", local_as = 65041, remote_as = 65010, neighbors = [\"10.250.0.11\"], import_prefixes = [\"10.0.0.0/24\"], tunnel_neighbors = [{address = \"172.31.250.1\", source = \"172.31.250.0\"}, {address = \"172.31.250.3\", source = \"172.31.250.2\"}]})")
+printf '%s\n' "$conf" > "$work/gre.conf"
+check "トンネル neighbor の remote-as" 2 "$(grep -c '^ neighbor 172.31.250.[13] remote-as 65010$' "$work/gre.conf")"
+check "トンネル neighbor の update-source は自分のトンネル内アドレス" 1 "$(grep -c '^ neighbor 172.31.250.1 update-source 172.31.250.0$' "$work/gre.conf")"
+check "トンネル neighbor の update-source(2 本目)" 1 "$(grep -c '^ neighbor 172.31.250.3 update-source 172.31.250.2$' "$work/gre.conf")"
+check "トンネル neighbor に timers 3 9" 2 "$(grep -c '^ neighbor 172.31.250.[13] timers 3 9$' "$work/gre.conf")"
+check "トンネル neighbor を activate し OVERLAY-IN を当てる" 4 "$(grep -c '^  neighbor 172.31.250.[13] \(activate\|route-map OVERLAY-IN in\)$' "$work/gre.conf")"
+check "旧 neighbor も残る" 1 "$(grep -c '^ neighbor 10.250.0.11 remote-as 65010$' "$work/gre.conf")"
+check "SET-SRC は overlay の IP に固定" 1 "$(grep -c '^ set src 10.250.0.1$' "$work/gre.conf")"
+check "ip protocol bgp に SET-SRC を当てる" 1 "$(grep -c '^ip protocol bgp route-map SET-SRC$' "$work/gre.conf")"
+check "out の route-map が無い(GRE でも何も広告しない)" 0 "$(grep -c 'route-map .* out' "$work/gre.conf")"
+
 # 描画: import_prefixes が空なら、permit が無く、全部 deny になる
-conf=$(render "templatefile(\"$tpl\", {router_id = \"10.250.0.31\", local_as = 65042, remote_as = 65010, neighbors = [\"10.250.0.11\"], import_prefixes = []})")
+conf=$(render "templatefile(\"$tpl\", {router_id = \"10.250.0.31\", local_as = 65042, remote_as = 65010, neighbors = [\"10.250.0.11\"], import_prefixes = [], tunnel_neighbors = []})")
 printf '%s\n' "$conf" > "$work/bao03.conf"
 check "import が空なら permit が無い" 0 "$(grep -c 'permit 10$' "$work/bao03.conf")"
 check "import が空でも deny 100 がある" 1 "$(grep -c '^route-map OVERLAY-IN deny 100$' "$work/bao03.conf")"
