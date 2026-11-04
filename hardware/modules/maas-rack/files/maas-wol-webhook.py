@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""MAAS の `webhook` 電源ドライバから呼ばれる、Wake on LAN の小さなサービス(kigawa-net/infra#316、#317)。
+"""MAAS の `webhook` 電源ドライバから呼ばれる、Wake on LAN の小さなサービス(kigawa-net/infra#316、#317、#416)。
 
 MAAS には Wake on LAN の電源ドライバが無い。`webhook` ドライバ(power_on_uri / power_off_uri / power_query_uri)で、
 この Rack 上の 127.0.0.1 のサービスを呼ぶ。サービスは、LAN にマジックパケットを送り、ping と DHCP のリースで、状態を返す。
 
   POST /wake?mac=<MAC>                       マジックパケットを送る(電源オン)。200 {"status": "sent"}
-  POST /off?mac=<MAC>                        WoL では電源を切れない。何もしない。200 {"status": "unsupported"}
+  POST /off?mac=<MAC>                        Authorization: Bearer <AUTH_TOKEN_FILE のトークン> が必要(表が空の構成を除く。#417)。
+                                            表が空なら、認証なしで unsupported。表があるのにトークンが無い・空なら 503(fail closed)。
+                                            不一致は 401。認証の後、シャットダウンの表(SHUTDOWN_TARGETS)に、その MAC があるときだけ、
+                                            対象ノードに SSH して shutdown を要求する(kigawa-net/infra#416)。
+                                            ・表に無い MAC(表が無い・壊れている場合も含む): 200 {"status": "unsupported"}(従来どおり、何もしない)
+                                            ・表にあり、ping が通らない(停止済み): 200 {"status": "stopped"}(SSH しない)
+                                            ・表にあり、SSH が成功: 200 {"status": "stopping"}
+                                            ・表にあり、SSH が失敗・タイムアウト: 502 {"error": ...}(MAAS は Power error として扱う)
   GET  /status?mac=<MAC>[&ip=<IPv4>]...      ping が通れば {"status": "running"}、通らなければ {"status": "stopped"}
                                             (確かめる IP: ip= で渡されたもの + dhcpd.leases にある、その MAC の有効なリース)
                                             **ただし、/wake の直後 WAKE_GRACE_SEC 秒(既定 300)は、ping が通らなくても running を返す。**
@@ -14,8 +21,14 @@ MAAS には Wake on LAN の電源ドライバが無い。`webhook` ドライバ(
                                             「BMC never transitioned from off to on」で、commission を中止する(2026-10-27、k8s-worker5)。
 
 MAAS の power_on_regex 既定は `status.*\\:.*running`、power_off_regex 既定は `status.*\\:.*stopped`(この応答と合う)。
-127.0.0.1 だけで待ち受ける。環境変数: BIND(既定 127.0.0.1)、PORT(既定 5290)、BCAST(既定 192.168.1.255)、LEASES(既定 /var/lib/maas/dhcp/dhcpd.leases)、WAKE_GRACE_SEC(既定 300。0 で無効)
+127.0.0.1 だけで待ち受ける。環境変数: BIND(既定 127.0.0.1)、PORT(既定 5290)、BCAST(既定 192.168.1.255)、LEASES(既定 /var/lib/maas/dhcp/dhcpd.leases)、WAKE_GRACE_SEC(既定 300。0 で無効)、
+SHUTDOWN_TARGETS(既定 /etc/maas-wol-webhook/shutdown-targets.json)、SHUTDOWN_KEY(既定 /etc/maas-wol-webhook/shutdown.key)、
+SHUTDOWN_KNOWN_HOSTS(既定 /etc/maas-wol-webhook/known_hosts)。
+
+シャットダウンの表(JSON): {"<MAC 小文字コロン区切り>": {"host": "<IPv4>", "user": "<ユーザー名>"}}
+SSH は、ノード側の forced command(authorized_keys の command=、sudo で shutdown だけ)が決める。ここではリモートコマンドを渡さない。
 """
+import hmac
 import json
 import os
 import re
@@ -29,6 +42,14 @@ from urllib.parse import parse_qs, urlparse
 MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$")
 IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 LEASE_RE = re.compile(r"lease\s+(\d+\.\d+\.\d+\.\d+)\s*\{(.*?)\n\}", re.S)
+# ssh の引数に渡す user。先頭の `-` を拒否する(オプションとして解釈されない)
+SSH_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+
+DEFAULT_SHUTDOWN_TARGETS = "/etc/maas-wol-webhook/shutdown-targets.json"
+DEFAULT_SHUTDOWN_KEY = "/etc/maas-wol-webhook/shutdown.key"
+DEFAULT_SHUTDOWN_KNOWN_HOSTS = "/etc/maas-wol-webhook/known_hosts"
+DEFAULT_AUTH_TOKEN_FILE = "/etc/maas-wol-webhook/auth-token"
+SSH_TIMEOUT_SEC = 15  # 対象ノードが応答しないとき、MAAS の要求を長く待たせないため
 
 
 def normalize_mac(mac):
@@ -80,6 +101,84 @@ def ping(ip):
         return False
 
 
+def probe(mac, extra_ips, leases_path):
+    """状態を確かめる。ping が通る IP があれば up。確かめた IP の一覧も返す(/status と /off で同じ判定を使う)。"""
+    ips = [ip for ip in extra_ips if valid_ipv4(ip)]
+    for ip in lease_ips(leases_path, mac):
+        if ip not in ips:
+            ips.append(ip)
+    return any(ping(ip) for ip in ips), ips
+
+
+def warn(fmt, *args):
+    sys.stderr.write("maas-wol-webhook: 警告: " + (fmt % args) + "\n")
+
+
+def load_shutdown_targets(path):
+    """シャットダウンの表を返す(MAC -> {host, user})。ファイルが無ければ {}。壊れていれば、警告を出して {}(unsupported として扱う)。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return {}
+    except OSError as e:
+        warn("シャットダウンの表を読めない(%s): %s", path, e)
+        return {}
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise ValueError("トップレベルが object ではない")
+        table = {}
+        for mac, ent in raw.items():
+            key = normalize_mac(mac)
+            if not isinstance(ent, dict):
+                raise ValueError("%s の値が object ではない" % key)
+            host, user = ent.get("host"), ent.get("user")
+            if not valid_ipv4(host):
+                raise ValueError("%s の host が IPv4 ではない" % key)
+            if not (isinstance(user, str) and SSH_USER_RE.match(user)):
+                raise ValueError("%s の user が不正" % key)
+            table[key] = {"host": host, "user": user}
+        return table
+    except ValueError as e:  # json.JSONDecodeError も ValueError
+        warn("シャットダウンの表が壊れている(%s): %s。unsupported として扱う", path, e)
+        return {}
+
+
+def ssh_shutdown(entry, key_path, known_hosts_path):
+    """対象ノードに SSH して、シャットダウンを要求する。成功なら True。
+
+    stderr の内容は、呼び出し元(HTTP 応答)には返さず、ログ(journald)にだけ出す。
+    ssh の引数は、リストで渡す(shell を通さない)。user と host は、ここでも検証する(表の検証をすり抜けても、オプションにならないように)。
+    """
+    user, host = entry.get("user"), entry.get("host")
+    if not (isinstance(user, str) and SSH_USER_RE.match(user)) or not valid_ipv4(host):
+        raise ValueError("ssh の宛先が不正")
+    argv = [
+        "ssh",
+        "-F", "/dev/null",  # ~/.ssh/config を読まない(ProtectHome でも、見えないが、念のため)
+        "-i", key_path,
+        "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "UserKnownHostsFile=" + known_hosts_path,
+        "-o", "ConnectTimeout=5",
+        "-o", "ServerAliveInterval=5",
+        "-o", "ServerAliveCountMax=2",
+        "%s@%s" % (user, host),  # リモートコマンドは渡さない。ノード側の forced command が決める
+    ]
+    try:
+        r = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=SSH_TIMEOUT_SEC)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        sys.stderr.write("maas-wol-webhook: ssh が実行できない、または時間切れ(%s): %s\n" % (host, e))
+        return False
+    if r.returncode != 0:
+        detail = r.stderr.decode("utf-8", errors="replace").strip()[:500]
+        sys.stderr.write("maas-wol-webhook: ssh が失敗(%s、終了コード %d): %s\n" % (host, r.returncode, detail))
+        return False
+    return True
+
+
 WAKES = {}  # MAC -> 最後に /wake を受けた時刻(time.monotonic)。このサービスの中だけ。MAAS は、電源オンの要求と、その後の問い合わせを、同じ Rack に出す
 
 
@@ -92,6 +191,27 @@ def wake_grace_sec():
         return float(os.environ.get("WAKE_GRACE_SEC", "300"))
     except ValueError:
         return 300.0
+
+
+def shutdown_paths():
+    return (
+        os.environ.get("SHUTDOWN_TARGETS", DEFAULT_SHUTDOWN_TARGETS),
+        os.environ.get("SHUTDOWN_KEY", DEFAULT_SHUTDOWN_KEY),
+        os.environ.get("SHUTDOWN_KNOWN_HOSTS", DEFAULT_SHUTDOWN_KNOWN_HOSTS),
+    )
+
+
+def auth_token_path():
+    return os.environ.get("AUTH_TOKEN_FILE", DEFAULT_AUTH_TOKEN_FILE)
+
+
+def load_auth_token(path):
+    """/off の認証トークンを返す。無い・空・読めないときは ""(呼び出し側は fail closed にする)。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().rstrip("\n")
+    except OSError:
+        return ""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -128,10 +248,42 @@ class Handler(BaseHTTPRequestHandler):
             self.log_message("wake %s -> %s", mac, self.bcast)
             return self._reply(200, {"status": "sent", "mac": mac})
         if path == "/off":
-            WAKES.pop(mac, None)  # 猶予は終わりにする(以後、ping の結果だけで判定)
-            self.log_message("off %s: WoL では電源を切れない(何もしない)", mac)
-            return self._reply(200, {"status": "unsupported", "mac": mac})
+            return self._off(mac)
         return self._reply(404, {"error": "not found"})
+
+    def _bearer_ok(self, token):
+        """Authorization: Bearer <token> が、トークンと一致するか。定数時間で比較する(タイミングで推測させない)。"""
+        hdr = self.headers.get("Authorization", "")
+        prefix = "Bearer "
+        presented = hdr[len(prefix):] if hdr.startswith(prefix) else ""
+        return bool(presented) and hmac.compare_digest(presented.encode("utf-8"), token.encode("utf-8"))
+
+    def _off(self, mac):
+        targets_path, key_path, known_hosts_path = shutdown_paths()
+        table = load_shutdown_targets(targets_path)
+        if table:
+            # 表に 1 つでもエントリがあるときだけ、認証を要求する(表が空の構成は、従来どおり認証なしで unsupported)。
+            # トークンが無い・空のときは、認証を通せないので、fail closed(503。ssh しない)。
+            token = load_auth_token(auth_token_path())
+            if not token:
+                warn("/off: シャットダウンの表があるが、認証トークンが無い・空(%s)。ssh しない", auth_token_path())
+                return self._reply(503, {"error": "auth token not configured"})
+            if not self._bearer_ok(token):
+                self.log_message("off %s: 認証が通らない(401)", mac)
+                return self._reply(401, {"error": "unauthorized"})
+        WAKES.pop(mac, None)  # 猶予は終わりにする(以後、ping の結果だけで判定)。認証の後で行う
+        ent = table.get(mac)
+        if ent is None:
+            self.log_message("off %s: シャットダウンの表に無い(何もしない)", mac)
+            return self._reply(200, {"status": "unsupported", "mac": mac})
+        up, checked = probe(mac, [ent["host"]], self.leases)
+        if not up:
+            self.log_message("off %s: 既に停止(ping が通らない)。SSH しない", mac)
+            return self._reply(200, {"status": "stopped", "mac": mac, "checked": checked})
+        self.log_message("off %s: %s@%s に shutdown を要求", mac, ent["user"], ent["host"])
+        if ssh_shutdown(ent, key_path, known_hosts_path):
+            return self._reply(200, {"status": "stopping", "mac": mac})
+        return self._reply(502, {"error": "ssh によるシャットダウンが失敗(journalctl -u maas-wol-webhook を確認)", "mac": mac})
 
     def do_GET(self):
         path = urlparse(self.path).path.rstrip("/")
@@ -141,11 +293,7 @@ class Handler(BaseHTTPRequestHandler):
             mac = self._mac()
         except ValueError as e:
             return self._reply(400, {"error": str(e)})
-        ips = [ip for ip in self._params().get("ip", []) if valid_ipv4(ip)]
-        for ip in lease_ips(self.leases, mac):
-            if ip not in ips:
-                ips.append(ip)
-        up = any(ping(ip) for ip in ips)
+        up, ips = probe(mac, self._params().get("ip", []), self.leases)
         grace = False
         if not up:
             woke = WAKES.get(mac)

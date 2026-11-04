@@ -4,6 +4,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import tempfile
 import threading
 import unittest
@@ -75,6 +76,9 @@ class Pure(unittest.TestCase):
         self.assertEqual(wol.lease_ips("/nonexistent/dhcpd.leases", MAC), [])
 
 
+NO_TABLE = "/nonexistent/shutdown-targets.json"  # 表が無い = /off は unsupported
+
+
 class Server(unittest.TestCase):
     def setUp(self):
         wol.WAKES.clear()
@@ -89,6 +93,9 @@ class Server(unittest.TestCase):
         self.p2 = mock.patch.object(wol, "ping", lambda ip: self.pings.get(ip, False))
         self.p1.start()
         self.p2.start()
+        # 実機の /etc の表に触れないよう、環境変数を、テスト用のパスに固定する
+        self.env = mock.patch.dict(os.environ, {"SHUTDOWN_TARGETS": NO_TABLE, "SHUTDOWN_KEY": "/nonexistent/key", "SHUTDOWN_KNOWN_HOSTS": "/nonexistent/kh"})
+        self.env.start()
         self.httpd = HTTPServer(("127.0.0.1", 0), wol.Handler)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -98,10 +105,11 @@ class Server(unittest.TestCase):
         self.httpd.server_close()
         self.p1.stop()
         self.p2.stop()
+        self.env.stop()
         os.unlink(self.leases.name)
 
-    def req(self, method, path):
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None)
+    def req(self, method, path, headers=None):
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method, data=b"" if method == "POST" else None, headers=headers or {})
         try:
             with urllib.request.urlopen(r, timeout=5) as resp:
                 return resp.status, json.load(resp)
@@ -200,6 +208,228 @@ class Server(unittest.TestCase):
         self.assertEqual(self.req("GET", "/wake")[0], 404)
         self.assertEqual(self.req("POST", "/status?mac=" + MAC)[0], 404)
         self.assertEqual(self.req("GET", "/other")[0], 404)
+
+
+class FakeSsh:
+    """偽の ssh(PATH の先頭に置く)。呼ばれた引数を、log に書き、stderr と終了コードを返す。実際には接続しない。"""
+
+    def __init__(self, code=0, stderr=""):
+        self.dir = tempfile.mkdtemp()
+        self.log = os.path.join(self.dir, "calls.txt")
+        path = os.path.join(self.dir, "ssh")
+        with open(path, "w") as f:
+            f.write("#!/bin/sh\nprintf '%%s\\n' \"$@\" '--' >> '%s'\necho '%s' >&2\nexit %d\n" % (self.log, stderr, code))
+        os.chmod(path, 0o755)
+
+    def calls(self):
+        if not os.path.exists(self.log):
+            return []
+        calls, cur = [], []
+        for line in open(self.log).read().splitlines():
+            if line == "--":
+                calls.append(cur)
+                cur = []
+            else:
+                cur.append(line)
+        return calls
+
+
+class Shutdown(unittest.TestCase):
+    """/off の、シャットダウン(SSH)の経路。ssh は偽物。表は、テストごとの一時ファイル。Server の準備と HTTP の補助を借りる(継承はしない)。"""
+
+    setUp_base = Server.setUp
+    tearDown = Server.tearDown
+
+    TOKEN = "TEST-TOKEN-0123456789abcdefghijklmnop"  # ダミー(32 文字以上)
+    AUTH = {"Authorization": "Bearer TEST-TOKEN-0123456789abcdefghijklmnop"}
+
+    def req(self, method, path, headers=None):
+        # 既定は、正しいトークン付き。認証を試すテストは、headers を明示する
+        return Server.req(self, method, path, headers=self.AUTH if headers is None else headers)
+
+    def setUp(self):
+        self.setUp_base()
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+        self.table = os.path.join(self.tmp, "shutdown-targets.json")
+        self.token_file = os.path.join(self.tmp, "auth-token")
+        with open(self.token_file, "w") as f:
+            f.write(self.TOKEN + "\n")
+        os.environ["SHUTDOWN_TARGETS"] = self.table  # self.env(mock.patch.dict)が、tearDown で元に戻す
+        os.environ["SHUTDOWN_KEY"] = "/tmp/fake-key-for-test"
+        os.environ["SHUTDOWN_KNOWN_HOSTS"] = "/tmp/fake-kh-for-test"
+        os.environ["AUTH_TOKEN_FILE"] = self.token_file
+        self.pings["192.168.1.150"] = True  # 対象は、起動している
+
+    def use_table(self, obj):
+        with open(self.table, "w") as f:
+            f.write(obj if isinstance(obj, str) else json.dumps(obj))
+
+    def use_ssh(self, code=0, stderr=""):
+        fake = FakeSsh(code, stderr)
+        old = os.environ.get("PATH", "")
+        os.environ["PATH"] = fake.dir + os.pathsep + old
+        self.addCleanup(lambda: shutil.rmtree(fake.dir, ignore_errors=True))
+        return fake
+
+    GOOD = {MAC: {"host": "192.168.1.150", "user": "maas-shutdown"}}
+
+    def test_off_runs_ssh_with_fixed_args(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual((code, body["status"]), (200, "stopping"))
+        calls = fake.calls()
+        self.assertEqual(len(calls), 1)
+        args = calls[0]
+        for want in ("-F", "/dev/null", "BatchMode=yes", "IdentitiesOnly=yes", "StrictHostKeyChecking=yes", "ConnectTimeout=5"):
+            self.assertIn(want, args)
+        self.assertEqual(args[args.index("-i") + 1], "/tmp/fake-key-for-test")
+        self.assertIn("UserKnownHostsFile=/tmp/fake-kh-for-test", args)
+        self.assertEqual(args[-1], "maas-shutdown@192.168.1.150")  # リモートコマンドは無い
+
+    def test_off_ssh_failure_is_502_without_stderr(self):
+        self.use_table(self.GOOD)
+        self.use_ssh(255, stderr="SECRET-DETAIL-xyz")
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual((code, body["mac"]), (502, MAC))
+        self.assertIn("error", body)
+        self.assertNotIn("SECRET-DETAIL", json.dumps(body))
+
+    def test_off_ssh_binary_missing_is_502(self):
+        self.use_table(self.GOOD)
+        old = os.environ.get("PATH", "")
+        os.environ["PATH"] = "/nonexistent-dir-for-test"
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", old))
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual(code, 502)
+
+    def test_off_unknown_mac_is_unsupported_and_no_ssh(self):
+        self.use_table({"aa:bb:cc:dd:ee:ff": {"host": "192.168.1.151", "user": "maas-shutdown"}})
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual((code, body["status"]), (200, "unsupported"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_missing_table_is_unsupported(self):
+        os.environ["SHUTDOWN_TARGETS"] = os.path.join(self.tmp, "absent.json")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual((code, body["status"]), (200, "unsupported"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_broken_table_is_unsupported_and_no_ssh(self):
+        for broken in ("{not json", "[1, 2]", json.dumps({MAC: "x"}), json.dumps({MAC: {"host": "192.168.1.150"}})):
+            self.use_table(broken)
+            fake = self.use_ssh(0)
+            code, body = self.req("POST", f"/off?mac={MAC}")
+            self.assertEqual((code, body["status"]), (200, "unsupported"), broken)
+            self.assertEqual(fake.calls(), [], broken)
+
+    def test_off_rejects_option_injection_in_table(self):
+        for bad in ({"host": "192.168.1.150", "user": "-oProxyCommand=x"},
+                    {"host": "192.168.1.150", "user": "a b"},
+                    {"host": "192.168.1.150;id", "user": "maas-shutdown"},
+                    {"host": "192.168.1.150", "user": "x" * 40}):
+            self.use_table({MAC: bad})
+            fake = self.use_ssh(0)
+            code, body = self.req("POST", f"/off?mac={MAC}")
+            self.assertEqual((code, body["status"]), (200, "unsupported"), bad)
+            self.assertEqual(fake.calls(), [], bad)
+
+    def test_ssh_shutdown_validates_its_own_arguments(self):
+        for bad in ({"host": "192.168.1.150", "user": "-oProxyCommand=x"}, {"host": "x;id", "user": "maas-shutdown"}):
+            with self.assertRaises(ValueError):
+                wol.ssh_shutdown(bad, "/k", "/kh")
+
+    def test_off_stopped_does_not_ssh(self):
+        self.use_table(self.GOOD)
+        self.pings.clear()  # ping が通らない = 停止済み
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual((code, body["status"]), (200, "stopped"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_status_after_off_stays_running_until_ping_fails(self):
+        self.use_table(self.GOOD)
+        self.use_ssh(0)
+        self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual(self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")[1]["status"], "running")
+        self.pings.clear()
+        self.assertEqual(self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150")[1]["status"], "stopped")
+
+    # ---- 認証(/off。MAAS の power_token を、Authorization: Bearer で受ける。#417)----
+    def test_off_without_token_is_401_and_no_ssh(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertEqual((code, body["error"]), (401, "unauthorized"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_wrong_or_malformed_token_is_401(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        for hdr in ("Bearer " + self.TOKEN + "x", "Bearer wrong", "Bearer ", "Basic " + self.TOKEN, self.TOKEN, "bearer " + self.TOKEN):
+            code, body = self.req("POST", f"/off?mac={MAC}", headers={"Authorization": hdr})
+            self.assertEqual(code, 401, hdr)
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_correct_token_runs_as_before(self):
+        self.use_table(self.GOOD)
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")  # 既定は、正しいトークン
+        self.assertEqual((code, body["status"]), (200, "stopping"))
+        self.assertEqual(len(fake.calls()), 1)
+
+    def test_off_token_file_missing_is_503_fail_closed(self):
+        self.use_table(self.GOOD)
+        os.environ["AUTH_TOKEN_FILE"] = os.path.join(self.tmp, "absent-token")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")  # 正しいトークンを送っても、設定が無いので 503
+        self.assertEqual((code, body["error"]), (503, "auth token not configured"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_token_file_empty_is_503_fail_closed(self):
+        self.use_table(self.GOOD)
+        with open(self.token_file, "w") as f:
+            f.write("\n")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}")
+        self.assertEqual(code, 503)
+        self.assertEqual(fake.calls(), [])
+
+    def test_off_empty_table_needs_no_auth(self):
+        # 表が空(機能が無効)の構成は、従来どおり認証なしで unsupported
+        os.environ["AUTH_TOKEN_FILE"] = os.path.join(self.tmp, "absent-token")
+        fake = self.use_ssh(0)
+        code, body = self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertEqual((code, body["status"]), (200, "unsupported"))
+        self.assertEqual(fake.calls(), [])
+
+    def test_status_and_wake_need_no_auth(self):
+        self.use_table(self.GOOD)
+        code, body = self.req("POST", f"/wake?mac={MAC}", headers={})
+        self.assertEqual((code, body["status"]), (200, "sent"))
+        code, body = self.req("GET", f"/status?mac={MAC}&ip=192.168.1.150", headers={})
+        self.assertEqual(code, 200)
+
+    def test_unauthorized_off_does_not_end_wake_grace(self):
+        # 認証に失敗した /off は、状態(WoL の猶予)に触れない
+        self.req("POST", f"/wake?mac={MAC}")
+        self.use_table(self.GOOD)
+        self.req("POST", f"/off?mac={MAC}", headers={})
+        self.assertIn(MAC, wol.WAKES)
+
+    def test_token_compared_with_hmac_compare_digest(self):
+        self.use_table(self.GOOD)
+        self.use_ssh(0)
+        with mock.patch.object(wol.hmac, "compare_digest", wraps=wol.hmac.compare_digest) as cd:
+            self.req("POST", f"/off?mac={MAC}")
+        self.assertTrue(cd.called)
+
+    def test_load_targets_normalizes_mac(self):
+        self.use_table({"02-39-7A-2E-13-F0": {"host": "192.168.1.150", "user": "maas-shutdown"}})
+        self.assertEqual(wol.load_shutdown_targets(self.table), {MAC: {"host": "192.168.1.150", "user": "maas-shutdown"}})
 
 
 class Main(unittest.TestCase):

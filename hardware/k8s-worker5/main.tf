@@ -226,3 +226,66 @@ module "node_dns" {
   ssh_private_key = data.external.ssh_key.result.value
   sudo_password   = data.external.sudo_password.result.value
 }
+
+# MAAS の /off(kigawa-net/infra#416)から、SSH で shutdown を受ける専用ユーザー(maas-shutdown)の受け口。
+# join(null_resource.worker_node)とは別の resource にする(join は、triggers が変わらない限り再実行されず、この設定が届かないため)。
+# 公開鍵が空のときも、この resource は残す。公開鍵を空に戻したとき、ユーザーと sudoers を消すため(files/maas-shutdown-setup.sh)。
+# 秘密(sudo パスワード)は、tmpfs(/dev/shm)の一時置き場所へ file provisioner で送り、sudo -S には標準入力のファイルで渡す(#417 のレビュー対応)。
+# 共通ヘルパー lib/secret-stage.sh が、前回の残骸を消し(prepare)、終了時に必ず消す(run)。コマンド文字列に、パスワードは入れない。
+locals {
+  maas_shutdown_secret_dir = "/dev/shm/maas-shutdown-secrets"
+  secret_stage_script      = file("${path.module}/../../lib/secret-stage.sh")
+}
+
+resource "null_resource" "maas_shutdown" {
+  triggers = {
+    host         = var.host
+    public_key   = var.maas_shutdown_public_key
+    allowed_from = join(",", var.maas_shutdown_allowed_from)
+    script_hash  = filesha256("${path.module}/files/maas-shutdown-setup.sh")
+    stage_hash   = sha256(local.secret_stage_script)
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.maas_shutdown_public_key == "" || length(var.maas_shutdown_allowed_from) > 0
+      error_message = "k8s-worker5: maas_shutdown_public_key を指定するときは、maas_shutdown_allowed_from(Rack の IP)も必須です(from の無い鍵は作らない)。"
+    }
+  }
+
+  connection {
+    type        = "ssh"
+    host        = var.host
+    user        = var.ssh_user
+    private_key = data.external.ssh_key.result.value
+  }
+
+  # 前回の残骸を消し、0600 の空のファイルを作る(最初に行う)
+  provisioner "file" {
+    content     = local.secret_stage_script
+    destination = "/tmp/maas-secret-stage.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "SECRET_STAGE_DIR=${local.maas_shutdown_secret_dir} bash /tmp/maas-secret-stage.sh prepare sudo-pass",
+    ]
+  }
+
+  provisioner "file" {
+    content     = data.external.sudo_password.result.value
+    destination = "${local.maas_shutdown_secret_dir}/sudo-pass"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/files/maas-shutdown-setup.sh"
+    destination = "/tmp/maas-shutdown-setup.sh"
+  }
+
+  # sudo のパスワードは、標準入力のファイルで渡す。run は、終了コードを保って、置き場所を必ず消す。
+  provisioner "remote-exec" {
+    inline = [
+      "sudo -S env SECRET_STAGE_DIR=${local.maas_shutdown_secret_dir} bash /tmp/maas-secret-stage.sh run -- env MAAS_SHUTDOWN_PUBLIC_KEY='${var.maas_shutdown_public_key}' MAAS_SHUTDOWN_ALLOWED_FROM='${join(",", var.maas_shutdown_allowed_from)}' bash /tmp/maas-shutdown-setup.sh < ${local.maas_shutdown_secret_dir}/sudo-pass; rc=$?; rm -f /tmp/maas-shutdown-setup.sh /tmp/maas-secret-stage.sh; exit $rc",
+    ]
+  }
+}
