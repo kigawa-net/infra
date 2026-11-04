@@ -93,13 +93,15 @@ variable "wireguard_server_allowed_ips" {
 }
 
 variable "peers" {
-  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は Raft のネットワーク(EasyTier のオーバーレイ)の IPv4"
+  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は Raft のネットワークの IPv4(bao-02/03 は EasyTier のオーバーレイ、bao-01 は MetalLB の VIP)"
   type = list(object({
     fqdn    = string
     address = string
   }))
   default = [
     { fqdn = "bao-03.kigawa.net", address = "10.250.0.31" },
+    # bao-01(K8s の StatefulSet。MetalLB の VIP 経由。10.0.0.0/24 は BGP/GRE か、暫定の wg0 経路で届く)
+    { fqdn = "bao01.kigawa.net", address = "10.0.0.245" },
   ]
 
   validation {
