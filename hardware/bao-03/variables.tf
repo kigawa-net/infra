@@ -241,6 +241,19 @@ variable "frr_neighbors" {
   default     = ["10.250.0.11", "10.250.0.12", "10.250.0.13"]
 }
 
+variable "frr_tunnel_neighbors" {
+  description = "GRE トンネル(gre_overlay_enabled)の中の eBGP の neighbor(address = 対向、source = 自分のトンネル内アドレス)。gre_overlay_enabled が true のときだけ使う。旧 neighbor(frr_neighbors)と並走する。切り替えが済んだら、frr_neighbors を空にする。設計: docs/frr-gre-overlay-design.md §7"
+  type = list(object({
+    address = string
+    source  = string
+  }))
+  default = [
+    { address = "172.31.250.7", source = "172.31.250.6" },
+    { address = "172.31.250.9", source = "172.31.250.8" },
+    { address = "172.31.250.11", source = "172.31.250.10" },
+  ]
+}
+
 variable "frr_import_prefixes" {
   description = "neighbor から受け取る prefix(完全一致)。10.0.0.0/24(クラスタ LAN)と 192.168.1.0/24(worker の LAN)"
   type        = list(string)

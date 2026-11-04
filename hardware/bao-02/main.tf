@@ -222,11 +222,12 @@ module "frr_overlay" {
   ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
-  router_id       = var.openbao_address
-  local_as        = var.frr_local_as
-  remote_as       = var.frr_remote_as
-  neighbors       = var.frr_neighbors
-  import_prefixes = var.frr_import_prefixes
+  router_id        = var.openbao_address
+  local_as         = var.frr_local_as
+  remote_as        = var.frr_remote_as
+  neighbors        = var.frr_neighbors
+  tunnel_neighbors = var.gre_overlay_enabled ? var.frr_tunnel_neighbors : []
+  import_prefixes  = var.frr_import_prefixes
 }
 
 # Overlay 上の GRE トンネル(設計: docs/frr-gre-overlay-design.md §2〜§3)。gre_overlay_enabled = false のときは何も作らない。
