@@ -63,11 +63,6 @@ variable "tunnel_neighbors" {
     condition     = alltrue([for t in var.tunnel_neighbors : can(cidrhost("${t.address}/32", 0)) && can(cidrhost("${t.source}/32", 0))])
     error_message = "tunnel_neighbors の address と source は IPv4 アドレス(CIDR なし)にすること。"
   }
-
-  validation {
-    condition     = length(var.neighbors) + length(var.tunnel_neighbors) > 0
-    error_message = "neighbors か tunnel_neighbors のどちらかに、1 つ以上を指定すること。"
-  }
 }
 
 variable "import_prefixes" {
