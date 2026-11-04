@@ -561,7 +561,7 @@ resource "null_resource" "ionos_gateway" {
 
   provisioner "remote-exec" {
     inline = [
-      "if [ \"$(id -u)\" -eq 0 ]; then bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; else echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; fi",
+      "if [ \"$(id -u)\" -eq 0 ]; then bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; else printf '%s\\n' '${replace(data.external.sudo_password.result.value, "'", "'\"'\"'")}' | sudo -S bash /tmp/ionos-gateway-setup.sh && rm -f /tmp/ionos-gateway-setup.sh /tmp/ionos-wg0.conf.tpl /tmp/ionos-wg-links.conf /tmp/ionos-frr.conf /tmp/ionos-haproxy.cfg; fi",
     ]
   }
 }

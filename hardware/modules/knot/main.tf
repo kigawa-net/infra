@@ -74,8 +74,8 @@ resource "null_resource" "knot" {
   # (hardware/modules/wireguardと同じ対応)。
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; apt-get update && apt-get install -y knot && break; sleep 5; done'",
-      "echo '${var.sudo_password}' | sudo -S mkdir -p /var/lib/knot",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; apt-get update && apt-get install -y knot && break; sleep 5; done'",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S mkdir -p /var/lib/knot",
     ]
   }
 
@@ -86,7 +86,7 @@ resource "null_resource" "knot" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S cp /tmp/knot.conf /etc/knot/knot.conf",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S cp /tmp/knot.conf /etc/knot/knot.conf",
     ]
   }
 
@@ -95,14 +95,14 @@ resource "null_resource" "knot" {
     inline = concat(
       ["echo 'Deploying zone files...'"],
       [for zone_name, zone_content in var.zones :
-        "echo '${var.sudo_password}' | sudo -S bash -c 'echo ${base64encode(zone_content)} | base64 -d > /var/lib/knot/${zone_name}.zone'"
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'echo ${base64encode(zone_content)} | base64 -d > /var/lib/knot/${zone_name}.zone'"
       ]
     )
   }
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S chown -R knot:knot /var/lib/knot",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S chown -R knot:knot /var/lib/knot",
       # kigawa-net/infra#192: 認証DNSは静的Pod manifest
       # (/etc/kubernetes/manifests/knot.yaml、cznic/knot:latestコンテナ)として
       # ポート127.0.0.1:5353で稼働する設計で、このモジュールはそのPodが読む
@@ -116,9 +116,9 @@ resource "null_resource" "knot" {
       # 同じポートを取り合ってクラッシュループする障害が実際に発生した
       # (k8s2/k8s4で44〜47時間継続)。ホストネイティブ側は明示的に停止・
       # 無効化・maskし、静的Podのみがポートを保持するようにする。
-      "echo '${var.sudo_password}' | sudo -S systemctl stop knot.service || true",
-      "echo '${var.sudo_password}' | sudo -S systemctl disable knot.service || true",
-      "echo '${var.sudo_password}' | sudo -S systemctl mask knot.service || true",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S systemctl stop knot.service || true",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S systemctl disable knot.service || true",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S systemctl mask knot.service || true",
       "echo 'Knot config/zones deployed; host-native knot.service masked (static pod serves DNS)'",
     ]
   }
@@ -130,7 +130,7 @@ resource "null_resource" "knot" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/knot-zone-reload.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/knot-zone-reload.sh",
       "rm -f /tmp/knot-zone-reload.sh",
     ]
   }

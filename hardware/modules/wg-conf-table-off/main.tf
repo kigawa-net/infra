@@ -34,7 +34,7 @@ resource "null_resource" "wg_conf_table_off" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'SPEC=\"$(cat /tmp/wg-conf-table-off.spec)\" bash /tmp/wg-conf-table-off.sh'; rc=$?; rm -f /tmp/wg-conf-table-off.sh /tmp/wg-conf-table-off.spec; exit $rc",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'SPEC=\"$(cat /tmp/wg-conf-table-off.spec)\" bash /tmp/wg-conf-table-off.sh'; rc=$?; rm -f /tmp/wg-conf-table-off.sh /tmp/wg-conf-table-off.spec; exit $rc",
     ]
   }
 }

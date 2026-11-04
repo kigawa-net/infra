@@ -65,7 +65,7 @@ resource "null_resource" "node_dns" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/node-dns-apply.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/node-dns-apply.sh",
       "rm -f /tmp/node-dns-apply.sh /tmp/10-internal-dns.conf",
     ]
   }

@@ -185,6 +185,6 @@ resource "null_resource" "knot_resolver" {
   }
 
   provisioner "remote-exec" {
-    inline = [for step in local.remote_exec_steps : "echo '${var.sudo_password}' | sudo -S ${step}"]
+    inline = [for step in local.remote_exec_steps : "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S ${step}"]
   }
 }

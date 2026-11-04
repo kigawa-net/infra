@@ -32,7 +32,7 @@ resource "null_resource" "static_network" {
   # remote-exec の inline は dash で動くので、シバン付きのスクリプトを、bash で明示的に実行する(他のモジュールと同じ)。
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env IFACE='${var.interface}' ADDRESS='${var.address}' GATEWAY='${var.gateway}' bash /tmp/static-network.sh; rc=$?; rm -f /tmp/static-network.sh; exit $rc",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S env IFACE='${var.interface}' ADDRESS='${var.address}' GATEWAY='${var.gateway}' bash /tmp/static-network.sh; rc=$?; rm -f /tmp/static-network.sh; exit $rc",
     ]
   }
 }

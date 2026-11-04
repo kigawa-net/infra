@@ -106,7 +106,7 @@ resource "null_resource" "host_hardening" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/host-hardening-setup.sh && rm -f /tmp/host-hardening-setup.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/host-hardening-setup.sh && rm -f /tmp/host-hardening-setup.sh",
     ]
   }
 }

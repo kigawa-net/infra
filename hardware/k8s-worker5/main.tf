@@ -33,6 +33,7 @@ data "external" "join_info" {
     source "${path.module}/../../lib/bws-retry.sh"
     ssh_key=$(bws_get_value "${var.control_plane_ssh_key_bitwarden_id}") || exit 1
     sudo_pass=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
+    sudo_pass_q=$(printf '%s' "$sudo_pass" | sed "s/'/'\"'\"'/g")  # ' を安全にして、echo '…' に入れる(#441)
     if [ -z "$ssh_key" ] || [ "$ssh_key" = "null" ] || [ -z "$sudo_pass" ] || [ "$sudo_pass" = "null" ]; then
       echo "join_info: bws secret is empty" >&2
       exit 1
@@ -47,7 +48,7 @@ data "external" "join_info" {
       -o StrictHostKeyChecking=no \
       -o BatchMode=yes \
       "${var.control_plane_ssh_user}@${var.control_plane_host}" \
-      "echo '$sudo_pass' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
+      "printf '%s\n' '$sudo_pass_q' | sudo -S kubeadm token create --print-join-command 2>/dev/null")
 
     rm -f "$tmpkey"
 
@@ -171,7 +172,7 @@ UNIT
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${data.external.sudo_password.result.value}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
+      "printf '%s\\n' '${replace(data.external.sudo_password.result.value, "'", "'\"'\"'")}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
     ]
   }
 }

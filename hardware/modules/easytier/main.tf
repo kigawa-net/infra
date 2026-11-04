@@ -54,7 +54,7 @@ resource "null_resource" "easytier" {
   provisioner "remote-exec" {
     inline = [
       # root で接続するノード(ionos)は sudo を使わず直接実行する(hardware/ionos と同じ)。root でなければ sudo -S。
-      "run() { env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else echo '${var.sudo_password}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; fi; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
+      "run() { env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S env ET_VERSION='${var.easytier_version}' ET_ARCH='${var.easytier_arch}' ET_SHA256='${var.easytier_sha256}' ET_UFW_ALLOW='${join(" ", var.ufw_allow)}' ET_OVERLAY_CIDR='${local.overlay_cidr}' ET_OVERLAY_ALLOW='${join(" ", var.overlay_allow)}' bash /tmp/easytier-setup.sh; fi; rc=$?; rm -f /tmp/easytier-setup.sh /tmp/easytier.toml; exit $rc",
     ]
   }
 }

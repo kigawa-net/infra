@@ -83,7 +83,7 @@ resource "null_resource" "journald_limit" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/journald-limit-setup.sh && rm -f /tmp/journald-limit-setup.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/journald-limit-setup.sh && rm -f /tmp/journald-limit-setup.sh",
     ]
   }
 }

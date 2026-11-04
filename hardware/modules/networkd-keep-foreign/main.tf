@@ -29,7 +29,7 @@ resource "null_resource" "networkd_keep_foreign" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/networkd-keep-foreign.sh; rc=$?; rm -f /tmp/networkd-keep-foreign.sh; exit $rc",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/networkd-keep-foreign.sh; rc=$?; rm -f /tmp/networkd-keep-foreign.sh; exit $rc",
     ]
   }
 }

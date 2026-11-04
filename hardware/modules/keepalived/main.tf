@@ -107,17 +107,17 @@ resource "null_resource" "keepalived" {
     # (hardware/modules/wireguardと同じ対応)。
     inline = concat(
       [
-        "echo '${var.sudo_password}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; DEBIAN_FRONTEND=noninteractive apt-get update -y && break; sleep 5; done'",
-        "echo '${var.sudo_password}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; DEBIAN_FRONTEND=noninteractive apt-get install -y keepalived && break; sleep 5; done'",
-        "echo '${var.sudo_password}' | sudo -S mkdir -p /etc/keepalived",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; DEBIAN_FRONTEND=noninteractive apt-get update -y && break; sleep 5; done'",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'wait_lock() { for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1 || return 0; sleep 5; done; return 1; }; for a in $(seq 1 20); do wait_lock; DEBIAN_FRONTEND=noninteractive apt-get install -y keepalived && break; sleep 5; done'",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S mkdir -p /etc/keepalived",
       ],
       # ヘルスチェックのスクリプトは、keepalived が設定を読む前に置く。
-      length(var.extra_instances) > 0 ? ["echo '${var.sudo_password}' | sudo -S install -m 0755 /tmp/check-core-router.sh /etc/keepalived/check-core-router.sh"] : [],
+      length(var.extra_instances) > 0 ? ["printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S install -m 0755 /tmp/check-core-router.sh /etc/keepalived/check-core-router.sh"] : [],
       [
-        "echo '${var.sudo_password}' | sudo -S cp /tmp/keepalived.conf /etc/keepalived/keepalived.conf",
-        "echo '${var.sudo_password}' | sudo -S systemctl enable --now keepalived",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S cp /tmp/keepalived.conf /etc/keepalived/keepalived.conf",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S systemctl enable --now keepalived",
         # restart だと既存の VRRP インスタンス(ゲートウェイ VIP 10.0.0.254)が一瞬途切れるので、reload を優先する。
-        "echo '${var.sudo_password}' | sudo -S systemctl reload-or-restart keepalived",
+        "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S systemctl reload-or-restart keepalived",
         "rm -f /tmp/keepalived.conf /tmp/check-core-router.sh",
       ]
     )
