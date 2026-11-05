@@ -351,6 +351,8 @@ module "overlay_firewall" {
   overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
   overlay_allow    = concat(var.easytier_overlay_allow, var.gre_overlay_enabled ? ["gre"] : [])
   snat_source_cidr = var.easytier_snat_source_cidr
+  # GRE から入った(送信元が 10.250.0.x の)bao の通信を、EASYTIER-OVERLAY の DROP に当てない(#463)
+  exempt_ifaces = var.gre_overlay_enabled ? ["gre-bao+"] : []
 }
 
 module "easytier" {

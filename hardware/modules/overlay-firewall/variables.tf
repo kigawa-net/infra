@@ -53,3 +53,9 @@ variable "snat_iface" {
   type        = string
   default     = "tun0"
 }
+
+variable "exempt_ifaces" {
+  description = "Overlay の送信元でも、このインターフェース(iptables の -i の書式。例: gre-bao+)から入ったパケットは、遮断チェーン(EASYTIER-OVERLAY)を素通りさせる。GRE の中を通る bao → LAN(10.0.0.x)の通信が、送信元 10.250.0.x のせいで DROP されるのを避ける(#463)。空なら何もしない"
+  type        = list(string)
+  default     = []
+}

@@ -118,4 +118,17 @@ check "ポートと gre を混ぜても、DROP が最後" "-j DROP" "$(chain_rul
 reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="gre" run; helper apply; helper apply
 check "gre を再 apply しても、ACCEPT が重複しない" 1 "$(chain_rules | grep -cxF -- '-p gre -j ACCEPT')"
 
+# exempt_ifaces(#463): GRE から入ったパケットは、遮断チェーンを RETURN で素通りする
+reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="179/tcp" OF_EXEMPT_IFACES="gre-bao+" run; rc=$?
+check "exempt を指定しても成功する" 0 "$rc"
+check "exempt の RETURN がチェインの先頭にある" "-i gre-bao+ -j RETURN" "$(chain_rules | head -n1)"
+check "exempt を指定しても、DROP が最後" "-j DROP" "$(chain_rules | tail -n1)"
+check "exempt を指定しても、established と許可リストは残る" 2 "$(chain_rules | grep -cE 'ESTABLISHED,RELATED -j ACCEPT|--dport 179 -j ACCEPT')"
+helper apply; helper apply
+check "exempt を再 apply しても、RETURN が重複しない" 1 "$(chain_rules | grep -cxF -- '-i gre-bao+ -j RETURN')"
+reset; OF_CIDR=10.250.0.0/24 OF_ALLOW="179/tcp" run
+check "exempt を指定しなければ、RETURN は入らない" 0 "$(chain_rules | grep -c 'RETURN')"
+reset; OF_CIDR=10.250.0.0/24 OF_EXEMPT_IFACES="gre-bao02 gre-bao03" run
+check "exempt を複数指定すると、RETURN が 2 つ入る" 2 "$(chain_rules | grep -c 'RETURN')"
+
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

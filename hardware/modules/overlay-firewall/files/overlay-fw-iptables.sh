@@ -2,6 +2,7 @@
 # ufw を使わないホスト(control-plane など)で、Overlay からの受信を iptables で許可リスト制にする。
 # 必須の環境変数: OF_CIDR(Overlay のネットワーク。例: 10.250.0.0/24)。任意: OF_ALLOW(空白区切りの 22/tcp や gre など。既定は空)。
 #   gre のようにポートを持たないプロトコルは、そのまま -p gre で許可する(GRE トンネル用。設計書 §6.2)。
+# 任意: OF_EXEMPT_IFACES(空白区切りのインターフェース名。例: gre-bao+。そこから入ったパケットは、遮断チェーンを RETURN で素通りさせる)。
 # 任意: OF_SNAT_SRC(例: 192.168.1.0/24)。空でなければ、その送信元から OF_SNAT_IFACE(既定 tun0)へ出る通信を MASQUERADE する。
 #   EasyTier は宛先が Overlay の IP のパケットしか peer へ送らないので、Overlay 外の送信元(LAN の Pod や node)の応答は
 #   bao 側の EasyTier で捨てられる。ルーターの Overlay の IP に書き換えると、応答は必ず同じルーターへ戻る。
@@ -30,6 +31,7 @@ CIDR="$OF_CIDR"
 ALLOW="${OF_ALLOW:-}"
 SNAT_SRC="${OF_SNAT_SRC:-}"
 SNAT_IFACE="${OF_SNAT_IFACE:-tun0}"
+EXEMPT_IFACES="${OF_EXEMPT_IFACES:-}"
 CONF
 
 cat > "$helper" <<HELPER
@@ -52,6 +54,10 @@ remove() {
 
 apply() {
   iptables -N \$chain 2>/dev/null || iptables -F \$chain
+  # GRE など、Overlay の送信元でも、Overlay 以外のインターフェースから入ったものは、この遮断の対象にしない(RETURN で INPUT の続きへ戻す)
+  for ifc in \${EXEMPT_IFACES:-}; do
+    iptables -A \$chain -i "\$ifc" -j RETURN
+  done
   iptables -A \$chain -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
   iptables -A \$chain -p icmp -j ACCEPT
   for rule in \$ALLOW; do
