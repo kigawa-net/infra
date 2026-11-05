@@ -89,7 +89,7 @@ resource "null_resource" "cluster_route" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && install -m 644 /tmp/cluster-route.timer /etc/systemd/system/cluster-route.timer && systemctl daemon-reload && systemctl enable cluster-route.service && systemctl enable --now cluster-route.timer && systemctl restart cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service /tmp/cluster-route.timer'",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'install -m 755 /tmp/cluster-route.sh /usr/local/bin/cluster-route.sh && install -m 644 /tmp/cluster-route.service /etc/systemd/system/cluster-route.service && install -m 644 /tmp/cluster-route.timer /etc/systemd/system/cluster-route.timer && systemctl daemon-reload && systemctl enable cluster-route.service && systemctl enable --now cluster-route.timer && systemctl restart cluster-route.service && rm -f /tmp/cluster-route.sh /tmp/cluster-route.service /tmp/cluster-route.timer'",
     ]
   }
 }

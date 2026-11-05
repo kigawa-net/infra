@@ -152,7 +152,7 @@ locals {
     WantedBy=timers.target
     UNIT
 
-  sudo = "echo '${var.sudo_password}' | sudo -S"
+  sudo = "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S"
 }
 
 resource "null_resource" "kube_vip" {
@@ -186,15 +186,15 @@ resource "null_resource" "kube_vip" {
   # apiserverがクラッシュループしている間の緩和策として使う想定)。
   provisioner "remote-exec" {
     inline = [
-      var.enabled ? "echo '${var.sudo_password}' | sudo -S kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/kube-vip-rbac.yaml" : "true",
+      var.enabled ? "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f /tmp/kube-vip-rbac.yaml" : "true",
       # Terraform が書いた(または意図的に外した)状態を優先する。ヘルスチェックが退避した
       # 古いコピーが残っていると、後で復元されて、新しいマニフェストや enabled=false を覆すため、
       # 一緒に消す。ヘルスチェック(kube-vip-health.sh)と同じロックで直列化する。さもないと、
       # 書いた直後のマニフェストをチェックが退避し、そのコピーを私たちが消して、どちらも残らない。
       # (チェックは flock -n なので、ロック中の tick は飛ばされるだけ)
       var.enabled
-      ? "echo '${var.sudo_password}' | sudo -S bash -c 'mkdir -p /var/lib/kube-vip-health && flock /var/lib/kube-vip-health/lock bash -c \"cp /tmp/kube-vip-pod.yaml /etc/kubernetes/manifests/kube-vip.yaml && rm -f /var/lib/kube-vip-health/kube-vip.yaml\"'"
-      : "echo '${var.sudo_password}' | sudo -S bash -c 'mkdir -p /var/lib/kube-vip-health && flock /var/lib/kube-vip-health/lock bash -c \"rm -f /etc/kubernetes/manifests/kube-vip.yaml /var/lib/kube-vip-health/kube-vip.yaml\"'",
+      ? "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'mkdir -p /var/lib/kube-vip-health && flock /var/lib/kube-vip-health/lock bash -c \"cp /tmp/kube-vip-pod.yaml /etc/kubernetes/manifests/kube-vip.yaml && rm -f /var/lib/kube-vip-health/kube-vip.yaml\"'"
+      : "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'mkdir -p /var/lib/kube-vip-health && flock /var/lib/kube-vip-health/lock bash -c \"rm -f /etc/kubernetes/manifests/kube-vip.yaml /var/lib/kube-vip-health/kube-vip.yaml\"'",
       "rm -f /tmp/kube-vip-rbac.yaml /tmp/kube-vip-pod.yaml",
     ]
   }

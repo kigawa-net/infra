@@ -41,7 +41,7 @@ resource "null_resource" "gre_overlay" {
   provisioner "remote-exec" {
     inline = [
       # root で接続するノードは sudo を使わず直接実行する。root でなければ sudo -S。
-      "run() { env ${local.script_env} bash /tmp/gre-overlay.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else echo '${var.sudo_password}' | sudo -S env ${local.script_env} bash /tmp/gre-overlay.sh; fi; rc=$?; rm -f /tmp/gre-overlay.sh; exit $rc",
+      "run() { env ${local.script_env} bash /tmp/gre-overlay.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S env ${local.script_env} bash /tmp/gre-overlay.sh; fi; rc=$?; rm -f /tmp/gre-overlay.sh; exit $rc",
     ]
   }
 }

@@ -39,7 +39,7 @@ resource "null_resource" "dual_stack_network" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'install -m 600 /tmp/60-inuyama-migration.yaml /etc/netplan/60-inuyama-migration.yaml && rm -f /tmp/60-inuyama-migration.yaml && netplan apply && sleep 2 && ip -4 addr show ${var.interface}'",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'install -m 600 /tmp/60-inuyama-migration.yaml /etc/netplan/60-inuyama-migration.yaml && rm -f /tmp/60-inuyama-migration.yaml && netplan apply && sleep 2 && ip -4 addr show ${var.interface}'",
     ]
   }
 }

@@ -76,7 +76,7 @@ resource "null_resource" "node_exporter" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/node_exporter-setup.sh && rm -f /tmp/node_exporter-setup.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/node_exporter-setup.sh && rm -f /tmp/node_exporter-setup.sh",
     ]
   }
 }

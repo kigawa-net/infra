@@ -190,7 +190,7 @@ resource "null_resource" "openbao_node" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' FQDN='${var.fqdn}' ACME_EMAIL='${var.acme_email}' ACME_STAGING='${var.acme_staging ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' FQDN='${var.fqdn}' ACME_EMAIL='${var.acme_email}' ACME_STAGING='${var.acme_staging ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
     ]
   }
 }

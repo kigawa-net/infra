@@ -28,7 +28,7 @@ resource "null_resource" "overlay_firewall" {
   provisioner "remote-exec" {
     inline = [
       # root で接続するノードは sudo を使わず直接実行する。root でなければ sudo -S。
-      "run() { env OF_CIDR='${var.overlay_cidr}' OF_ALLOW='${join(" ", var.overlay_allow)}' OF_SNAT_SRC='${var.snat_source_cidr}' OF_SNAT_IFACE='${var.snat_iface}' bash /tmp/overlay-fw-iptables.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else echo '${var.sudo_password}' | sudo -S env OF_CIDR='${var.overlay_cidr}' OF_ALLOW='${join(" ", var.overlay_allow)}' OF_SNAT_SRC='${var.snat_source_cidr}' OF_SNAT_IFACE='${var.snat_iface}' bash /tmp/overlay-fw-iptables.sh; fi; rc=$?; rm -f /tmp/overlay-fw-iptables.sh; exit $rc",
+      "run() { env OF_CIDR='${var.overlay_cidr}' OF_ALLOW='${join(" ", var.overlay_allow)}' OF_SNAT_SRC='${var.snat_source_cidr}' OF_SNAT_IFACE='${var.snat_iface}' bash /tmp/overlay-fw-iptables.sh; }; if [ \"$(id -u)\" -eq 0 ]; then run; else printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S env OF_CIDR='${var.overlay_cidr}' OF_ALLOW='${join(" ", var.overlay_allow)}' OF_SNAT_SRC='${var.snat_source_cidr}' OF_SNAT_IFACE='${var.snat_iface}' bash /tmp/overlay-fw-iptables.sh; fi; rc=$?; rm -f /tmp/overlay-fw-iptables.sh; exit $rc",
     ]
   }
 }

@@ -167,7 +167,7 @@ resource "null_resource" "disable_swap" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash -c 'swapoff -a; sed -i \"/swap/d\" /etc/fstab; echo swap disabled'",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash -c 'swapoff -a; sed -i \"/swap/d\" /etc/fstab; echo swap disabled'",
     ]
   }
 }
@@ -194,7 +194,7 @@ resource "null_resource" "control_plane" {
 
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
+      "printf '%s\\n' '${replace(var.sudo_password, "'", "'\"'\"'")}' | sudo -S bash /tmp/k8s-setup.sh && rm -f /tmp/k8s-setup.sh",
     ]
   }
 }
