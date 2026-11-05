@@ -95,12 +95,14 @@ bao auth enable approle
 bao policy write openbao-backup hardware/modules/openbao-backup/files/backup-policy.hcl
 
 # token は短命・使用回数を制限。secret_id は、ホストに置くため期限なし。
-# 送信元は overlay の 10.250.0.2(ionos-01)に限る
+# 送信元は overlay の 10.250.0.2(ionos-01)に限る。
+# ただし token は、リーダーが bao-01(K8s)のとき、k8s4 の flannel(172.16.8.0)に書き換わった送信元で検証される(#465)ので、それも許す。
+# ログイン(secret_id)は bao-02/03 に対して行い、10.250.0.2 で検証される。
 bao write auth/approle/role/openbao-backup \
   token_policies="openbao-backup" \
   token_ttl=10m token_max_ttl=15m token_num_uses=10 \
   secret_id_ttl=0 secret_id_num_uses=0 \
-  token_bound_cidrs=10.250.0.2/32 \
+  token_bound_cidrs=10.250.0.2/32,172.16.8.0/32 \
   secret_id_bound_cidrs=10.250.0.2/32
 
 bao read  auth/approle/role/openbao-backup/role-id          # → role_id(bws へ)
