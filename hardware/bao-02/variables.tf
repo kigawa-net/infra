@@ -226,9 +226,9 @@ variable "frr_remote_as" {
 }
 
 variable "frr_neighbors" {
-  description = "eBGP の neighbor(Inuyama の control-plane の overlay の IP。k8s4 = 10.250.0.11、k8s1 = 10.250.0.12、k8s2 = 10.250.0.13)"
+  description = "**既定は空(2026-11-05。BGP は GRE トンネル内の frr_tunnel_neighbors だけで張る。設計書 §7-3、#461)。** 旧: eBGP の neighbor(Inuyama の control-plane の overlay の IP。k8s4 = 10.250.0.11、k8s1 = 10.250.0.12、k8s2 = 10.250.0.13)。overlay 上の経路は、EasyTier が宛先 10.0.0.x を運ばないので、ECMP に混ぜない。gre_overlay_enabled = false に戻すときは、これも元の 3 つに戻すこと"
   type        = list(string)
-  default     = ["10.250.0.11", "10.250.0.12", "10.250.0.13"]
+  default     = []
 }
 
 variable "frr_tunnel_neighbors" {
