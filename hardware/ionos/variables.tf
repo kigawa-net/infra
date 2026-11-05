@@ -577,9 +577,9 @@ variable "openbao_backup_age_recipient" {
 }
 
 variable "openbao_backup_bao_endpoints" {
-  description = "スナップショットを取る OpenBao のエンドポイント(順に試す)。overlay 経由の FQDN"
+  description = "スナップショットを取る OpenBao のエンドポイント(順に試す)。overlay 経由の FQDN。リーダーでないノードは 307 を返すので、リーダーになり得る全ノード(bao-01 を含む)を並べる(#465)"
   type        = list(string)
-  default     = ["https://bao-02.kigawa.net:8200", "https://bao-03.kigawa.net:8200"]
+  default     = ["https://bao-02.kigawa.net:8200", "https://bao-03.kigawa.net:8200", "https://bao01.kigawa.net:8200"]
 }
 
 variable "openbao_backup_approle_role_id_bitwarden_id" {
@@ -615,5 +615,7 @@ variable "openbao_backup_hosts_entries" {
   default = [
     { fqdn = "bao-02.kigawa.net", address = "10.250.0.1" },
     { fqdn = "bao-03.kigawa.net", address = "10.250.0.31" },
+    # bao-01(K8s の LoadBalancer VIP)。DNS は Cloudflare を指すので、hosts で固定する。wg-gw4(k8s4)経由で届く(#465)
+    { fqdn = "bao01.kigawa.net", address = "10.0.0.245" },
   ]
 }
