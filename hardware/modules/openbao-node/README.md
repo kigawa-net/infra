@@ -70,10 +70,25 @@ OpenBao のノード(raft の voter 1 台)を、SSH provisioner で構築する 
 | `openbao_version` | (必須) | `X.Y.Z` 固定。`latest` は不可 |
 | `openbao_deb_sha256` | `""` | 公式 `.deb` の SHA256。空のままでは apply できない(precondition) |
 | `wipe_data_on_failure` | `false` | 失敗時に `/var/lib/openbao` を消すか |
+| `sealed_alert_webhook_url` | `""` | `sensitive`。Sealed 通知の Discord Webhook の URL。空なら通知を入れない(入れていたものは外す)。下の「Sealed の通知」を参照 |
+| `sealed_alert_interval` | `1min` | Sealed の確認の間隔(systemd の `OnUnitActiveSec`) |
+| `sealed_alert_remind_seconds` | `21600` | Sealed が続くときの再通知の間隔(秒) |
 
 TLS の秘密鍵・証明書は、この module の変数にならない(Terraform の state に入らない)。
 
 `.deb` の URL は `https://github.com/openbao/openbao/releases/download/v<version>/openbao_<version>_linux_amd64.deb` を使う。
+
+## Sealed の通知(Discord)
+
+Shamir 手動 Unseal 運用では、VPS の再起動などで Sealed になると人手の Unseal が要る(設計書 §6・§8)。
+`sealed_alert_webhook_url` を渡すと、各ノードに systemd timer(`openbao-sealed-alert.timer`)を入れ、`/v1/sys/seal-status` を `sealed_alert_interval` ごとに確認する。
+
+- **通知するとき**: Sealed になったとき / Sealed が続く間の `sealed_alert_remind_seconds` ごと / Unseal されたとき(復旧)。未初期化は通知しない。
+- **OpenBao に繋がらないとき**: 何もしない(プロセス停止は別の監視の対象。再起動すれば Sealed で立ち上がり、ここで検知する)。
+- **通知に失敗したとき**: 状態を進めないので、次回の確認で再試行する。
+- **URL の扱い**: Webhook の URL は秘密。ノードの `/etc/openbao/sealed-alert.env`(0600 root)にだけ置き、`curl` のコマンドラインには載せない(`-K -` で標準入力から渡す)。
+- **有効化**: Discord でチャンネルの Webhook を作り、URL を Bitwarden のシークレットに保存する。呼び出し側(`bao-02` / `bao-03`)の `sealed_alert_webhook_bitwarden_id` にその ID を設定して apply する。空に戻すと timer・スクリプト・env を外す。
+- 各ノードが自分の Sealed だけを見る。ノード全体の停止(VPS ごと落ちた)は、この通知の対象外。
 
 ## ネットワーク・ファイアウォール(この module の対象外)
 

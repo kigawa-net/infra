@@ -148,3 +148,37 @@ variable "after_units" {
   type        = list(string)
   default     = ["wg-quick@wg0.service"]
 }
+
+variable "sealed_alert_webhook_url" {
+  description = "OpenBao が Sealed(Unseal が必要)になったときの通知先の Discord Webhook の URL(issue #444)。空のときは通知の timer を入れない(入れていたものは外す)。URL は Webhook の秘密そのもの(sensitive)。ノードの /etc/openbao/sealed-alert.env(0600 root)にだけ置く"
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.sealed_alert_webhook_url == "" || can(regex("^https://(discord|discordapp)\\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+$", var.sealed_alert_webhook_url))
+    error_message = "sealed_alert_webhook_url は空、または Discord Webhook の URL(https://discord.com/api/webhooks/<id>/<token>)。値はエラーに含めない。"
+  }
+}
+
+variable "sealed_alert_interval" {
+  description = "Sealed の確認の間隔(systemd の OnUnitActiveSec。例: 1min)"
+  type        = string
+  default     = "1min"
+
+  validation {
+    condition     = can(regex("^[0-9]+(s|min|h)$", var.sealed_alert_interval))
+    error_message = "sealed_alert_interval は、数字と単位(s / min / h)で指定する(例: 1min)。"
+  }
+}
+
+variable "sealed_alert_remind_seconds" {
+  description = "Sealed が続くときの再通知の間隔(秒)。既定は 6 時間"
+  type        = number
+  default     = 21600
+
+  validation {
+    condition     = var.sealed_alert_remind_seconds >= 60 && floor(var.sealed_alert_remind_seconds) == var.sealed_alert_remind_seconds
+    error_message = "sealed_alert_remind_seconds は 60 以上の整数。"
+  }
+}
