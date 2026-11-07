@@ -16,6 +16,8 @@ module "easytier" {
   easytier_sha256  = "<自分で計算した zip の SHA-256>"
   network_name     = "kigawa-net"
   network_secret   = local.easytier_network_secret   # bws_get_value で取得する
+  secure_mode_enabled = false # 全 peer の準備後、移行手順に沿って有効化
+  # credential_file = "/etc/easytier/credentials.json" # credential 発行管理ノードのみ
   overlay_address  = "10.250.0.11/24"
   peers            = ["tcp://<ServerCheap>:11010", "tcp://<IONOS>:11010"]  # 公開ノードを 2 台以上
 }
@@ -28,6 +30,8 @@ module "easytier" {
 - zip をダウンロードし、`easytier_sha256` と照合する。一致しなければ何も入れずに失敗する。
 - 同じバージョンが入っていれば、ダウンロードを省いて設定だけ更新する。
 - 設定は `/etc/easytier/easytier.toml`(ディレクトリ 0700、ファイル 0600)。Secret はプロセスの引数にも unit にも出さない。
+- `secure_mode_enabled` を有効にすると Secure Mode のみ切り替える。EasyTier 2.6.0 以降が必要で、旧 peer と混在したまま個別適用しない。
+- 発行管理ノードで `credential_file` を指定すると、短期 credential の発行状態を指定ファイルに永続化する。ファイルは `/etc/easytier` の 0700 ディレクトリ内に置く。
 
 ## テスト
 

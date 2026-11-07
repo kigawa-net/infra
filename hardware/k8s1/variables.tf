@@ -184,6 +184,12 @@ variable "easytier_enabled" {
   default     = true
 }
 
+variable "easytier_secure_mode_enabled" {
+  description = "全 EasyTier peer が Secure Mode 対応済みで、移行手順の切替段階に入ったとき true にする"
+  type        = bool
+  default     = false
+}
+
 variable "easytier_network_secret_bitwarden_id" {
   description = "EasyTier のネットワーク Secret の bws の ID(easytier-network-secret)。ionos・bao-02・bao-03 と同じ値"
   type        = string
