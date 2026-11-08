@@ -11,13 +11,16 @@ locals {
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     export DEBIAN_FRONTEND=noninteractive
 
+    apt-get update -y
     if ! apt-cache policy ${var.driver_package} | grep -q 'Candidate: [^(]'; then
       echo "ERROR: ${var.driver_package} が apt に無い。driver_package を見直す" >&2
       exit 1
     fi
 
-    apt-get update -y
-    apt-get install -y ${var.driver_package}
+    # hold 済みのパッケージを install し直すと、新しい版が出た後の再実行で「held packages」で止まる。入っていれば飛ばす
+    if ! dpkg -s ${var.driver_package} >/dev/null 2>&1; then
+      apt-get install -y ${var.driver_package}
+    fi
     apt-mark hold ${var.driver_package}
 
     if [ ! -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]; then
@@ -29,7 +32,9 @@ locals {
       | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
       > /etc/apt/sources.list.d/nvidia-container-toolkit.list
     apt-get update -y
-    apt-get install -y nvidia-container-toolkit
+    if ! dpkg -s nvidia-container-toolkit >/dev/null 2>&1; then
+      apt-get install -y nvidia-container-toolkit
+    fi
     apt-mark hold nvidia-container-toolkit nvidia-container-toolkit-base libnvidia-container-tools libnvidia-container1
 
     # --set-as-default は付けない(RuntimeClass nvidia で選ぶ)
