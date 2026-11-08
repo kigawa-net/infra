@@ -72,3 +72,15 @@ variable "maas_shutdown_allowed_from" {
     error_message = "maas_shutdown_allowed_from は、IPv4 のアドレスのリストにする(例: [\"192.168.1.20\"])。"
   }
 }
+
+variable "nvidia_gpu_enabled" {
+  description = "GPU ドライバ等を導入する(#302)。既定は無効。drain してから true にする"
+  type        = bool
+  default     = false
+}
+
+variable "nvidia_driver_package" {
+  description = "NVIDIA ドライバの apt パッケージ名(RTX 3060 / Ampere)。導入前に apt-cache policy で確認する"
+  type        = string
+  default     = "nvidia-driver-570-server"
+}
