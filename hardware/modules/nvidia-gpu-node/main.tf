@@ -1,5 +1,8 @@
-# NVIDIA ドライバと NVIDIA Container Toolkit を入れ、containerd に nvidia ランタイムを登録する(kigawa-net/infra#302)。
+# NVIDIA ドライバを入れる(kigawa-net/infra#302)。
 #
+# - Container Toolkit と containerd の設定は、既定では入れない。クラスタの gpu-operator(kigawa-net-k8s の apps/gpu-operator-app.yml、
+#   toolkit.enabled=true)の Toolkit DaemonSet が containerd を設定するため、ここでも入れると二重になって衝突する。
+#   gpu-operator を使わないノードだけ install_container_toolkit=true にする。
 # - nvidia ランタイムは「既定にしない」。GPU を使う Pod が RuntimeClass `nvidia` で選ぶ。
 # - drain と再起動は、このモジュールでは行わない(稼働中のノードを Terraform が勝手に止めないため)。
 #   手順: kubectl drain → enabled=true で apply → 再起動 → nvidia-smi 確認 → kubectl uncordon。
@@ -23,6 +26,7 @@ locals {
     fi
     apt-mark hold ${var.driver_package}
 
+    %{if var.install_container_toolkit~}
     if [ ! -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]; then
       apt-get install -y curl gpg
       curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
@@ -40,6 +44,7 @@ locals {
     # --set-as-default は付けない(RuntimeClass nvidia で選ぶ)
     nvidia-ctk runtime configure --runtime=containerd
     systemctl restart containerd
+    %{endif~}
 
     if nvidia-smi >/dev/null 2>&1; then
       nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
@@ -55,6 +60,7 @@ resource "null_resource" "nvidia_gpu_node" {
   triggers = {
     host              = var.host
     driver_package    = var.driver_package
+    install_toolkit   = tostring(var.install_container_toolkit)
     setup_script_hash = sha256(local.setup_script)
   }
 

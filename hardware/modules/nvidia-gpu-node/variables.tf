@@ -32,3 +32,9 @@ variable "driver_package" {
     error_message = "driver_package は nvidia-driver-<番号>[-server|-open|-server-open] の形式で指定する。"
   }
 }
+
+variable "install_container_toolkit" {
+  description = "NVIDIA Container Toolkit を入れ、containerd に nvidia ランタイムを登録する。既定は false(クラスタの gpu-operator の Toolkit DaemonSet が行うため、二重にすると衝突する)。gpu-operator を使わないノードだけ true"
+  type        = bool
+  default     = false
+}
