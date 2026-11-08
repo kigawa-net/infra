@@ -291,3 +291,16 @@ resource "null_resource" "maas_shutdown" {
     ]
   }
 }
+
+# NVIDIA GPU(RTX 3060)のドライバと Container Toolkit(#302)。
+# 既定は無効。drain → enabled=true で apply → 再起動 → uncordon の手順は modules/nvidia-gpu-node/README.md。
+module "nvidia_gpu_node" {
+  source = "../modules/nvidia-gpu-node"
+
+  enabled         = var.nvidia_gpu_enabled
+  host            = var.host
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  driver_package  = var.nvidia_driver_package
+}
