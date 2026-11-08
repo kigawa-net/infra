@@ -50,3 +50,15 @@ variable "core_router_vip" {
   type        = string
   default     = "192.168.1.200"
 }
+
+variable "nvidia_gpu_enabled" {
+  description = "GPU ドライバ等を導入する(#302)。既定は無効。drain してから true にする"
+  type        = bool
+  default     = false
+}
+
+variable "nvidia_driver_package" {
+  description = "NVIDIA ドライバの apt パッケージ名(RTX 3060 / Ampere)。導入前に apt-cache policy で確認する"
+  type        = string
+  default     = "nvidia-driver-570-server"
+}
