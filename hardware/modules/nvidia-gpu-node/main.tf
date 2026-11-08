@@ -15,7 +15,10 @@ locals {
     export DEBIAN_FRONTEND=noninteractive
 
     apt-get update -y
-    if ! apt-cache policy ${var.driver_package} | grep -q 'Candidate: [^(]'; then
+    # `apt-cache policy ... | grep -q` は、pipefail のもとで grep の早期終了により apt-cache が SIGPIPE(141)になり、
+    # パッケージがあっても失敗する。いったん変数に取ってから判定する。
+    candidate=$(apt-cache policy ${var.driver_package} | awk '/Candidate:/ {print $2}')
+    if [ -z "$candidate" ] || [ "$candidate" = "(none)" ]; then
       echo "ERROR: ${var.driver_package} が apt に無い。driver_package を見直す" >&2
       exit 1
     fi
