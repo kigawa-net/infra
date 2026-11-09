@@ -103,7 +103,7 @@ resource "null_resource" "worker_node" {
       trap cleanup EXIT
 
       swapoff -a
-      sed -i '/ swap / s/^\(.*\)$/#\1/' /etc/fstab
+      sed -i '/^[^#].*[[:space:]]swap[[:space:]]/ s/^/#/' /etc/fstab
 
       apt-get update -y
       apt-get install -y kmod
