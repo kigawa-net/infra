@@ -99,7 +99,7 @@ resource "null_resource" "worker_node" {
       trap cleanup EXIT
 
       swapoff -a
-      sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+      sed -i '/^[^#].*[[:space:]]swap[[:space:]]/ s/^/#/' /etc/fstab
 
       modprobe br_netfilter || true
       modprobe overlay || true
