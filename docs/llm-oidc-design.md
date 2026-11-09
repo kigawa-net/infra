@@ -31,9 +31,9 @@ Dev Pod (自宅 main)
 
 - **新しいホスト `litellm-api.kigawa.net`** を使う。既存の `litellm.kigawa.net`(master key、管理 UI)は変えない。
 - **oauth2-proxy**(`litellm` namespace):
-  - `--provider=oidc`、`--oidc-issuer-url=https://user.kigawa.net/realms/<realm>`、`--skip-jwt-bearer-tokens=true`、`--oidc-extra-audience=litellm`。
-  - サービスアカウントのトークンには email が無いので、`--oidc-email-claim=sub` を使う。
-  - **Authorization の置き換え**: `--pass-authorization-header` のままだと Keycloak の JWT が LiteLLM に渡り、不正なキーとして拒否される。alpha config の `injectRequestHeaders`(`secretSource: fromEnv`)で、`Authorization: Bearer <LiteLLM の仮想キー>` に置き換える。仮想キーは Dev Pod に渡らない。
+  - **alpha config に一本化する**: `--alpha-config` を使うと `--provider` などの従来フラグは使えない(`unknown flag` で起動しない)。provider(`oidc`、issuer `https://user.kigawa.net/realms/develop`)・upstream・`injectRequestHeaders` は alpha config に書く。フラグは `--skip-jwt-bearer-tokens=true` と `--email-domain=*` だけ。
+  - `oidcConfig`: `extraAudiences: [litellm]`、サービスアカウントのトークンには email が無いので `emailClaim: sub`。
+  - **Authorization の置き換え**: `injectRequestHeaders` に `fromEnv: LITELLM_AUTH_HEADER`(v7.7.1 では `secretSource:` を付けるとエラー)。env は Deployment 側で `Bearer $(LITELLM_VIRTUAL_KEY)` と組み立てる。仮想キーは Dev Pod に渡らない。**実機で動作を確認済み**。
 - **LiteLLM の仮想キー**(`opencode-dev`): master key は使わない。許可モデルは `production-llm` のみ、RPM と並列数を制限する。
 - **Keycloak クライアント**(`opencode-dev`): confidential、Service Accounts 有効、audience mapper(`litellm`)。client secret は Bitwarden SM に置く。
 - **Dev Pod の中継プロキシ**: localhost で待ち受け、client_credentials で取得・更新したトークンを付けて転送する。OpenCode は `baseURL: http://localhost:4000/v1` を向けるだけで、更新を意識しない。
@@ -50,10 +50,18 @@ Dev Pod (自宅 main)
 2. kigawa-net-k8s: oauth2-proxy(Deployment・Service・alpha config)と Ingress `litellm-api.kigawa.net`。
 3. vLLM に tool calling を有効にする(`--enable-auto-tool-choice --tool-call-parser hermes`)。OpenCode のエージェントに必要。
 4. Dev Pod の中継プロキシと OpenCode の設定。
-5. 検証: client_credentials で取得した JWT で `/v1/models` と推論が通ること。JWT なし・期限切れ・別 audience が 401/403 になること。
+5. 検証: client_credentials で取得した JWT で `/v1/models` と推論が通ること。JWT なし・改ざん・任意の文字列が拒否されること(oauth2-proxy のサインインページ付き 403。401 ではない)。
 
-## 6. 未確認事項
+## 6. 実装状況と未確認事項
 
-- oauth2-proxy が、Bearer の JWT で認証済みセッションにした上で `injectRequestHeaders` を適用するか(実機で要確認。だめなら nginx などで Authorization を付け替える)。
+実装済み・検証済み(2026-11-09):
+
+- Keycloak クライアント `opencode-dev`、LiteLLM 仮想キー `opencode-dev`(`production-llm` のみ、rpm 60、並列 4。`gpt-4o` などは 403)。
+- oauth2-proxy と Ingress `litellm-api.kigawa.net`(kigawa-net-k8s #498、#501)。有効な JWT で `production-llm` が 200、JWT なし・改ざん・任意の文字列は 403。
+- vLLM の tool calling(kigawa-net-k8s #491)。
+
+未実装・未確認:
+
+- Dev Pod の中継プロキシと OpenCode の設定(Dev Pod の置き場所の確認が先)。
 - vLLM の KV キャッシュは約 25,000 トークン(コンテキスト 16k で同時 1.5 本)。OpenCode の重い作業には窮屈。
-- Keycloak の realm(`manage` は ArgoCD MCP 用。開発用の `develop` が候補)。
+- JWT の失効はトークンの有効期限(`exp`)まで効く。キーの失効は LiteLLM 側の仮想キー削除で行う。
