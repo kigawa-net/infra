@@ -67,7 +67,7 @@ else
   : > "$conf"
 fi
 
-check "ui は無効" 1 "$(grep -c '^ui *= *false$' "$conf")"
+check "ui は有効" 1 "$(grep -c '^ui *= *true$' "$conf")"
 check "監査デバイス(file)が宣言されている" 1 "$(grep -c '^audit "file" "file"' "$conf")"
 check "監査デバイス(syslog)が宣言されている" 1 "$(grep -c '^audit "syslog" "syslog"' "$conf")"
 check "監査ログのパス" 1 "$(grep -c 'file_path *= *"/var/log/openbao/audit.log"' "$conf")"
