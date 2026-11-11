@@ -153,8 +153,8 @@ resource "cloudflare_record" "ssh" {
 resource "cloudflare_record" "codingcraft_dev" {
   zone_id = var.zone_id
   name    = "codingcraft-dev"
-  type    = "CNAME"
-  content = "k8s.kigawa.net"
+  type    = "A"
+  content = "74.208.55.86"
   ttl     = 1
   proxied = false
 }
