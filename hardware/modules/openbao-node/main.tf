@@ -27,6 +27,7 @@ locals {
     node_id    = var.node_id
     wg_address = var.wg_address
     peers      = local.retry_peers
+    host       = var.host
   })
 
   # /etc/hosts の管理ブロック(自分と全ピアの fqdn を、WireGuard の IP に向ける)

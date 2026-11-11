@@ -23,8 +23,7 @@ storage "raft" {
 %{ endfor ~}
 }
 
-# Raft のネットワーク上の IP だけで待ち受ける(公開 IF には bind しない)。
-# ループバックは、同じノード上の bao CLI 用。
+# Raft のネットワーク(Overlay/WireGuard)用。
 listener "tcp" {
   address         = "${wg_address}:8200"
   cluster_address = "${wg_address}:8201"
@@ -33,9 +32,18 @@ listener "tcp" {
   tls_min_version = "tls13"
 }
 
+# ループバック(bao CLI 用)。
 listener "tcp" {
   address         = "127.0.0.1:8200"
   cluster_address = "127.0.0.1:8201"
+  tls_cert_file   = "/etc/openbao/tls/tls.crt"
+  tls_key_file    = "/etc/openbao/tls/tls.key"
+  tls_min_version = "tls13"
+}
+
+# 公開インターフェース用(外部からのブラウザアクセス)。
+listener "tcp" {
+  address         = "${host}:8200"
   tls_cert_file   = "/etc/openbao/tls/tls.crt"
   tls_key_file    = "/etc/openbao/tls/tls.key"
   tls_min_version = "tls13"
