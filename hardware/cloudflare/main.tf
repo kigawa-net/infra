@@ -212,3 +212,21 @@ resource "cloudflare_record" "dkim" {
   content = "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu99alb+1txhBtW+cQ3Cq12bPZMD1mZ5IDYgV/sh73cb+QV6l/WvXGuea0ew1woNvobLKByA6SCSliI4sibQ1V8Yh/A3zC/IOxccUu0hmd36BalMXbarKX9UZRMARcd1mrsmQ+4VLXyHj7RkDHgaiprHduobs6/qUZWgFkRjH1CCDbgc08Cd6sxc2APwlynJO/zNCdnQx+kNaMTz9I3Xtf2tU9xbZWJur2UcQfbSKs0Z3ZY+5pkRFpspMDCAWDQb/nZNaMd0ADaZVkMmqu0BxX7EBbjoUZ39I3uYZBIVuTw6+iuVzZ+sLhkpQOefcQ0CyZ3n4PThCx2YWE2OyZaQ4gQIDAQAB"
   ttl     = 1
 }
+
+# --- Zero Trust / Access Gateway Beacon ---
+#
+# Cloudflare Zero Trust Access Gateway が WASM ファイルに Beacon を自動注入し、
+# ブラウザで "Uncaught (in promise) Error: Failed to fetch a WASM file: 404"
+# や "Uncaught (in promise) JsException: TypeError: Failed to fetch" が
+# 発生していたため、Beacon を無効化する。
+#
+# 参照: https://developers.cloudflare.com/cloudflare-one/operations/load-balance/beacon/
+resource "cloudflare_zero_trust_settings" "kigawa_net" {
+  account_id = var.account_id
+
+  settings {
+    beacon {
+      enabled = false
+    }
+  }
+}
