@@ -2,7 +2,7 @@
 # 変更は Terraform 側(変数)で行い、適用すると再起動する。
 # 証明書(/etc/openbao/tls)は、ノード自身が certbot で発行・更新する。秘密鍵をこのファイルに入れない。
 
-ui            = false
+ui            = true
 log_format    = "json"
 # OpenBao 2.x は mlock をやめた(disable_mlock を書くと、起動に失敗する)。メモリを swap に出さない対策は、swap を無効にする(このホストは swap なし)か、暗号化する
 

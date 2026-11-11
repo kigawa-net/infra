@@ -20,7 +20,7 @@ OpenBao のノード(raft の voter 1 台)を、SSH provisioner で構築する 
 2. 専用ユーザー `openbao`(system、ログイン不可)、`/var/lib/openbao`(0700、ローカルの ext4 を想定)、`/etc/openbao`。
 3. **TLS の証明書は、ノード自身が certbot で発行・更新する**(Let's Encrypt、DNS-01 / Cloudflare)。詳細は下の「TLS」を参照。秘密鍵は Terraform を通らない。
 4. `/etc/hosts` に、自分と他ノードの fqdn を WireGuard の IP で載せる(管理ブロック。内容が同じなら書き換えない)。
-5. `openbao.hcl`(raft、retry_join は FQDN、listener 8200/8201 を WireGuard IP と loopback のみ、`tls_min_version = "tls13"`、telemetry の認証必須、ui 無効)と `openbao.service` を置く。
+5. `openbao.hcl`(raft、retry_join は FQDN、listener 8200/8201 を WireGuard IP と loopback のみ、`tls_min_version = "tls13"`、telemetry の認証必須、ui 有効)と `openbao.service` を置く。
 6. `systemctl enable --now`。設定・unit が変わったら再起動。**証明書の更新は deploy hook が `systemctl reload`(SIGHUP)で反映する**。OpenBao は、証明書が配置されてから起動する。
 
 ## TLS(Let's Encrypt、DNS-01)
