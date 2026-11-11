@@ -26,6 +26,11 @@ locals {
     [[peer]]
     uri = "${p}"
     %{endfor~}
+    %{for n in var.proxy_network~}
+
+    [[subnet_proxy]]
+    network = "${n}"
+    %{endfor~}
   TOML
 }
 

@@ -401,6 +401,12 @@ variable "easytier_overlay_address" {
   default     = "10.250.0.11/24"
 }
 
+variable "ionos_overlay_address" {
+  description = "EasyTier Overlay 上の ionos アドレス(BGP neighbor 用)。設計: docs/easytier-bgp-migration-design.md"
+  type        = string
+  default     = "10.250.0.2"
+}
+
 variable "easytier_peers" {
   description = "初期接続先の公開 Peer(ServerCheap = bao-02 と IONOS)。特定の 1 台だけに依存しない"
   type        = list(string)

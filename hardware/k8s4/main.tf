@@ -656,6 +656,14 @@ module "bgp" {
         import_prefixes = []
         export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
       },
+      {
+        local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
+        local_as        = var.inuyama_asn
+        neighbor_ip     = var.ionos_overlay_address
+        neighbor_as     = var.ionos_bgp_as
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24"]
+      },
     ] : [],
     # GRE トンネル内の eBGP(bao-02 / bao-03。設計: docs/frr-gre-overlay-design.md §7 の 3)。Overlay 上の peer と並走する。
     # **必ず、リストの最後に足すこと**(添字で EXT-<添字> の名前が決まる)。bao 側が取り込んだ経路の送信元は、bao 側の SET-SRC で固定する。
