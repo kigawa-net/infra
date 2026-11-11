@@ -195,6 +195,16 @@ locals {
       local_pref  = 0
       fast_timers = false
     }] : [],
+    # EasyTier overlay 経由の k8s4 neighbor (observation フェーズ)。設計: docs/easytier-bgp-migration-design.md
+    [{
+      wg_address  = var.easytier_overlay_k8s4_address
+      interface   = var.easytier_interface_name
+      asn         = var.inuyama_asn
+      in_list     = "INUYAMA-IN"
+      out_list    = "IONOS-OUT"
+      local_pref  = 1
+      fast_timers = false
+    }],
   )
 
   wireguard_config = templatefile("${path.module}/templates/wg0.conf.tpl", {

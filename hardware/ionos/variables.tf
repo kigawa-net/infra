@@ -526,6 +526,18 @@ variable "easytier_overlay_address" {
   default     = "10.250.0.2/24"
 }
 
+variable "easytier_overlay_k8s4_address" {
+  description = "EasyTier Overlay 上の k8s4(Inuyama) アドレス(BGP neighbor 用)。設計: docs/easytier-bgp-migration-design.md"
+  type        = string
+  default     = "10.250.0.11"
+}
+
+variable "easytier_interface_name" {
+  description = "EasyTier の TUN インターフェース名(update-source 用)。EasyTier の instance_name に合わせる"
+  type        = string
+  default     = "kigawa-net"
+}
+
 variable "easytier_peers" {
   description = "もう一方の公開ノードへの接続先(初期接続先)"
   type        = list(string)
@@ -533,9 +545,9 @@ variable "easytier_peers" {
 }
 
 variable "easytier_overlay_allow" {
-  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート(例: [\"22/tcp\"])。既定は空で、Overlay からは何も受けない(ICMP を除く)。足したルールは、外しても自動では消えない(ufw delete が要る)"
+  description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート(例: [\"22/tcp\"])。既定は \"179/tcp\"(BGP 用)。Overlay からは何も受けない(ICMP を除く)。足したルールは、外しても自動では消えない(ufw delete が要る)"
   type        = list(string)
-  default     = []
+  default     = ["179/tcp"]
 }
 
 # OpenBao の Raft スナップショットの退避(modules/openbao-backup、設計書 §7)。

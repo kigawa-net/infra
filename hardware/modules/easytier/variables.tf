@@ -132,3 +132,9 @@ variable "overlay_allow" {
     error_message = "overlay_allow は 22/tcp のような形式で指定する。"
   }
 }
+
+variable "proxy_network" {
+  description = "サブネットプロキシで Overlay 上に経路を提供するネットワーク(CIDR)。既定値は空で、BGP 経路を Overlay に流さない。設計: docs/easytier-bgp-migration-design.md"
+  type        = list(string)
+  default     = []
+}
