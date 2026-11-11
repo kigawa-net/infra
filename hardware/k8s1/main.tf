@@ -101,7 +101,7 @@ module "bgp" {
   redistribute_connected_prefixes = ["10.0.0.0/24", "10.0.0.100/32", "10.0.0.254/32", "192.168.1.0/24"]
   # OpenBao の bao-02 / bao-03(EasyTier のオーバーレイ上の eBGP。設計: hardware/modules/frr-overlay-peer)。
   # 相手へは 10.0.0.0/24 と 192.168.1.0/24 だけを出し、相手からは何も取り込まない。k8s1 は、まだ外部の peer を持たない(初めての eBGP)。
-  external_bgp_peers = var.easytier_enabled ? [
+  external_bgp_peers = concat(var.easytier_enabled ? [
     {
       local_ip        = trimsuffix(var.easytier_overlay_address, "/24")
       local_as        = var.inuyama_asn
@@ -118,7 +118,28 @@ module "bgp" {
       import_prefixes = []
       export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
     },
-  ] : []
+    ] : [],
+    # GRE トンネル内の eBGP(bao-02 / bao-03。設計: docs/frr-gre-overlay-design.md §7 の 3)。Overlay 上の peer と並走する。
+    # **必ず、リストの最後に足すこと**(添字で EXT-<添字> の名前が決まる)。bao 側が取り込んだ経路の送信元は、bao 側の SET-SRC で固定する。
+    var.easytier_enabled && var.gre_overlay_enabled ? [
+      {
+        local_ip        = "172.31.250.3"
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.250.2"
+        neighbor_as     = 65041
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+      {
+        local_ip        = "172.31.250.9"
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.250.8"
+        neighbor_as     = 65042
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+    ] : [],
+  )
   # 同一ホストの kube-vip との BGP は FRR では張れない (bgp-frr の README 参照)。VIP は直結経路で伝搬する。
   enable_kube_vip_peer = false
   # k8s1 のカーネルには 172.31.254.2/32 dev wg1 が既にあるため、next-hop 補助経路は不要。
@@ -330,6 +351,8 @@ module "overlay_firewall" {
   overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
   overlay_allow    = concat(var.easytier_overlay_allow, var.gre_overlay_enabled ? ["gre"] : [])
   snat_source_cidr = var.easytier_snat_source_cidr
+  # GRE から入った(送信元が 10.250.0.x の)bao の通信を、EASYTIER-OVERLAY の DROP に当てない(#463)
+  exempt_ifaces = var.gre_overlay_enabled ? ["gre-bao+"] : []
 }
 
 module "easytier" {

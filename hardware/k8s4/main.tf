@@ -657,6 +657,26 @@ module "bgp" {
         export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
       },
     ] : [],
+    # GRE トンネル内の eBGP(bao-02 / bao-03。設計: docs/frr-gre-overlay-design.md §7 の 3)。Overlay 上の peer と並走する。
+    # **必ず、リストの最後に足すこと**(添字で EXT-<添字> の名前が決まる)。bao 側が取り込んだ経路の送信元は、bao 側の SET-SRC で固定する。
+    var.easytier_enabled && var.gre_overlay_enabled ? [
+      {
+        local_ip        = "172.31.250.1"
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.250.0"
+        neighbor_as     = 65041
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+      {
+        local_ip        = "172.31.250.7"
+        local_as        = var.inuyama_asn
+        neighbor_ip     = "172.31.250.6"
+        neighbor_as     = 65042
+        import_prefixes = []
+        export_prefixes = ["10.0.0.0/24", "192.168.1.0/24"]
+      },
+    ] : [],
   )
 }
 
@@ -1065,6 +1085,8 @@ module "overlay_firewall" {
   overlay_cidr     = "${cidrhost(var.easytier_overlay_address, 0)}/${split("/", var.easytier_overlay_address)[1]}"
   overlay_allow    = concat(var.easytier_overlay_allow, var.gre_overlay_enabled ? ["gre"] : [])
   snat_source_cidr = var.easytier_snat_source_cidr
+  # GRE から入った(送信元が 10.250.0.x の)bao の通信を、EASYTIER-OVERLAY の DROP に当てない(#463)
+  exempt_ifaces = var.gre_overlay_enabled ? ["gre-bao+"] : []
 }
 
 module "easytier" {

@@ -116,3 +116,61 @@ variable "wol_broadcast" {
   type        = string
   default     = ""
 }
+
+variable "wol_shutdown_targets" {
+  description = <<-DESC
+    MAAS の /off で、SSH により shutdown するノード(kigawa-net/infra#416)。既定は空(何もしない。/off は unsupported のまま)。
+    キーは MAC(小文字・コロン区切り)、host は対象の IPv4、user は対象ノードの専用ユーザー(k8s-worker5 の maas-shutdown)。
+    wol_shutdown_private_key・wol_shutdown_known_hosts・wol_shutdown_auth_token と**4 つそろえて**指定する(一部だけは plan で失敗する)。wol_webhook_enabled = true のときだけ有効。
+    ノード側の受け口は、hardware/k8s-worker5 の maas_shutdown_public_key(別の PR で設定する)。
+  DESC
+  type = map(object({
+    host = string
+    user = string
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for mac in keys(var.wol_shutdown_targets) : can(regex("^([0-9a-f]{2}:){5}[0-9a-f]{2}$", mac))])
+    error_message = "wol_shutdown_targets のキーは、小文字・コロン区切りの MAC にする(例: 02:39:7a:2e:13:f0)。"
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.wol_shutdown_targets) : can(regex("^[0-9]{1,3}(\\.[0-9]{1,3}){3}$", t.host))])
+    error_message = "wol_shutdown_targets の host は、IPv4 のアドレスで指定する(例: 192.168.1.150)。"
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.wol_shutdown_targets) : can(regex("^[a-z_][a-z0-9_-]{0,31}$", t.user))])
+    error_message = "wol_shutdown_targets の user は、小文字で始まる Unix のユーザー名にする(先頭の - は不可)。"
+  }
+}
+
+variable "wol_shutdown_private_key" {
+  description = "/off で SSH するときの秘密鍵(OpenSSH 形式、パスフレーズ無し)。値は Bitwarden などから渡す(この module は取得しない。保管先は別 issue)。空なら何もしない"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "wol_shutdown_known_hosts" {
+  description = "/off で SSH するノードのホスト公開鍵の行(known_hosts の形式。例: ssh-keyscan -t ed25519 <host> の出力)。StrictHostKeyChecking=yes で使う。空なら何もしない。取り方は README"
+  type        = string
+  default     = ""
+}
+
+variable "wol_shutdown_auth_token" {
+  description = <<-DESC
+    MAAS の webhook 電源ドライバが送る Bearer トークン(power_token)と、同じ値。/off は、これが一致するときだけ実行する(kigawa-net/infra#417)。
+    32 文字以上の [A-Za-z0-9._~+/=-]。既定は空(何もしない)。表が空の構成では不要。表があるのにトークンが無い Rack は、/off に 503 を返す(fail closed)。
+    MAAS 側への設定の手順は README(トークンを画面・履歴に出さない方法を含む)。
+  DESC
+  type        = string
+  sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = var.wol_shutdown_auth_token == "" || can(regex("^[A-Za-z0-9._~+/=-]{32,}$", var.wol_shutdown_auth_token))
+    error_message = "wol_shutdown_auth_token は、32 文字以上の [A-Za-z0-9._~+/=-] のみ。"
+  }
+}

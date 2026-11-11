@@ -46,8 +46,22 @@ variable "neighbors" {
   type        = list(string)
 
   validation {
-    condition     = length(var.neighbors) > 0 && alltrue([for n in var.neighbors : can(cidrhost("${n}/32", 0))])
-    error_message = "neighbors は 1 つ以上の IPv4 アドレス(CIDR なし)にすること。"
+    condition     = alltrue([for n in var.neighbors : can(cidrhost("${n}/32", 0))])
+    error_message = "neighbors は IPv4 アドレス(CIDR なし)にすること。"
+  }
+}
+
+variable "tunnel_neighbors" {
+  description = "GRE トンネル(modules/gre-overlay-tunnel)の中の eBGP の neighbor。address = 対向のトンネル内アドレス、source = 自分のトンネル内アドレス(update-source)。空でなければ、SET-SRC(送信元を router_id に固定)も入る。設計: docs/frr-gre-overlay-design.md"
+  type = list(object({
+    address = string
+    source  = string
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for t in var.tunnel_neighbors : can(cidrhost("${t.address}/32", 0)) && can(cidrhost("${t.source}/32", 0))])
+    error_message = "tunnel_neighbors の address と source は IPv4 アドレス(CIDR なし)にすること。"
   }
 }
 

@@ -46,7 +46,9 @@ module "cluster_route" {
   # Core Router VIP(#241)1 本(docs/network.md の 2.5 節)。
   gateways = [var.core_router_vip]
   # EasyTier のオーバーレイ(10.250.0.0/24)。Inuyama の Pod から bao-02/03 へ届けるため(control-plane の tun が出口になる)
-  extra_destination_cidrs = ["10.250.0.0/24"]
+  # WireGuard のオーバーレイ(172.31.254.0/24)。WG 側の各ピア(ionos / runner / bao 等)から worker へ来た通信の
+  # 戻り経路。これが無いと戻りがデフォルトGW(192.168.1.1)へ出て非対称になり破棄される(2026-11-05 調査)。
+  extra_destination_cidrs = ["10.250.0.0/24", "172.31.254.0/24"]
 }
 
 # 内部ドメイン(kigawa.net など)を、kresd に向ける。ノードは、自宅ルーターで k8s.kigawa.net を引いており、

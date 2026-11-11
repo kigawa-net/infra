@@ -93,13 +93,15 @@ variable "wireguard_server_allowed_ips" {
 }
 
 variable "peers" {
-  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は Raft のネットワーク(EasyTier のオーバーレイ)の IPv4"
+  description = "他の bao ノード(retry_join 先と /etc/hosts)。fqdn は証明書の名前(例: bao-03.kigawa.net)、address は Raft のネットワークの IPv4(bao-02/03 は EasyTier のオーバーレイ、bao-01 は MetalLB の VIP)"
   type = list(object({
     fqdn    = string
     address = string
   }))
   default = [
     { fqdn = "bao-02.kigawa.net", address = "10.250.0.1" },
+    # bao-01(K8s の StatefulSet。MetalLB の VIP 経由。10.0.0.0/24 は BGP/GRE か、暫定の wg0 経路で届く)
+    { fqdn = "bao01.kigawa.net", address = "10.0.0.245" },
   ]
 
   validation {
@@ -242,9 +244,22 @@ variable "frr_remote_as" {
 }
 
 variable "frr_neighbors" {
-  description = "eBGP の neighbor(Inuyama の control-plane の overlay の IP。k8s4 = 10.250.0.11、k8s1 = 10.250.0.12、k8s2 = 10.250.0.13)"
+  description = "**既定は空(2026-11-05。BGP は GRE トンネル内の frr_tunnel_neighbors だけで張る。設計書 §7-3、#461)。** 旧: eBGP の neighbor(Inuyama の control-plane の overlay の IP。k8s4 = 10.250.0.11、k8s1 = 10.250.0.12、k8s2 = 10.250.0.13)。overlay 上の経路は、EasyTier が宛先 10.0.0.x を運ばないので、ECMP に混ぜない。gre_overlay_enabled = false に戻すときは、これも元の 3 つに戻すこと"
   type        = list(string)
-  default     = ["10.250.0.11", "10.250.0.12", "10.250.0.13"]
+  default     = []
+}
+
+variable "frr_tunnel_neighbors" {
+  description = "GRE トンネル(gre_overlay_enabled)の中の eBGP の neighbor(address = 対向、source = 自分のトンネル内アドレス)。gre_overlay_enabled が true のときだけ使う。旧 neighbor(frr_neighbors)と並走する。切り替えが済んだら、frr_neighbors を空にする。設計: docs/frr-gre-overlay-design.md §7"
+  type = list(object({
+    address = string
+    source  = string
+  }))
+  default = [
+    { address = "172.31.250.7", source = "172.31.250.6" },
+    { address = "172.31.250.9", source = "172.31.250.8" },
+    { address = "172.31.250.11", source = "172.31.250.10" },
+  ]
 }
 
 variable "frr_import_prefixes" {

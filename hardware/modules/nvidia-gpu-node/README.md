@@ -1,6 +1,6 @@
 # nvidia-gpu-node
 
-NVIDIA ドライバ・Container Toolkit の導入と、containerd への `nvidia` ランタイム登録(#302)。設計は `docs/gpu-node-design.md`。
+NVIDIA ドライバの導入(#302)。Container Toolkit と containerd の設定は、クラスタの gpu-operator が行うため既定では入れない(`install_container_toolkit = true` で、このモジュールが入れる)。設計は `docs/gpu-node-design.md`。
 
 既定は `enabled = false`(何もしない)。適用手順(稼働中ノードなので手動):
 

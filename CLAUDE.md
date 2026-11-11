@@ -87,6 +87,7 @@ The setup script uses `trap cleanup EXIT` to roll back (purge packages, `kubeadm
 ### Control-plane vs Worker join
 
 - **Worker** (`hardware/`, `k8s-worker5/`): `data "external" "join_info"` SSHes to control plane and runs `sudo kubeadm token create --print-join-command`. Join uses `--token` and `--discovery-token-ca-cert-hash`.
+- **k8s-worker5 の MAAS 用 shutdown 受け口**(kigawa-net/infra#416、既定は無効): `maas_shutdown_public_key` と `maas_shutdown_allowed_from` を指定すると、専用ユーザー `maas-shutdown`(公開鍵ログインのみ、forced command で `sudo -n shutdown -h now` だけ)を作る。join とは別の `null_resource.maas_shutdown`(`files/maas-shutdown-setup.sh`)。公開鍵を空に戻すと、ユーザーと sudoers を消す。Rack 側の仕様は `hardware/modules/maas-rack/README.md` の「SSH によるシャットダウン」。
 - **Control-plane** (`k8s2/`): `join_info` pipes the sudo password via SSH (`echo '$sudo_pass' | sudo -S bash -c '...'`) to run two commands: `kubeadm init phase upload-certs --upload-certs` (gets `certificate_key`) and `kubeadm token create --print-join-command`. Join additionally uses `--control-plane --certificate-key`.
 
 ### Heredoc quoting rules
