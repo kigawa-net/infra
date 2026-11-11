@@ -150,6 +150,15 @@ resource "cloudflare_record" "ssh" {
   proxied = false
 }
 
+resource "cloudflare_record" "codingcraft_dev" {
+  zone_id = var.zone_id
+  name    = "codingcraft-dev"
+  type    = "CNAME"
+  content = "k8s.kigawa.net"
+  ttl     = 1
+  proxied = false
+}
+
 # --- MX ---
 
 resource "cloudflare_record" "mx" {
@@ -213,20 +222,42 @@ resource "cloudflare_record" "dkim" {
   ttl     = 1
 }
 
-# --- Zero Trust / Access Gateway Beacon ---
+## --- Zero Trust / Access Gateway Beacon ---
+##
+## Cloudflare Zero Trust Access Gateway が WASM ファイルに Beacon を自動注入し、
+## ブラウザで "Uncaught (in promise) Error: Failed to fetch a WASM file: 404"
+## や "Uncaught (in promise) JsException: TypeError: Failed to fetch" が
+## 発生していたため、Beacon を無効化する。
+##
+## 参照: https://developers.cloudflare.com/cloudflare-one/operations/load-balance/beacon/
+#resource "cloudflare_zero_trust_settings" "kigawa_net" {
+#  account_id = var.account_id
 #
-# Cloudflare Zero Trust Access Gateway が WASM ファイルに Beacon を自動注入し、
-# ブラウザで "Uncaught (in promise) Error: Failed to fetch a WASM file: 404"
-# や "Uncaught (in promise) JsException: TypeError: Failed to fetch" が
-# 発生していたため、Beacon を無効化する。
-#
-# 参照: https://developers.cloudflare.com/cloudflare-one/operations/load-balance/beacon/
-resource "cloudflare_zero_trust_settings" "kigawa_net" {
-  account_id = var.account_id
+#  settings {
+#    beacon {
+#      enabled = false
+#    }
+#  }
+#}
 
-  settings {
-    beacon {
-      enabled = false
-    }
-  }
+# --- OpenBao node A records ---
+
+resource "cloudflare_record" "bao_02" {
+  zone_id = var.zone_id
+  name    = "bao-02"
+  type    = "A"
+  content = "207.231.111.196"
+  ttl     = 1
+  proxied = false
+}
+
+resource "cloudflare_record" "bao_03" {
+  zone_id = var.zone_id
+  name    = "bao-03"
+  type    = "A"
+  content = "143.203.220.195"
+  ttl     = 1
+  proxied = false
+}
+
 }
