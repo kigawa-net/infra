@@ -78,7 +78,7 @@ variable "credential_file" {
   nullable    = true
 
   validation {
-    condition     = var.credential_file == null || startswith(var.credential_file, "/")
+    condition     = var.credential_file == null || (can(var.credential_file) && startswith(var.credential_file, "/"))
     error_message = "credential_file は絶対パスで指定する。"
   }
 }
