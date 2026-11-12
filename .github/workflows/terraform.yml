@@ -355,6 +355,42 @@ jobs:
           fi
           ./${{ matrix.dir }}/run.sh ${{ matrix.module }} apply -input=false tfplan
 
+      - name: BGP 隣接状態を確認
+        if: >
+          github.event_name == 'push' ||
+          (github.event_name == 'workflow_dispatch' && inputs.command == 'apply')
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        # ionos/k8s4 の apply 後、easytier と FRR が安定してから BGP 確認を行う
+        run: |
+          # tfplan が存在しない(変更なし)場合は apply がスキップされたので BGP 確認もスキップ
+          if [ ! -f "${{ matrix.dir }}/${{ matrix.module }}/tfplan" ]; then
+            echo "変更なし(tfplan が生成されていない)のため BGP 確認をスキップします。"
+            exit 0
+          fi
+          if [[ "${{ matrix.module }}" != "ionos" && "${{ matrix.module }}" != "k8s4" ]]; then
+            echo "${{ matrix.module }} is not ionos or k8s4; skipping BGP check."
+            exit 0
+          fi
+          # easytier と FRR が安定するまで待つ
+          echo "Waiting for easytier and FRR to stabilize..."
+          sleep 15
+          source "$GITHUB_WORKSPACE/lib/bws-retry.sh"
+          # SSH 秘密鍵を取得
+          SSH_PRIVATE_KEY=$(bws_get_value 5eeb43e8-4973-47f8-8bfe-b4ce0047b568)
+          # ionos の SSH 公開IP
+          IONOS_IP="74.208.55.86"
+          # k8s4 のプライベートIP（トンネル経由）
+          K8S4_IP="10.0.0.120"
+          if [[ "${{ matrix.module }}" == "ionos" ]]; then
+            echo "=== ionos BGP Summary ==="
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i <(echo "$SSH_PRIVATE_KEY") root@"$IONOS_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on ionos"
+          else
+            echo "=== k8s4 BGP Summary ==="
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i <(echo "$SSH_PRIVATE_KEY") ubuntu@"$K8S4_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on k8s4"
+          fi
+
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
         if: always() && matrix.runner == 'ubuntu-latest'
         run: sudo wg-quick down wg0 || true
