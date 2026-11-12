@@ -397,6 +397,8 @@ jobs:
             echo "=== ionos BGP Summary ==="
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" root@"$IONOS_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on ionos"
           else
+            echo "=== k8s4 sudo -V (requiretty check) ==="
+            ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" kigawa@"$K8S4_IP" 'sudo -V 2>&1 | grep -i requiretty || echo "requiretty not found in sudo -V"' 2>&1
             echo "=== k8s4 BGP Summary ==="
             echo "DEBUG: BGP_SUDO_PASSWORD length=${#BGP_SUDO_PASSWORD}" >&2
             printf '%s\n' "$BGP_SUDO_PASSWORD" | ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" kigawa@"$K8S4_IP" 'sudo -S -p "" vtysh -c "show bgp summary"' 2>&1 || echo "vtysh command failed on k8s4"
