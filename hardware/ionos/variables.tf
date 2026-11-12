@@ -533,9 +533,9 @@ variable "easytier_overlay_k8s4_address" {
 }
 
 variable "easytier_interface_name" {
-  description = "EasyTier の TUN インターフェース名(update-source 用)。EasyTier の instance_name に合わせる"
+  description = "EasyTier の TUN インターフェース名(update-source 用)。通常は tun0"
   type        = string
-  default     = "kigawa-net"
+  default     = "tun0"
 }
 
 variable "easytier_peers" {
