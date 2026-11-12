@@ -379,7 +379,7 @@ jobs:
           sleep 15
           source "$GITHUB_WORKSPACE/lib/bws-retry.sh"
           # SSH 秘密鍵を取得
-          SSH_PRIVATE_KEY=$(bws_get_value 5eeb43e8-4973-47f8-8bfe-b4ce0047b568)
+          SSH_PRIVATE_KEY=$(bws_get_value 1ebd34bf-bfb2-445b-b826-b48f006eba0c)
           # ionos の SSH 公開IP
           IONOS_IP="74.208.55.86"
           # k8s4 のプライベートIP（トンネル経由）
