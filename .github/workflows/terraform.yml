@@ -402,6 +402,8 @@ jobs:
             echo "=== k8s4 BGP Summary ==="
             echo "DEBUG: BGP_SUDO_PASSWORD length=${#BGP_SUDO_PASSWORD}" >&2
             echo "DEBUG: BGP_SUDO_PASSWORD base64=$(printf '%s' "$BGP_SUDO_PASSWORD" | base64)" >&2
+            echo "=== k8s4 sudo -l (permissions check) ==="
+            printf '%s\n' "$BGP_SUDO_PASSWORD" | ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" kigawa@"$K8S4_IP" 'sudo -S -p "" sudo -l' 2>&1 || echo "sudo -l command failed on k8s4"
             printf '%s\n' "$BGP_SUDO_PASSWORD" | ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" kigawa@"$K8S4_IP" 'sudo -S -p "" vtysh -c "show bgp summary"' 2>&1 || echo "vtysh command failed on k8s4"
             fi
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
