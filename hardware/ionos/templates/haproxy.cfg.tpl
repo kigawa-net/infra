@@ -25,12 +25,12 @@ frontend https_in
 backend http_backend
     mode tcp
     option tcp-check
-    server web1 ${inuyama_ingress_vip}:80 check
+    server web1 ${inuyama_ingress_vip}:${inuyama_ingress_port} check
 
 backend https_backend
     mode tcp
     option tcp-check
-    server web1 ${inuyama_ingress_vip}:443 check
+    server web1 ${inuyama_ingress_vip}:${inuyama_ingress_port} check
 
 %{ endif ~}
 %{ if minecraft_backend_vip != "" ~}

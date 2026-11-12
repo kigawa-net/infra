@@ -244,7 +244,8 @@ locals {
 
   haproxy_config = templatefile("${path.module}/templates/haproxy.cfg.tpl", {
     inuyama_ingress_vip   = var.inuyama_ingress_vip
-    minecraft_backend_vip = var.minecraft_backend_vip
+    minecraft_backend_vip    = var.minecraft_backend_vip
+    inuyama_ingress_port    = var.inuyama_ingress_port
   })
 
   # このスクリプト自体の内容をtriggersでハッシュ追跡できるよう、
