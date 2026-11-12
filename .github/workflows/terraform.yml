@@ -364,8 +364,9 @@ jobs:
           BW_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         # ionos/k8s4 の apply 後、easytier と FRR が安定してから BGP 確認を行う
         run: |
-          # tfplan が存在しない(変更なし)場合は apply がスキップされたので BGP 確認もスキップ
-          if [ ! -f "${{ matrix.dir }}/${{ matrix.module }}/tfplan" ]; then
+          # pushトリガーの場合はtfplanが存在しない(変更なし)場合はBGP確認をスキップ
+          # workflow_dispatchの場合は常にBGP確認を行う
+          if [ "${{ github.event_name }}" == "push" ] && [ ! -f "${{ matrix.dir }}/${{ matrix.module }}/tfplan" ]; then
             echo "変更なし(tfplan が生成されていない)のため BGP 確認をスキップします。"
             exit 0
           fi
