@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: latte
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: latte-ai
+  namespace: latte
+data:
+  LATTE_STT: faster-whisper
+  LATTE_STT_DEVICE: cpu
+  LATTE_STT_MODEL: small
+  LATTE_STT_COMPUTE_TYPE: int8
+  LATTE_LLM: llama-cpp
+  LATTE_LLM_URL: http://llama-cpp.latte.svc.cluster.local:8080
+  LATTE_TTS: irodori
+  LATTE_TTS_URL: http://irodori-tts.latte.svc.cluster.local:8095
+  HF_HOME: /home/latte/.cache/huggingface

@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latte-ai
+  namespace: latte
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: latte-ai
+  template:
+    metadata:
+      labels:
+        app: latte-ai
+    spec:
+      containers:
+        - name: latte-ai
+          image: ghcr.io/sekaisaikyo/latte-ai:latest
+          imagePullPolicy: Always
+          command: ["uv", "run", "python", "-m", "latte_ai", "serve"]
+          args:
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8765"
+            - --debug-ui
+            - --debug-ui-port
+            - "8766"
+          envFrom:
+            - configMapRef:
+                name: latte-ai
+          env:
+            - name: LATTE_LLM_URL
+              value: "$(LATTE_LLM_URL)"
+            - name: LATTE_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: latte-ai-auth
+                  key: LATTE_AUTH_TOKEN
+          ports:
+            - name: websocket
+              containerPort: 8765
+            - name: debug-http
+              containerPort: 8766
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          startupProbe:
+            tcpSocket:
+              port: websocket
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: websocket
+            periodSeconds: 10
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/latte/.cache/huggingface
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      volumes:
+        - name: model-cache
+          emptyDir: {}
