@@ -19,15 +19,6 @@ data "external" "ssh_key" {
   ]
 }
 
-# Write SSH key to a temp file so Terraform SSH provisioner can read it.
-# The Go SSH client fails to parse the key string directly from data.external.
-resource "local_file" "ssh_key" {
-  count           = var.enabled ? 1 : 0
-  content         = data.external.ssh_key[0].result["baws_result_value"]
-  filename        = "/tmp/bao-02-ssh-key"
-  file_permission = "0600"
-}
-
 data "external" "sudo_password" {
   count = var.enabled ? 1 : 0
 
@@ -94,11 +85,9 @@ resource "terraform_data" "node_check" {
 module "wireguard" {
   source     = "../modules/wireguard"
   count      = var.enabled ? 1 : 0
-  depends_on = [local_file.ssh_key]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   wireguard_address  = "${var.wg_address}/32"
@@ -116,11 +105,9 @@ module "wireguard" {
 module "openbao_node" {
   source     = "../modules/openbao-node"
   count      = local.node_enabled ? 1 : 0
-  depends_on = [local_file.ssh_key, module.wireguard, terraform_data.node_check]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   node_id              = var.node_id
@@ -141,11 +128,9 @@ module "openbao_node" {
 module "journald_limit" {
   source     = "../modules/journald-limit"
   count      = var.enabled ? 1 : 0
-  depends_on = [local_file.ssh_key]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 }
 
@@ -154,11 +139,9 @@ module "journald_limit" {
 module "host_hardening" {
   source     = "../modules/host-hardening"
   count      = var.enabled ? 1 : 0
-  depends_on = [local_file.ssh_key, module.wireguard]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   # WireGuard のハブ(IONOS)。wireguard_server_endpoint(host:port)のホスト部分
@@ -183,11 +166,9 @@ data "external" "easytier_network_secret" {
 module "easytier" {
   source     = "../modules/easytier"
   count      = var.enabled && var.easytier_enabled ? 1 : 0
-  depends_on = [local_file.ssh_key, module.host_hardening]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   easytier_version    = var.easytier_version
@@ -205,17 +186,14 @@ module "easytier" {
   overlay_allow    = var.easytier_overlay_allow
 }
 
-
 # OpenBao の bao-02 と、Inuyama の control-plane(overlay 上の eBGP)。WireGuard の経路は変えず、10.0.0.0/24 と 192.168.1.0/24 を overlay から学ぶ。
 # 設計と戻し方: hardware/modules/frr-overlay-peer/README.md。frr_overlay_enabled = false のときは何も作らない。
 module "frr_overlay" {
   source     = "../modules/frr-overlay-peer"
   count      = var.enabled && var.frr_overlay_enabled ? 1 : 0
-  depends_on = [local_file.ssh_key, module.easytier]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   router_id       = var.openbao_address
@@ -229,11 +207,9 @@ module "frr_overlay" {
 module "gre_overlay" {
   source     = "../modules/gre-overlay-tunnel"
   count      = var.enabled && var.gre_overlay_enabled ? 1 : 0
-  depends_on = [local_file.ssh_key, module.easytier]
 
   host                 = var.host
   ssh_user             = var.ssh_user
-  ssh_private_key_file = local_file.ssh_key[0].filename
   sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   tunnels = [

@@ -61,8 +61,3 @@ variable "extra_post_up" {
   default     = []
 }
 
-variable "ssh_private_key_file" {
-  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
-  type        = string
-  sensitive   = true
-}

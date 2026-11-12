@@ -28,7 +28,7 @@ resource "null_resource" "wireguard" {
     type        = "ssh"
     host        = var.host
     user        = var.ssh_user
-    private_key = file(var.ssh_private_key_file)
+    agent = true
   }
 
   provisioner "file" {

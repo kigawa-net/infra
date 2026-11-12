@@ -44,8 +44,3 @@ variable "runtime_max_days" {
   }
 }
 
-variable "ssh_private_key_file" {
-  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
-  type        = string
-  sensitive   = true
-}
