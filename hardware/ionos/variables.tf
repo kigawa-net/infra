@@ -141,6 +141,12 @@ variable "inuyama_ingress_vip" {
   default     = "10.0.0.240"
 }
 
+variable "inuyama_ingress_port" {
+  description = "Destination port for Inuyama ingress HTTP/HTTPS forwarding (e.g., Istio ingress gateway nodePort)."
+  type        = string
+  default     = "80"
+}
+
 variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for ionos TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
