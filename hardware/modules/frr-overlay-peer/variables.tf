@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -60,4 +55,10 @@ variable "import_prefixes" {
     condition     = alltrue([for p in var.import_prefixes : can(cidrhost(p, 0))])
     error_message = "import_prefixes は 10.0.0.0/24 のような CIDR の形式にすること。"
   }
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

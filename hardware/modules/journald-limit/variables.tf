@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -47,4 +42,10 @@ variable "runtime_max_days" {
     condition     = var.runtime_max_days > 0
     error_message = "runtime_max_days は 1 以上の整数で指定する。"
   }
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

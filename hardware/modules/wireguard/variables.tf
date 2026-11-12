@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -64,4 +59,10 @@ variable "extra_post_up" {
   description = "wg-quick の PostUp に足すコマンド(1 行ずつ)。table_off = true のとき、AllowedIPs の自動経路の代わりに、必要な経路を足すために使う。%i はインターフェース名に展開される"
   type        = list(string)
   default     = []
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

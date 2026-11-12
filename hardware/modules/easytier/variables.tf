@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -131,4 +126,10 @@ variable "overlay_allow" {
     condition     = alltrue([for r in var.overlay_allow : can(regex("^[0-9]+/(tcp|udp)$", r))])
     error_message = "overlay_allow は 22/tcp のような形式で指定する。"
   }
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

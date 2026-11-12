@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -43,4 +38,10 @@ variable "extra_interfaces" {
   description = "tcp_ports_on_wireguard を、wireguard_interface に加えて許可するインターフェース(EasyTier のオーバーレイ tun0 など)。Raft を、ハブを通らない経路(オーバーレイ)でも通せるようにする。存在しないインターフェースでも、ufw のルールは作れる"
   type        = list(string)
   default     = []
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

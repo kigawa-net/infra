@@ -6,11 +6,6 @@ variable "ssh_user" {
   type = string
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
-
 variable "sudo_password" {
   type      = string
   sensitive = true
@@ -68,4 +63,10 @@ variable "overlay_iface" {
     condition     = can(regex("^[a-zA-Z0-9._-]{1,15}$", var.overlay_iface))
     error_message = "overlay_iface は、インターフェース名(15 文字以内)にする。"
   }
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
 }

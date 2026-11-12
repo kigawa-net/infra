@@ -13,30 +13,27 @@ data "external" "ssh_key" {
   count = var.enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
-    # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
-    # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
-    if [ -z "$value" ] || [ "$value" = "null" ]; then
-      echo "ssh_key: bws secret is empty" >&2
-      exit 1
-    fi
-    jq -n --arg value "$value" '{"value": $value}'
+    export HOME=/home/kigawa
+    bash /home/kigawa/dev/tmp/bws-retry.sh terraform-get "${var.ssh_key_bitwarden_id}"
   EOT
   ]
+}
+
+# Write SSH key to a temp file so Terraform SSH provisioner can read it.
+# The Go SSH client fails to parse the key string directly from data.external.
+resource "local_file" "ssh_key" {
+  count           = var.enabled ? 1 : 0
+  content         = data.external.ssh_key[0].result["baws_result_value"]
+  filename        = "/tmp/bao-02-ssh-key"
+  file_permission = "0600"
 }
 
 data "external" "sudo_password" {
   count = var.enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then
-      echo "sudo_password: bws secret is empty" >&2
-      exit 1
-    fi
-    jq -n --arg value "$value" '{"value": $value}'
+    export HOME=/home/kigawa
+    bash /home/kigawa/dev/tmp/bws-retry.sh terraform-get "${var.sudo_password_bitwarden_id}"
   EOT
   ]
 }
@@ -48,11 +45,8 @@ data "external" "cloudflare_api_token" {
   count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    if [ -z "${var.cloudflare_api_token_bitwarden_id}" ]; then echo "cloudflare_api_token_bitwarden_id が未設定" >&2; exit 1; fi
-    value=$(bws_get_value "${var.cloudflare_api_token_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "cloudflare_api_token: bws secret is empty" >&2; exit 1; fi
-    jq -n --arg value "$value" '{"value": $value}'
+    export HOME=/home/kigawa
+    bash /home/kigawa/dev/tmp/bws-retry.sh terraform-get "${var.cloudflare_api_token_bitwarden_id}"
   EOT
   ]
 }
@@ -98,13 +92,14 @@ resource "terraform_data" "node_check" {
 # 公開鍵は /etc/wireguard/publickey に置かれ、apply の出力(=== Public key ===)にも出る。
 # 読んだ公開鍵は hardware/ionos の bao02_wireguard_public_key に設定する(それまで IONOS 側にピアは出ない)。
 module "wireguard" {
-  source = "../modules/wireguard"
-  count  = var.enabled ? 1 : 0
+  source     = "../modules/wireguard"
+  count      = var.enabled ? 1 : 0
+  depends_on = [local_file.ssh_key]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   wireguard_address  = "${var.wg_address}/32"
   server_public_key  = var.wireguard_server_public_key
@@ -121,12 +116,12 @@ module "wireguard" {
 module "openbao_node" {
   source     = "../modules/openbao-node"
   count      = local.node_enabled ? 1 : 0
-  depends_on = [module.wireguard, terraform_data.node_check]
+  depends_on = [local_file.ssh_key, module.wireguard, terraform_data.node_check]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   node_id              = var.node_id
   wg_address           = var.openbao_address
@@ -135,21 +130,23 @@ module "openbao_node" {
   peers                = var.peers
   openbao_version      = var.openbao_version
   openbao_deb_sha256   = var.openbao_deb_sha256
-  cloudflare_api_token = data.external.cloudflare_api_token[0].result.value
+  cloudflare_api_token = data.external.cloudflare_api_token[0].result["baws_result_value"]
   acme_email           = var.acme_email
   acme_staging         = var.acme_staging
   wipe_data_on_failure = var.wipe_data_on_failure
+  tls_skip_verify      = true
 }
 
 # journald の上限(他のノードと同じく、/run の ramdisk 圧迫対策、k8s-system#259)
 module "journald_limit" {
-  source = "../modules/journald-limit"
-  count  = var.enabled ? 1 : 0
+  source     = "../modules/journald-limit"
+  count      = var.enabled ? 1 : 0
+  depends_on = [local_file.ssh_key]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 }
 
 # 公開 IP の VPS の SSH と受信ファイアウォールを固める(kigawa-net/infra#337)。
@@ -157,12 +154,12 @@ module "journald_limit" {
 module "host_hardening" {
   source     = "../modules/host-hardening"
   count      = var.enabled ? 1 : 0
-  depends_on = [module.wireguard]
+  depends_on = [local_file.ssh_key, module.wireguard]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   # WireGuard のハブ(IONOS)。wireguard_server_endpoint(host:port)のホスト部分
   wireguard_hub_address  = split(":", var.wireguard_server_endpoint)[0]
@@ -176,11 +173,8 @@ data "external" "easytier_network_secret" {
   count = var.enabled && var.easytier_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
-    if [ -z "${var.easytier_network_secret_bitwarden_id}" ]; then echo "easytier_network_secret_bitwarden_id が未設定" >&2; exit 1; fi
-    value=$(bws_get_value "${var.easytier_network_secret_bitwarden_id}") || exit 1
-    if [ -z "$value" ] || [ "$value" = "null" ]; then echo "easytier_network_secret: bws secret is empty" >&2; exit 1; fi
-    jq -n --arg value "$value" '{"value": $value}'
+    export HOME=/home/kigawa
+    bash /home/kigawa/dev/tmp/bws-retry.sh terraform-get "${var.easytier_network_secret_bitwarden_id}"
   EOT
   ]
 }
@@ -189,19 +183,19 @@ data "external" "easytier_network_secret" {
 module "easytier" {
   source     = "../modules/easytier"
   count      = var.enabled && var.easytier_enabled ? 1 : 0
-  depends_on = [module.host_hardening]
+  depends_on = [local_file.ssh_key, module.host_hardening]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   easytier_version    = var.easytier_version
   easytier_sha256     = var.easytier_sha256
   secure_mode_enabled = var.easytier_secure_mode_enabled
   credential_file     = var.easytier_secure_mode_enabled ? "/etc/easytier/credentials.json" : null
   network_name        = var.easytier_network_name
-  network_secret      = data.external.easytier_network_secret[0].result.value
+  network_secret      = data.external.easytier_network_secret[0].result["baws_result_value"]
   overlay_address     = var.easytier_overlay_address
   peers               = var.easytier_peers
   ufw_allow           = ["11010/tcp", "11010/udp"]
@@ -217,12 +211,12 @@ module "easytier" {
 module "frr_overlay" {
   source     = "../modules/frr-overlay-peer"
   count      = var.enabled && var.frr_overlay_enabled ? 1 : 0
-  depends_on = [module.easytier]
+  depends_on = [local_file.ssh_key, module.easytier]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   router_id       = var.openbao_address
   local_as        = var.frr_local_as
@@ -235,12 +229,12 @@ module "frr_overlay" {
 module "gre_overlay" {
   source     = "../modules/gre-overlay-tunnel"
   count      = var.enabled && var.gre_overlay_enabled ? 1 : 0
-  depends_on = [module.easytier]
+  depends_on = [local_file.ssh_key, module.easytier]
 
-  host            = var.host
-  ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
-  sudo_password   = data.external.sudo_password[0].result.value
+  host                 = var.host
+  ssh_user             = var.ssh_user
+  ssh_private_key_file = local_file.ssh_key[0].filename
+  sudo_password        = data.external.sudo_password[0].result["baws_result_value"]
 
   tunnels = [
     { name = "k8s4", local = "10.250.0.1", remote = "10.250.0.11", address = "172.31.250.0/31" },

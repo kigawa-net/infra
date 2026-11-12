@@ -151,7 +151,7 @@ resource "null_resource" "openbao_node" {
     type        = "ssh"
     host        = var.host
     user        = var.ssh_user
-    private_key = var.ssh_private_key
+    private_key = file(var.ssh_private_key_file)
   }
 
   provisioner "remote-exec" {

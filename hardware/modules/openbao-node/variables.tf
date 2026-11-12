@@ -8,10 +8,6 @@ variable "ssh_user" {
   default = "kigawa"
 }
 
-variable "ssh_private_key" {
-  type      = string
-  sensitive = true
-}
 
 variable "sudo_password" {
   type      = string
@@ -147,4 +143,16 @@ variable "after_units" {
   description = "openbao.service が、起動の順序を待つ systemd の unit(After= と Wants=)。listener が bind するアドレスを持つインターフェースの unit を入れる(WireGuard なら wg-quick@wg0.service、EasyTier のオーバーレイなら easytier.service)"
   type        = list(string)
   default     = ["wg-quick@wg0.service"]
+}
+
+variable "ssh_private_key_file" {
+  description = "Path to SSH private key file for connection (alternative to ssh_private_key string)"
+  type        = string
+  sensitive   = true
+}
+
+variable "tls_skip_verify" {
+  description = "127.0.0.1:8200 listener の TLS 検証をスキップするか。true のとき、同じノード上の bao CLI が自己署名証明書をスキップできる。既定は false"
+  type        = bool
+  default     = false
 }
