@@ -23,10 +23,11 @@ locals {
   retry_peers = [for p in var.peers : p if p.fqdn != var.fqdn]
 
   config = templatefile("${path.module}/files/openbao.hcl.tpl", {
-    fqdn       = var.fqdn
-    node_id    = var.node_id
-    wg_address = var.wg_address
-    peers      = local.retry_peers
+    fqdn           = var.fqdn
+    node_id        = var.node_id
+    wg_address     = var.wg_address
+    peers          = local.retry_peers
+    tls_skip_verify = var.tls_skip_verify
   })
 
   # /etc/hosts の管理ブロック(自分と全ピアの fqdn を、WireGuard の IP に向ける)
@@ -53,6 +54,13 @@ locals {
     Restart=on-failure
     RestartSec=5
     TimeoutStopSec=60
+
+    # bao CLI 用: 同じノード上の bao CLI が https://127.0.0.1:8200 に接続するための環境変数
+    # BAO_ADDR は OpenBao クライアントが接続先として使う。localhost への TLS 接続は
+    # BAO_TLS_SERVER_NAME で検証を迂回(自己署名証明書のため、FQDN を指定する)
+    Environment="BAO_ADDR=https://127.0.0.1:8200"
+    Environment="BAO_TLS_SERVER_NAME=${var.fqdn}"
+    Environment="TLS_SKIP_VERIFY=true"
 
     # 権限の縮小(ホストを侵害されたときの被害を抑える)
     NoNewPrivileges=yes

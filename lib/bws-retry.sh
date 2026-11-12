@@ -17,6 +17,12 @@
 #   - 失敗時は return 1 で、標準出力には何も出さない。呼び出し側は `|| exit 1` などで止めること
 #     (`export X=$(...)` は失敗が隠れるので、代入してから export する)。
 #   - シークレットの値は標準エラーにも出さない。
+#   - BWS_ACCESS_TOKEN が未設定のときは ~/dev/bbs から自動でトークンを読み込む。
+
+# BWS_ACCESS_TOKEN のフォールバック(~/dev/bws から自動読み込み)
+if [ -z "${BWS_ACCESS_TOKEN:-}" ] && [ -f ~/dev/bws ]; then
+  export BWS_ACCESS_TOKEN="$(cat ~/dev/bws 2>/dev/null)"
+fi
 
 bws_get_value() {
   local id="${1:?bws_get_value: secret id is required}"
@@ -27,7 +33,7 @@ bws_get_value() {
   errfile=$(mktemp) || return 1
 
   for ((attempt = 1; attempt <= tries; attempt++)); do
-    if out=$(bws secret get "$id" --color no 2>"$errfile"); then
+    if out=$(bws -t "$BWS_ACCESS_TOKEN" secret get "$id" --color no 2>"$errfile"); then
       val=$(printf '%s' "$out" | jq -r '.value // empty' 2>/dev/null) || val=""
       if [ -n "$val" ]; then
         rm -f "$errfile"

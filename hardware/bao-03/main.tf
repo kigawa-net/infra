@@ -13,7 +13,7 @@ data "external" "ssh_key" {
   count = var.enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
+    export BWS_ACCESS_TOKEN="$(cat ~/dev/bws)"; source "${path.module}/../../lib/bws-retry.sh"
     value=$(bws_get_value "${var.ssh_key_bitwarden_id}") || exit 1
     # bwsが503等で空/nullを返すと、空の値のまま後続のSSH/sudoに進んでしまう
     # (2026-10-03のionos障害と同じ構造)。空ならエラーにしてplan/applyを止める。
@@ -30,7 +30,7 @@ data "external" "sudo_password" {
   count = var.enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
+    export BWS_ACCESS_TOKEN="$(cat ~/dev/bws)"; source "${path.module}/../../lib/bws-retry.sh"
     value=$(bws_get_value "${var.sudo_password_bitwarden_id}") || exit 1
     if [ -z "$value" ] || [ "$value" = "null" ]; then
       echo "sudo_password: bws secret is empty" >&2
@@ -48,7 +48,7 @@ data "external" "cloudflare_api_token" {
   count = local.node_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
+    export BWS_ACCESS_TOKEN="$(cat ~/dev/bws)"; source "${path.module}/../../lib/bws-retry.sh"
     if [ -z "${var.cloudflare_api_token_bitwarden_id}" ]; then echo "cloudflare_api_token_bitwarden_id が未設定" >&2; exit 1; fi
     value=$(bws_get_value "${var.cloudflare_api_token_bitwarden_id}") || exit 1
     if [ -z "$value" ] || [ "$value" = "null" ]; then echo "cloudflare_api_token: bws secret is empty" >&2; exit 1; fi
@@ -103,7 +103,6 @@ module "wireguard" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   wireguard_address  = "${var.wg_address}/32"
@@ -125,7 +124,6 @@ module "openbao_node" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   node_id              = var.node_id
@@ -150,7 +148,6 @@ module "journald_limit" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 }
 
@@ -163,7 +160,6 @@ module "host_hardening" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   # WireGuard のハブ(IONOS)。wireguard_server_endpoint(host:port)のホスト部分
@@ -178,7 +174,7 @@ data "external" "easytier_network_secret" {
   count = var.enabled && var.easytier_enabled ? 1 : 0
 
   program = ["bash", "-c", <<-EOT
-    source "${path.module}/../../lib/bws-retry.sh"
+    export BWS_ACCESS_TOKEN="$(cat ~/dev/bws)"; source "${path.module}/../../lib/bws-retry.sh"
     if [ -z "${var.easytier_network_secret_bitwarden_id}" ]; then echo "easytier_network_secret_bitwarden_id が未設定" >&2; exit 1; fi
     value=$(bws_get_value "${var.easytier_network_secret_bitwarden_id}") || exit 1
     if [ -z "$value" ] || [ "$value" = "null" ]; then echo "easytier_network_secret: bws secret is empty" >&2; exit 1; fi
@@ -195,7 +191,6 @@ module "easytier" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   easytier_version    = var.easytier_version
@@ -222,7 +217,6 @@ module "frr_overlay" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   router_id       = var.openbao_address
@@ -240,7 +234,6 @@ module "gre_overlay" {
 
   host            = var.host
   ssh_user        = var.ssh_user
-  ssh_private_key = data.external.ssh_key[0].result.value
   sudo_password   = data.external.sudo_password[0].result.value
 
   tunnels = [
