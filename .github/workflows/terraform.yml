@@ -400,7 +400,7 @@ jobs:
             ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" root@"$IONOS_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on ionos"
           else
             echo "=== k8s4 BGP Summary ==="
-            sshpass -p "$BGP_SUDO_PASSWORD" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" kigawa@"$K8S4_IP" "sudo -S vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on k8s4"
+            SSHPASS="$BGP_SUDO_PASSWORD" sshpass -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" ssh kigawa@"$K8S4_IP" "sudo -S vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on k8s4"
             fi
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
         if: always() && matrix.runner == 'ubuntu-latest'
