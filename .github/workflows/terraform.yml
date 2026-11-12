@@ -145,10 +145,11 @@ jobs:
           # issue #100/#182)に依存しないよう、全モジュールをubuntu-latestにする。
           # 新しいモジュールを追加して、192.168.1.xなどトンネルで届かないホストに接続する場合は、
           # ここに足さずにarc-runner-set-infraのままにするか、経路を追加すること。
+          # platform/ 配下は Keycloak・Bitwarden・R2 などの公開 API だけを使うので、常に ubuntu-latest にする。
           GITHUB_HOSTED_MODULES="k8s1 k8s2 k8s4 ionos k8s-worker1 k8s-worker3 k8s-worker4 k8s-worker5 cloudflare bao-02 bao-03"
           MODULES=$(echo "$MODULES" | jq -c --arg gh "$GITHUB_HOSTED_MODULES" '
             ($gh | split(" ")) as $gh_list
-            | map(. + {runner: (if (.module as $m | $gh_list | index($m)) then "ubuntu-latest" else "arc-runner-set-infra" end)})
+            | map(. + {runner: (if (.dir == "platform" or (.module as $m | $gh_list | index($m))) then "ubuntu-latest" else "arc-runner-set-infra" end)})
           ')
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
           echo "検出されたモジュール: $MODULES"
