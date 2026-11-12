@@ -383,13 +383,18 @@ jobs:
           IONOS_IP="74.208.55.86"
           # k8s4 のプライベートIP（トンネル経由）
           K8S4_IP="10.0.0.120"
+          # SSH鍵を一時ファイルに書き出し（process substitutionはGH Actionsで不安定）
+          SSH_KEY_FILE=$(mktemp)
+          echo "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+          chmod 600 "$SSH_KEY_FILE"
           if [[ "${{ matrix.module }}" == "ionos" ]]; then
             echo "=== ionos BGP Summary ==="
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i <(echo "$SSH_PRIVATE_KEY") root@"$IONOS_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on ionos"
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" root@"$IONOS_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on ionos"
           else
             echo "=== k8s4 BGP Summary ==="
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i <(echo "$SSH_PRIVATE_KEY") ubuntu@"$K8S4_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on k8s4"
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$SSH_KEY_FILE" ubuntu@"$K8S4_IP" "vtysh -c 'show bgp summary'" 2>&1 || echo "vtysh command failed on k8s4"
           fi
+          rm -f "$SSH_KEY_FILE"
 
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
         if: always() && matrix.runner == 'ubuntu-latest'
