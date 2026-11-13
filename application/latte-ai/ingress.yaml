@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: latte-ai
+  namespace: latte
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - latte-dev.kigawa.net
+      secretName: latte-dev-tls
+  rules:
+    - host: latte-dev.kigawa.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: latte-ai
+                port:
+                  number: 8765
