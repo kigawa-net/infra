@@ -220,7 +220,9 @@ jobs:
       # 届かなければ(オーバーレイが落ちているときなど)、次の WireGuard のステップにフォールバックする。
       - name: EasyTier のオーバーレイに参加する (10.0.0.0/24 へ届くため)
         id: easytier
-        if: matrix.runner == 'ubuntu-latest'
+        # 既定は無効。リポジトリ変数 CI_EASYTIER が 'true' のときだけ動く(2026-11-13 の障害のため。k8s4 の easytier_proxy_network を参照)。
+        # 無効のとき(スキップ)は、次の WireGuard の手順が使われる。
+        if: matrix.runner == 'ubuntu-latest' && vars.CI_EASYTIER == 'true'
         continue-on-error: true
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}

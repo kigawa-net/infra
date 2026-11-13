@@ -416,15 +416,22 @@ variable "easytier_peers" {
 }
 
 variable "easytier_proxy_network" {
-  description = "k8s4 が EasyTier のサブネットプロキシで、Overlay 上に経路を提供するネットワーク。CI(GitHub のランナー)が、オーバーレイ経由で、control-plane(10.0.0.0/24)に届くために使う。空にすると、CI は WireGuard にフォールバックする"
+  description = <<-EOT
+    k8s4 が EasyTier のサブネットプロキシで、Overlay 上に経路を提供するネットワーク。既定は空。
+    注意(2026-11-13 の障害): 空でないと、EasyTier の全ピア(ionos・bao・CI のランナー)が、
+    `<CIDR> dev tun0 proto static metric 65535` の経路を、カーネルに入れる。FRR はこれを「kernel、distance 0、best」として採用し、
+    BGP(GRE 経由、distance 20)の経路を負かす。ionos から 10.0.0.240 への通信が、EasyTier のプロキシ(TCP は k8s4 の
+    overlay-firewall で落ちる)に回り、Cloudflare 経由の *.kigawa.net が全部 525 になった(10.0.0.0/24 を入れたとき)。
+    CI を EasyTier 経由にするなら、ionos・bao が使わない /32(CI が SSH する 10.0.0.103・10.0.0.120・10.0.0.140 だけ)に絞ること。
+  EOT
   type        = list(string)
-  default     = ["10.0.0.0/24"]
+  default     = []
 }
 
 variable "easytier_ci_allow_sources" {
-  description = "CI(GitHub のランナー)の EasyTier の Overlay のアドレス。ここからの TCP を、k8s4 の INPUT の先頭で許可する(サブネットプロキシ経由で 10.0.0.0/24 の SSH に届くため。.github/workflows/terraform.yml の ipv4 と同じ値にする)。空にすると、CI は WireGuard にフォールバックする"
+  description = "CI(GitHub のランナー)の EasyTier の Overlay のアドレス。ここからの TCP を、k8s4 の INPUT の先頭で許可する(サブネットプロキシ経由の SSH 用)。サブネットプロキシ(easytier_proxy_network)を使うときだけ指定する。既定は空(許可なし)"
   type        = list(string)
-  default     = ["10.250.0.240"]
+  default     = []
 }
 
 variable "easytier_overlay_allow" {
