@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: latte-ai
-          image: ghcr.io/sekaisaikyo/latte-ai:latest
-          imagePullPolicy: Always
+          image: harbor.kigawa.net/latte-ai/latte-ai:latest
+          imagePullPolicy: IfNotPresent
           command: ["uv", "run", "python", "-m", "latte_ai", "serve"]
           args:
             - --host
