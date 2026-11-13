@@ -147,6 +147,12 @@ variable "inuyama_ingress_port" {
   default     = "80"
 }
 
+variable "inuyama_ingress_https_port" {
+  description = "HTTPS(TCP 443、TLS 素通し)の転送先ポート。TLS を受けるポート(443)でなければ、Cloudflare の TLS が失敗して 525 になる。"
+  type        = string
+  default     = "443"
+}
+
 variable "minecraft_backend_vip" {
   description = "Inuyama Minecraft backend VIP for ionos TCP/25565 forwarding. Empty disables that HAProxy frontend."
   type        = string
