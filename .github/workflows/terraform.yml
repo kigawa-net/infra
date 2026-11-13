@@ -215,6 +215,71 @@ jobs:
       - name: Install bws CLI
         run: ./scripts/install-bws.sh
 
+      # CI から 10.0.0.0/24(k8s1/k8s2/k8s4)へは、まず EasyTier のオーバーレイ経由で届く。
+      # ランナーが、オーバーレイのピアとして参加し(10.250.0.240)、k8s4 のサブネットプロキシ(10.0.0.0/24)を使う。
+      # 届かなければ(オーバーレイが落ちているときなど)、次の WireGuard のステップにフォールバックする。
+      - name: EasyTier のオーバーレイに参加する (10.0.0.0/24 へ届くため)
+        id: easytier
+        if: matrix.runner == 'ubuntu-latest'
+        continue-on-error: true
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+          # hardware/k8s4/variables.tf の easytier_version / easytier_sha256 と同じ値にすること
+          EASYTIER_VERSION: "2.6.4"
+          EASYTIER_SHA256: "61b659eaedba658fa66fe47d17e1426cdd77e5d02fa15fed447bb4357c09dfd6"
+        run: |
+          set -u
+          source "$GITHUB_WORKSPACE/lib/bws-retry.sh"
+          SECRET=$(bws_get_value 698da56c-a169-4837-93a1-b4f00107b513) || { echo "network secret を取得できません"; exit 1; }
+          echo "::add-mask::$SECRET"
+          curl -fsSL -o /tmp/easytier.zip "https://github.com/EasyTier/EasyTier/releases/download/v${EASYTIER_VERSION}/easytier-linux-x86_64-v${EASYTIER_VERSION}.zip"
+          echo "${EASYTIER_SHA256}  /tmp/easytier.zip" | sha256sum -c -
+          rm -rf /tmp/easytier && mkdir -p /tmp/easytier && unzip -q -o /tmp/easytier.zip -d /tmp/easytier
+          sudo install -m 0755 "$(find /tmp/easytier -name easytier-core -type f | head -1)" /usr/local/bin/easytier-core
+          sudo install -m 0755 "$(find /tmp/easytier -name easytier-cli -type f | head -1)" /usr/local/bin/easytier-cli
+          sudo install -d -m 700 /etc/easytier
+          # Secret は、プロセスの引数に出さず、設定ファイル(0600)にだけ書く
+          sudo tee /etc/easytier/ci.toml > /dev/null <<TOML_EOF
+          instance_name = "ci-runner"
+          ipv4 = "10.250.0.240/24"
+          dhcp = false
+          listeners = []
+
+          [network_identity]
+          network_name = "kigawa-net"
+          network_secret = "${SECRET}"
+
+          [[peer]]
+          uri = "tcp://74.208.55.86:11010"
+
+          [[peer]]
+          uri = "tcp://207.231.111.196:11010"
+          TOML_EOF
+          sudo chmod 600 /etc/easytier/ci.toml
+          sudo sh -c 'nohup easytier-core -c /etc/easytier/ci.toml > /tmp/easytier-ci.log 2>&1 &'
+          # ピアが見えるまで待つ
+          for i in $(seq 1 30); do
+            if sudo easytier-cli peer 2>/dev/null | grep -q -E 'k8s4|ionos|bao'; then echo "overlay peers visible"; break; fi
+            sleep 2
+          done
+          # 10.0.0.103 / 10.0.0.120 の SSH に届くか確認する(k8s4 のサブネットプロキシ経由)
+          ok=0
+          for i in $(seq 1 15); do
+            if nc -z -w 3 10.0.0.103 22 && nc -z -w 3 10.0.0.120 22; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != 1 ]; then
+            echo "オーバーレイ経由で 10.0.0.x:22 に届きません。WireGuard にフォールバックします。"
+            sudo easytier-cli peer 2>&1 | head -12 || true
+            tail -n 15 /tmp/easytier-ci.log || true
+            exit 1
+          fi
+          echo "10.0.0.103:22 / 10.0.0.120:22 にオーバーレイ経由で届きました"
+
+      - name: EasyTier を止める (届かなかったとき。WireGuard にフォールバック)
+        if: matrix.runner == 'ubuntu-latest' && steps.easytier.outcome != 'success'
+        run: sudo pkill easytier-core || true
+
       # k8s1/k8s2/k8s4はプライベートIP(10.0.0.0/24)のみでubuntu-latestから
       # 直接到達できないため、ionosに事前登録した専用WireGuardピア
       # (kigawa-infra-ci-runner, 172.31.254.21)経由でトンネルを張る。
@@ -222,8 +287,8 @@ jobs:
       # ionosのTerraformコードはk8s1/k8s2の公開鍵取得のため10.0.0.103/10.0.0.120へ
       # SSHするdata "external"を持っており、これもubuntu-latestからのトンネルが
       # 必要なため、ionosモジュールもこのステップの対象に含める。
-      - name: WireGuardトンネルを張る (k8s1/k8s2/k8s4到達のため)
-        if: matrix.runner == 'ubuntu-latest'
+      - name: WireGuardトンネルを張る (EasyTier で届かなかったときのフォールバック)
+        if: matrix.runner == 'ubuntu-latest' && steps.easytier.outcome != 'success'
         env:
           BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
         run: |
@@ -409,3 +474,7 @@ jobs:
       - name: WireGuardトンネルを閉じる (k8s1/k8s2/k8s4到達用)
         if: always() && matrix.runner == 'ubuntu-latest'
         run: sudo wg-quick down wg0 || true
+
+      - name: EasyTier のオーバーレイから抜ける
+        if: always() && matrix.runner == 'ubuntu-latest'
+        run: sudo pkill easytier-core || true
