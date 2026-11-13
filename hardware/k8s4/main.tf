@@ -1114,6 +1114,8 @@ module "easytier" {
   network_secret      = data.external.easytier_network_secret[0].result.value
   overlay_address     = var.easytier_overlay_address
   peers               = var.easytier_peers
+  # CI(GitHub のランナー)が、オーバーレイ経由で 10.0.0.0/24 に届くようにする(サブネットプロキシ)
+  proxy_network = var.easytier_proxy_network
 }
 
 # Overlay 上の GRE トンネル(設計: docs/frr-gre-overlay-design.md §2〜§3)。gre_overlay_enabled = false のときは何も作らない。

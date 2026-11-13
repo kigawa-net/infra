@@ -415,6 +415,12 @@ variable "easytier_peers" {
   default     = ["tcp://207.231.111.196:11010", "tcp://74.208.55.86:11010"]
 }
 
+variable "easytier_proxy_network" {
+  description = "k8s4 が EasyTier のサブネットプロキシで、Overlay 上に経路を提供するネットワーク。CI(GitHub のランナー)が、オーバーレイ経由で、control-plane(10.0.0.0/24)に届くために使う。空にすると、CI は WireGuard にフォールバックする"
+  type        = list(string)
+  default     = ["10.0.0.0/24"]
+}
+
 variable "easytier_overlay_allow" {
   description = "EasyTier の Overlay(10.250.0.0/24)からの受信を許可するポート。control-plane は ufw を使わないので、iptables で絞る(modules/overlay-firewall)。Overlay の他ノードから 6443・10250・etcd に届かないようにする(設計書 §7)。179/tcp は、bao-02/03 との eBGP(overlay 上の BGP セッション)用。FRR は設定した neighbor 以外の接続を受けない"
   type        = list(string)
