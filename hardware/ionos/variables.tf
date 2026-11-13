@@ -498,9 +498,9 @@ variable "easytier_enabled" {
 }
 
 variable "easytier_secure_mode_enabled" {
-  description = "全 EasyTier peer が Secure Mode 対応済みで、移行手順の切替段階に入ったとき true にする"
+  description = "EasyTier Secure Mode を有効にする。既定は true (全ノードで有効化済み)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "easytier_network_secret_bitwarden_id" {
