@@ -259,12 +259,3 @@ resource "cloudflare_record" "bao_03" {
   ttl     = 1
   proxied = false
 }
-
-resource "cloudflare_record" "litellm" {
-  zone_id = var.zone_id
-  name    = "litellm"
-  type    = "A"
-  content = "74.208.55.86"
-  ttl     = 1
-  proxied = true
-}
