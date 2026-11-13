@@ -30,7 +30,9 @@ backend http_backend
 backend https_backend
     mode tcp
     option tcp-check
-    server web1 ${inuyama_ingress_vip}:${inuyama_ingress_port} check
+    # TCP モード(TLS 素通し)なので、必ず TLS を受ける 443 に転送する。80 に向けると Cloudflare の
+    # TLS ハンドシェイクが失敗し、*.kigawa.net がすべて 525 になる(#500 の障害)。
+    server web1 ${inuyama_ingress_vip}:${inuyama_ingress_https_port} check
 
 %{ endif ~}
 %{ if minecraft_backend_vip != "" ~}
