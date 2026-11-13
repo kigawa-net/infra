@@ -157,6 +157,9 @@ resource "cloudflare_record" "codingcraft_dev" {
   content = "74.208.55.86"
   ttl     = 1
   proxied = false
+  # 同名のレコードが、すでに手動で存在する(内容は同じ)。state に無いので、apply が「already exists」で失敗し続ける。
+  # 上書きして取り込む(内容は同じなので、実際の DNS は変わらない)。
+  allow_overwrite = true
 }
 
 # --- MX ---
