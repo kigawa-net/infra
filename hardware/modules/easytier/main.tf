@@ -28,8 +28,10 @@ locals {
     %{endfor~}
     %{for n in var.proxy_network~}
 
-    [[subnet_proxy]]
-    network = "${n}"
+    # EasyTier 2.6.4 の正しいキーは [[proxy_network]] と cidr。以前の [[subnet_proxy]] / network は、無視され、
+    # サブネットプロキシが、一度も効いていなかった(easytier-cli route の proxy_cidrs が空。手元で確認済み)。
+    [[proxy_network]]
+    cidr = "${n}"
     %{endfor~}
   TOML
 }
