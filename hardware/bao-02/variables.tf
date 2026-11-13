@@ -141,9 +141,11 @@ variable "easytier_enabled" {
 }
 
 variable "easytier_secure_mode_enabled" {
-  description = "EasyTier Secure Mode を有効にする。既定は true (全ノードで有効化済み)"
-  type        = bool
-  default     = true
+  description = "EasyTier Secure Mode を有効にする。有効にするには、先に credential を発行・配布すること"
+  # (bao-02 で credential を発行し、全ノードの credential_file に配布してから、1 ノードずつ true にする。
+  #  credential なしで true にすると、全 peer が接続できず、オーバーレイが落ちる。#503 の障害)
+  type    = bool
+  default = false
 }
 
 variable "easytier_network_secret_bitwarden_id" {
