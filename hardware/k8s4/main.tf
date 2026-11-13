@@ -1097,6 +1097,21 @@ module "overlay_firewall" {
   exempt_ifaces = var.gre_overlay_enabled ? ["gre-bao+"] : []
 }
 
+# CI(GitHub のランナー)が、サブネットプロキシ(proxy_network)経由で 10.0.0.0/24 の TCP(SSH)へ届くようにする。
+# EasyTier の TCP プロキシは、k8s4 のカーネルのランダムなポートで受けるため、overlay-firewall の許可リスト(ポート)では通せない。
+# CI ランナーの Overlay のアドレスからの TCP だけを、INPUT の先頭で許可する。easytier の後に適用する。
+module "overlay_allow_source" {
+  source     = "../modules/overlay-allow-source"
+  count      = var.easytier_enabled && length(var.easytier_ci_allow_sources) > 0 ? 1 : 0
+  depends_on = [module.easytier]
+
+  host            = var.server_ip
+  ssh_user        = var.ssh_user
+  ssh_private_key = data.external.ssh_key.result.value
+  sudo_password   = data.external.sudo_password.result.value
+  sources         = var.easytier_ci_allow_sources
+}
+
 module "easytier" {
   source     = "../modules/easytier"
   count      = var.easytier_enabled ? 1 : 0
