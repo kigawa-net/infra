@@ -25,9 +25,9 @@ cache.storage = 'lmdb:///var/cache/knot-resolver'
 
 -- STUB (not FORWARD): these are private/unsigned internal zones, so skip
 -- local DNSSEC validation and trust the upstream directly.
-policy.add(policy.suffix(policy.STUB({'${var.coredns_ip}'}), {todname('cluster.local.')}))
+policy.add(policy.suffix(policy.STUB({'${var.coredns_ip}'}), {'cluster.local.'}))
 %{for d in var.internal_domains}
-policy.add(policy.suffix(policy.STUB({'${var.internal_dns_ip}'}), {todname('${d}.')}))
+policy.add(policy.suffix(policy.STUB({'${var.internal_dns_ip}'}), {'${d}.'}))
 %{endfor}
 policy.add(policy.all(policy.FORWARD({'1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4'})))
 CONF
