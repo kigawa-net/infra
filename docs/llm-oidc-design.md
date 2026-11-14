@@ -8,7 +8,7 @@
 
 ## 2. 現状
 
-- LiteLLM は `https://litellm.kigawa.net`(Ingress、`litellm-service`、master key 認証)で公開済み。`production-llm` は vLLM(`vllm-openai-service`)に向いている。
+- LiteLLM は `https://litellm.kigawa.net`(Ingress、`litellm-service`、master key 認証)で公開済み。`production-llm` は llama.cpp(CUDA) に移行済み。
 - open-webui は内部 URL(`litellm-service.kigawa-net-llm-proxy.svc`)で LiteLLM を呼ぶ。外部の Ingress を変えても影響しない。
 - DNS は Cloudflare の `*` ワイルドカードがあり、新しいホスト名に DNS の変更は要らない。
 - LiteLLM の JWT 認証はエンタープライズ機能の認識(要確認)。リポジトリには oauth2-proxy を Bearer 専用で前段に置く実績がある(`oneserver-files/`)。
@@ -58,10 +58,9 @@ Dev Pod (自宅 main)
 
 - Keycloak クライアント `opencode-dev`、LiteLLM 仮想キー `opencode-dev`(`production-llm` のみ、rpm 60、並列 4。`gpt-4o` などは 403)。
 - oauth2-proxy と Ingress `litellm-api.kigawa.net`(kigawa-net-k8s #498、#501)。有効な JWT で `production-llm` が 200、JWT なし・改ざん・任意の文字列は 403。
-- vLLM の tool calling(kigawa-net-k8s #491)。
 
 未実装・未確認:
 
 - Dev Pod の中継プロキシと OpenCode の設定(Dev Pod の置き場所の確認が先)。
-- vLLM の KV キャッシュは約 25,000 トークン(コンテキスト 16k で同時 1.5 本)。OpenCode の重い作業には窮屈。
+- llama.cpp(CUDA) に移行済み。KV キャッシュは 192k(-c 196608)、q8_0 量子化。RTX 3060 x2(24GB) で稼働。2スロットで計393,216トークンをプール。
 - JWT の失効はトークンの有効期限(`exp`)まで効く。キーの失効は LiteLLM 側の仮想キー削除で行う。
