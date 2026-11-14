@@ -88,11 +88,13 @@ resource "cloudflare_record" "web_base" {
 
 # --- A records (DNS-only, proxied=false) ---
 
+# Cloudflare はプライベート IP(10.0.0.240)の A レコードを許可しないため、
+# el4s-realtime と同じく base(ionos、TCP 素通し)経由にする。Host の振り分けは HAProxy Ingress。
 resource "cloudflare_record" "el4s" {
   zone_id = var.zone_id
   name    = "el4s"
-  type    = "A"
-  content = "10.0.0.240"
+  type    = "CNAME"
+  content = "base.kigawa.net"
   ttl     = 1
   proxied = false
 }
