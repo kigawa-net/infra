@@ -12,6 +12,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - PR は必ずレビューを経てからマージする。直接 `main` にコミットしない。
   - issueのクローズはPRマージ時に自動で行う（手動closeしない）。
 
+## ネットワークの変更の注意(必読: docs/ingress-routing.md)
+
+- 外部の経路は Cloudflare → ionos(haproxy、`mode tcp`、TLS 素通し)→ `10.0.0.240`(HAProxy Ingress)。**Host ベースの振り分けは、HAProxy Ingress が `Ingress` ごとに行う**。本番に Istio はない。ホストを足すときは `kigawa-net-k8s` に `Ingress`(`ingressClassName: haproxy`)を足すだけで、ionos の haproxy は触らない
+- ionos の haproxy の `https_backend`、EasyTier の `secure_mode_enabled` と `proxy_network`、内部 DNS(Knot・kresd)、ufw・iptables は、**変更すると、全サイトが止まる**。変更の前に、現状と戻し方を記録し、変更のあとに、外部の経路で確認する(`curl --resolve <ホスト>:443:<Cloudflare の IP>`。普通の `curl` は、内部の経路で、障害に気づけない)
+- 経路を変える変更は、1 台でカナリアして、悪化したら即ロールバックする
+
 ## Running Terraform
 
 Each node is an independent Terraform root module. Use the shared `hardware/run.sh` — it fetches R2 credentials from Bitwarden and passes all arguments to `terraform`:

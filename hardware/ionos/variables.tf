@@ -142,7 +142,7 @@ variable "inuyama_ingress_vip" {
 }
 
 variable "inuyama_ingress_port" {
-  description = "Destination port for Inuyama ingress HTTP/HTTPS forwarding (e.g., Istio ingress gateway nodePort)."
+  description = "http_backend(80 番)の転送先ポート。ingress(HAProxy Ingress、10.0.0.240)の HTTP ポート。https_backend は、TLS 素通しなので、必ず 443(inuyama_ingress_https_port)。本番に Istio はない(docs/ingress-routing.md)。"
   type        = string
   default     = "80"
 }
