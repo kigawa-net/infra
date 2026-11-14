@@ -282,9 +282,9 @@ variable "easytier_enabled" {
 }
 
 variable "easytier_secure_mode_enabled" {
-  description = "EasyTier Secure Mode を有効にする。有効にするには、先に credential を発行・配布すること"
-  # (bao-02 で credential を発行し、全ノードの credential_file に配布してから、1 ノードずつ true にする。
-  #  credential なしで true にすると、全 peer が接続できず、オーバーレイが落ちる。#503 の障害)
+  description = "EasyTier Secure Mode を有効にする。**混在できない**(secure と非 secure は、どちらの向きでも接続できず、オーバーレイが分断される。#503 の障害)。有効にする前に、docs/easytier-secure-mode-rollout.md を読むこと"
+  # 手元の実験で確認済み(hardware/modules/easytier/experiment-secure-mode.sh): 1 台ずつ切り替えると、混在で分断される。
+  # 全ノードを同時に切り替えるか、ハブ(network_secret)とエッジ(credential)の設計にする。credential は、ノード間の接続には不要。
   type    = bool
   default = false
 }
