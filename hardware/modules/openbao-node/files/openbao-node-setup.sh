@@ -12,6 +12,8 @@
 #   FQDN                  このノードの証明書の名前(例: bao-02.kigawa.net)
 #   ACME_EMAIL            Let's Encrypt の連絡先。空なら --register-unsafely-without-email で登録する
 #   ACME_STAGING          1 なら Let's Encrypt の staging を使う(試験用。信頼されない証明書)
+#   SEALED_ALERT          1 なら、Sealed の通知(Discord)の timer を入れる。0 なら、入れていたものを外す(既定 0)
+#                         1 のとき STAGE_DIR に openbao-sealed-alert.sh / sealed-alert.env / .service / .timer が要る
 # OPENBAO_ROOT は、テストで / の代わりに使う接頭辞(本番では空)。
 set -eo pipefail
 export PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -201,6 +203,28 @@ fi
 # 監査ログのローテーション(logrotate の設定)。ログの置き場所は、unit の LogsDirectory=openbao(/var/log/openbao)
 install -d -m 0755 "$root/etc/logrotate.d" || die "logrotate.d を作れません"
 place "$STAGE_DIR/openbao.logrotate" "$root/etc/logrotate.d/openbao" 0644 root:root || true
+
+# 7b. Sealed の通知(issue #444)。URL(env ファイル)は 0600 root。無効なら、入れていたものを外す
+sealed_bin="$root/usr/local/bin/openbao-sealed-alert"
+sealed_env="$etc/sealed-alert.env"
+sealed_svc="$root/etc/systemd/system/openbao-sealed-alert.service"
+sealed_tmr="$root/etc/systemd/system/openbao-sealed-alert.timer"
+if [ "${SEALED_ALERT:-0}" = 1 ]; then
+  install -d -m 0755 "$(dirname "$sealed_bin")" || die "$(dirname "$sealed_bin") を作れません"
+  place "$STAGE_DIR/openbao-sealed-alert.sh" "$sealed_bin" 0755 root:root || true
+  place "$STAGE_DIR/sealed-alert.env" "$sealed_env" 0600 root:root || true
+  sealed_changed=0
+  if place "$STAGE_DIR/openbao-sealed-alert.service" "$sealed_svc" 0644 root:root; then sealed_changed=1; fi
+  if place "$STAGE_DIR/openbao-sealed-alert.timer" "$sealed_tmr" 0644 root:root; then sealed_changed=1; fi
+  if [ "$sealed_changed" = 1 ]; then systemctl daemon-reload || die "daemon-reload に失敗しました"; fi
+  systemctl enable --now openbao-sealed-alert.timer >/dev/null || die "openbao-sealed-alert.timer を有効にできません"
+else
+  if [ -e "$sealed_tmr" ] || [ -e "$sealed_svc" ]; then
+    systemctl disable --now openbao-sealed-alert.timer >/dev/null 2>&1 || true
+    rm -f "$sealed_tmr" "$sealed_svc" "$sealed_bin" "$sealed_env"
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+fi
 
 # 8. 起動・反映。初期化はしない(未初期化の sealed 状態で待機する)。証明書の更新は deploy hook が reload する
 systemctl enable openbao >/dev/null || die "enable に失敗しました"
