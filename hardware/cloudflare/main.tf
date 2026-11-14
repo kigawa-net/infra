@@ -85,7 +85,17 @@ resource "cloudflare_record" "web_base" {
   proxied = true
 }
 
-# --- CNAME records ---
+
+# --- A records (DNS-only, proxied=false) ---
+
+resource "cloudflare_record" "el4s" {
+  zone_id = var.zone_id
+  name    = "el4s"
+  type    = "A"
+  content = "10.0.0.240"
+  ttl     = 1
+  proxied = false
+}
 
 resource "cloudflare_record" "el4s_realtime" {
   zone_id = var.zone_id
