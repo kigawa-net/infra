@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: latte-dev-ing
+  namespace: kigawa-net-latte-dev
+  labels:
+    app.kubernetes.io/name: latte-dev
+  annotations:
+    haproxy.org/timeout-server: "120s"
+spec:
+  ingressClassName: haproxy
+  # TLS は既存の HAProxy Ingress のデフォルト証明書で終端する。
+  rules:
+    - host: latte-dev.kigawa.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: latte-dev-svc
+                port:
+                  name: websocket

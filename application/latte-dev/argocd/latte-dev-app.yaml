@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: latte-dev-app
+  namespace: argocd
+spec:
+  project: kigawa-net
+  source:
+    repoURL: https://github.com/kigawa-net/infra.git
+    targetRevision: main
+    path: application/latte-dev/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kigawa-net-latte-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
