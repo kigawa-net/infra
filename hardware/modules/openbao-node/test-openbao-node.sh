@@ -17,6 +17,7 @@ fails=0
 last_out=""
 # テスト用のダミー値。出力に現れてはいけない(トークンが echo されていないことを確認する)
 TOKEN_VALUE="TOKEN-SECRET-7f3a"
+WEBHOOK_VALUE="https://discord.com/api/webhooks/123456/WEBHOOK-SECRET-9c1d"
 FQDN="bao-02.kigawa.net"
 PEER_FQDN="bao-03.kigawa.net"
 
@@ -193,6 +194,11 @@ write_stage() {
   printf 'dns_cloudflare_api_token = %s\n' "$TOKEN_VALUE" > "$sb/stage/cloudflare.ini"
   printf '192.0.2.1 %s\n192.0.2.3 %s\n' "$FQDN" "$PEER_FQDN" > "$sb/stage/hosts.entries"
   printf '/var/log/openbao/audit.log {\n    daily\n}\n' > "$sb/stage/openbao.logrotate"
+  # Sealed の通知(SEALED_ALERT=1 のときだけ使われる)
+  cp "$here/files/openbao-sealed-alert.sh" "$sb/stage/openbao-sealed-alert.sh"
+  printf 'DISCORD_WEBHOOK_URL=%s\nFQDN=%s\nREMIND_SEC=21600\n' "$WEBHOOK_VALUE" "$FQDN" > "$sb/stage/sealed-alert.env"
+  printf '[Unit]\nDescription=alert\n' > "$sb/stage/openbao-sealed-alert.service"
+  printf '[Timer]\nOnBootSec=2min\n' > "$sb/stage/openbao-sealed-alert.timer"
 }
 # new_sandbox <name>: sandbox を作り、既存の /etc/hosts(無関係な行を含む)と stage を置く
 new_sandbox() {
@@ -216,7 +222,7 @@ run_setup() {
     WIPE_DATA_ON_FAILURE="${WIPE:-0}" FAKE_DEB="$work/bao.deb" FAKE_LOG="$FAKE_LOG" FAKE_STATE="$sb/state" \
     FAKE_CURL_FAIL="${CURL_FAIL:-}" FAKE_START_FAIL="${START_FAIL:-}" FAKE_DIE="${DIE_AFTER_START:-}" \
     FAKE_LE="$sb/root/etc/letsencrypt" FAKE_CERTBOT_FAIL="${CERTBOT_FAIL:-}" \
-    FQDN="$FQDN" ACME_EMAIL="${EMAIL:-}" ACME_STAGING="${STAGING:-0}" \
+    FQDN="$FQDN" ACME_EMAIL="${EMAIL:-}" ACME_STAGING="${STAGING:-0}" SEALED_ALERT="${SEALED_ALERT:-0}" \
     bash "$setup" >"$last_out" 2>&1
   rc=$?
   cp "$FAKE_LOG" "$sb/run$run_n.calls"
@@ -371,9 +377,93 @@ check "本番へ切り替えたら本番で発行し直す" 1 "$(grep -c '^certb
 check "本番の発行には --staging を付けない" 0 "$(grep -c -- '--staging' "$sb/run$run_n.calls")"
 check "切り替え後の tls.crt は本番の内容" "FULLCHAIN-$FQDN" "$(cat "$sb/root/etc/openbao/tls/tls.crt")"
 
+# (k) Sealed の通知: 無効(既定)では何も入れない。有効なら、スクリプト・env(0600)・unit・timer を入れて timer を有効にする。
+#     無効に戻したら外す。
+new_sandbox alertoff
+run_setup
+check "通知が無効でも構築は成功する" 0 "$rc"
+check "通知が無効ではスクリプトを置かない" 0 "$(exists "$sb/root/usr/local/bin/openbao-sealed-alert")"
+check "通知が無効では timer を有効にしない" 0 "$(grep -c 'openbao-sealed-alert.timer' "$sb/run$run_n.calls")"
+write_stage
+SEALED_ALERT=1 run_setup
+check "通知が有効の構築は成功する" 0 "$rc"
+check "通知のスクリプトを置く" 1 "$(exists "$sb/root/usr/local/bin/openbao-sealed-alert")"
+check "通知のスクリプトは実行可能" 1 "$([ -x "$sb/root/usr/local/bin/openbao-sealed-alert" ] && echo 1 || echo 0)"
+check "通知の env は 0600" 600 "$(stat -c '%a' "$sb/root/etc/openbao/sealed-alert.env")"
+check "通知の service を置く" 1 "$(exists "$sb/root/etc/systemd/system/openbao-sealed-alert.service")"
+check "通知の timer を置く" 1 "$(exists "$sb/root/etc/systemd/system/openbao-sealed-alert.timer")"
+check "通知の timer を有効にする" 1 "$(grep -c '^systemctl enable --now openbao-sealed-alert.timer' "$sb/run$run_n.calls")"
+write_stage
+SEALED_ALERT=1 run_setup
+check "通知が有効のままの再実行は成功する" 0 "$rc"
+write_stage
+SEALED_ALERT=0 run_setup
+check "通知を無効に戻すと成功する" 0 "$rc"
+check "通知を無効に戻すと timer を止める" 1 "$(grep -c '^systemctl disable --now openbao-sealed-alert.timer' "$sb/run$run_n.calls")"
+check "通知を無効に戻すとスクリプトを外す" 0 "$(exists "$sb/root/usr/local/bin/openbao-sealed-alert")"
+check "通知を無効に戻すと env を外す(URL を残さない)" 0 "$(exists "$sb/root/etc/openbao/sealed-alert.env")"
+
+# (l) 通知スクリプト本体: 偽の curl で seal-status と Webhook を差し替える
+al="$work/alert"
+mkdir -p "$al/bin"
+cat > "$al/bin/curl" <<'EOF'
+#!/bin/bash
+# -K - があれば Webhook への POST(標準入力の url と、本文を記録する)。なければ seal-status
+if [[ " $* " == *" -K "* ]]; then
+  { cat; echo "ARGS: $*"; } >> "$AL_POSTS"
+  [ -n "${AL_POST_FAIL:-}" ] && exit 22
+  exit 0
+fi
+[ -n "${AL_STATUS_FAIL:-}" ] && exit 7
+printf '%s' "$AL_STATUS"
+EOF
+chmod +x "$al/bin/curl"
+alert_run() { # alert_run <status-json> [now を進めるための REMIND_SEC]
+  AL_POSTS="$al/posts" AL_STATUS="$1" AL_STATUS_FAIL="${AL_STATUS_FAIL:-}" AL_POST_FAIL="${AL_POST_FAIL:-}" \
+  PATH="$al/bin:$PATH" DISCORD_WEBHOOK_URL="$WEBHOOK_VALUE" FQDN="$FQDN" STATE_FILE="$al/state" REMIND_SEC="${REMIND_SEC:-21600}" \
+  bash "$here/files/openbao-sealed-alert.sh" >"$al/out" 2>&1
+  rc=$?
+  last_out="$al/out"
+}
+posts() { if [ -f "$al/posts" ]; then grep -c '^url = ' "$al/posts"; else echo 0; fi; }
+SEALED='{"type":"shamir","initialized":true,"sealed":true,"t":3,"n":5}'
+UNSEALED='{"type":"shamir","initialized":true,"sealed":false,"t":3,"n":5}'
+UNINIT='{"type":"shamir","initialized":false,"sealed":true,"t":0,"n":0}'
+
+alert_run "$UNSEALED"
+check "Unseal 済みでは通知しない" 0 "$(posts)"
+alert_run "$UNINIT"
+check "未初期化では通知しない" 0 "$(posts)"
+alert_run "$SEALED"
+check "Sealed になったら通知する" 1 "$(posts)"
+check "通知は Sealed の旨と fqdn を含む" 1 "$(grep -c "Sealed.*$FQDN" "$al/posts")"
+check "通知の URL は標準入力で渡す(引数に出さない)" 0 "$(grep '^ARGS:' "$al/posts" | grep -c 'WEBHOOK-SECRET')"
+alert_run "$SEALED"
+check "Sealed が続いても、間隔内は再通知しない" 1 "$(posts)"
+REMIND_SEC=0 alert_run "$SEALED"
+check "間隔を過ぎたら再通知する" 2 "$(posts)"
+alert_run "$UNSEALED"
+check "Unseal されたら復旧を通知する" 3 "$(posts)"
+check "復旧の通知を含む" 1 "$(grep -c '復旧' "$al/posts")"
+alert_run "$UNSEALED"
+check "復旧後は通知しない" 3 "$(posts)"
+AL_STATUS_FAIL=1 alert_run "$SEALED"
+check "OpenBao に繋がらないときは成功終了で何も通知しない" "0 3" "$rc $(posts)"
+alert_run "$SEALED"
+AL_POST_FAIL=1 REMIND_SEC=0 alert_run "$SEALED"
+check "通知に失敗したら失敗終了する" 1 "$rc"
+check "通知に失敗したら状態を進めない(次回に再試行する)" "sealed" "$(awk '{print $1}' "$al/state")"
+# Webhook の失敗直後に、復旧(unsealed)へ進めない確認: sealed のまま通知に失敗 → 次は再通知される
+before=$(posts)
+REMIND_SEC=0 alert_run "$SEALED"
+check "失敗後の再試行で通知が送られる" "$((before + 1))" "$(posts)"
+check "Webhook の URL が出力に現れない" 0 "$(grep -c 'WEBHOOK-SECRET' "$al/out")"
+
 # (j) トークンは出力・呼び出し記録に出ない(ini ファイルだけに入る)
 leaks=$(cat "$work"/sb-*/run*.out "$work"/sb-*/run*.calls "$work"/sb-*/hook.out "$work"/sb-*/calls-hook 2>/dev/null | grep -c "$TOKEN_VALUE")
 check "トークンが出力・呼び出し記録に現れない" 0 "$leaks"
+leaks=$(cat "$work"/sb-*/run*.out "$work"/sb-*/run*.calls 2>/dev/null | grep -c "WEBHOOK-SECRET")
+check "Webhook の URL が構築の出力・呼び出し記録に現れない" 0 "$leaks"
 
 echo
 echo "結果: ok=$pass fail=$fails"

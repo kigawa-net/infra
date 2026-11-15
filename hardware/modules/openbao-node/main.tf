@@ -115,6 +115,47 @@ locals {
     }
     LR
 
+  # Sealed の通知(issue #444)。URL が空なら、何も入れない(SEALED_ALERT=0 で、入れていたものを外す)
+  sealed_alert_enabled = var.sealed_alert_webhook_url != ""
+  sealed_alert_script  = file("${path.module}/files/openbao-sealed-alert.sh")
+
+  # URL は 0600 root の env ファイルにだけ置く(unit やコマンドラインには載せない)
+  sealed_alert_env = <<-ENV
+    DISCORD_WEBHOOK_URL=${var.sealed_alert_webhook_url}
+    FQDN=${var.fqdn}
+    REMIND_SEC=${var.sealed_alert_remind_seconds}
+    ENV
+
+  sealed_alert_service = <<-UNIT
+    [Unit]
+    Description=OpenBao の Sealed を確認し、Discord に通知する
+    After=openbao.service
+
+    [Service]
+    Type=oneshot
+    EnvironmentFile=/etc/openbao/sealed-alert.env
+    ExecStart=/usr/local/bin/openbao-sealed-alert
+    StateDirectory=openbao-sealed-alert
+    DynamicUser=yes
+    NoNewPrivileges=yes
+    ProtectSystem=strict
+    ProtectHome=yes
+    PrivateTmp=yes
+    UNIT
+
+  sealed_alert_timer = <<-UNIT
+    [Unit]
+    Description=OpenBao の Sealed の確認(${var.sealed_alert_interval} ごと)
+
+    [Timer]
+    OnBootSec=2min
+    OnUnitActiveSec=${var.sealed_alert_interval}
+    AccuracySec=10s
+
+    [Install]
+    WantedBy=timers.target
+    UNIT
+
   stage = "/home/${var.ssh_user}/.openbao-node-stage"
 
   # remote-exec の inline は、シバンなしで転送され、dash で動いてしまうため、シバン付きのスクリプトを bash で実行する
@@ -139,6 +180,10 @@ resource "null_resource" "openbao_node" {
     # トークンの変更で、資格情報の ini を置き直す。トークン本体ではなくハッシュだけを trigger に入れる
     cloudflare_ini_sha = sha256(local.cloudflare_ini)
     hosts_sha          = sha256(local.hosts_entries)
+    # 通知の URL はハッシュだけを trigger に入れる。入れ替え・有効/無効の切り替えで、置き直す
+    sealed_alert_env_sha = sha256(local.sealed_alert_env)
+    sealed_alert_sha     = sha256("${local.sealed_alert_script}${local.sealed_alert_service}${local.sealed_alert_timer}")
+    sealed_alert_enabled = tostring(local.sealed_alert_enabled)
   }
 
   lifecycle {
@@ -189,9 +234,29 @@ resource "null_resource" "openbao_node" {
     destination = "${local.stage}/openbao.logrotate"
   }
 
+  provisioner "file" {
+    content     = local.sealed_alert_script
+    destination = "${local.stage}/openbao-sealed-alert.sh"
+  }
+
+  provisioner "file" {
+    content     = local.sealed_alert_env
+    destination = "${local.stage}/sealed-alert.env"
+  }
+
+  provisioner "file" {
+    content     = local.sealed_alert_service
+    destination = "${local.stage}/openbao-sealed-alert.service"
+  }
+
+  provisioner "file" {
+    content     = local.sealed_alert_timer
+    destination = "${local.stage}/openbao-sealed-alert.timer"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "echo '${var.sudo_password}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' FQDN='${var.fqdn}' ACME_EMAIL='${var.acme_email}' ACME_STAGING='${var.acme_staging ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
+      "echo '${var.sudo_password}' | sudo -S env OPENBAO_VERSION='${var.openbao_version}' DEB_URL='${local.deb_url}' DEB_SHA256='${var.openbao_deb_sha256}' STAGE_DIR='${local.stage}' WIPE_DATA_ON_FAILURE='${var.wipe_data_on_failure ? 1 : 0}' FQDN='${var.fqdn}' ACME_EMAIL='${var.acme_email}' ACME_STAGING='${var.acme_staging ? 1 : 0}' SEALED_ALERT='${local.sealed_alert_enabled ? 1 : 0}' bash ${local.stage}/openbao-node-setup.sh",
     ]
   }
 }
