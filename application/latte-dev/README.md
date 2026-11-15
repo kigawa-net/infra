@@ -1,6 +1,9 @@
 # latte-dev の prod ingress
 
-関連 Issue: kigawa-net/infra#506 (node port 80 is not listening)
+関連参照（依頼指定）: kigawa-net/infra#506。
+ただし GitHub 上の #506 は `fix: litellm.kigawa.netのCloudflare 525エラーを修正` という
+マージ済み PR で、依頼にある `node port 80 is not listening` と件名が異なる。
+該当障害の正しい Issue URL は未確認。
 
 `prod/` は **prod クラスタ専用**。外部経路は
 Cloudflare → ionos → `10.0.0.240:443` (HAProxy、TLS 終端) →
