@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-dev-svc
+  namespace: kigawa-net-latte-dev
+  labels:
+    app.kubernetes.io/name: latte-dev
+spec:
+  type: ClusterIP
+  # クラスタ外の固定 IP は latte-dev-eps で管理するため selector を付けない。
+  ports:
+    - name: websocket
+      port: 8765
+      targetPort: 8765
+      protocol: TCP
