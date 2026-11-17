@@ -85,6 +85,17 @@ resource "cloudflare_record" "web_base" {
   proxied = true
 }
 
+resource "cloudflare_record" "latte_dev" {
+  zone_id = var.zone_id
+  name    = "latte-dev"
+  type    = "A"
+  content = "74.208.55.86"
+  ttl     = 1
+  proxied = true
+  # 手動で同じ名前のレコードがある場合、既存レコードをTerraformに取り込む。
+  allow_overwrite = true
+}
+
 
 # --- A records (DNS-only, proxied=false) ---
 
