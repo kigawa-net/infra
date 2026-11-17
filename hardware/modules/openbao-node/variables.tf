@@ -148,3 +148,9 @@ variable "after_units" {
   type        = list(string)
   default     = ["wg-quick@wg0.service"]
 }
+
+variable "tls_skip_verify" {
+  description = "true のとき、ローカル開発用に TLS 検証をスキップする(listener の tls_skip_verify と、systemd の TLS_SKIP_VERIFY=true)。既定 false"
+  type        = bool
+  default     = false
+}

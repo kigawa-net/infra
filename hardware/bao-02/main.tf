@@ -133,6 +133,7 @@ module "openbao_node" {
   after_units          = var.openbao_after_units
   fqdn                 = var.fqdn
   peers                = var.peers
+  tls_skip_verify      = true
   openbao_version      = var.openbao_version
   openbao_deb_sha256   = var.openbao_deb_sha256
   cloudflare_api_token = data.external.cloudflare_api_token[0].result.value
