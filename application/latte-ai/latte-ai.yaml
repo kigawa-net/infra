@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
         - name: latte-ai
-          image: harbor.kigawa.net/latte-ai/latte-ai:thinking-mode
+          # cee056e3 の同一オリジン接続を thinking-mode イメージに取り込んだ版。
+          image: harbor.kigawa.net/latte-ai/latte-ai:thinking-mode-debug-same-origin@sha256:38b48434f9564e850fa8d741b7838b1cce0fb9fc89224f90b08232ef40e9a948
           imagePullPolicy: IfNotPresent
           command: ["uv", "run", "python", "-m", "latte_ai", "serve"]
           args:
@@ -26,6 +27,7 @@ spec:
             - --port
             - "8765"
             - --debug-ui
+            - --debug-ui-same-origin
             - --debug-ui-port
             - "8766"
           envFrom:
