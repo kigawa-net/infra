@@ -10,7 +10,7 @@ metadata:
 addressType: IPv4
 ports:
   - name: websocket
-    port: 8765
+    port: 80
     protocol: TCP
 endpoints:
   - addresses:
