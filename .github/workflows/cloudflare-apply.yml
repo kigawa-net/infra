@@ -1,0 +1,121 @@
+name: Cloudflare Apply
+
+# hardware/cloudflare を plan / apply する。
+# 認証情報はすべて Bitwarden Secrets Manager(BWS)から取る:
+#   - R2 バックエンドのキー: hardware/run.sh が lib/bws-retry.sh の bws_get_value で取得
+#   - Cloudflare API トークン: main.tf の data "external" が bws_get_value で取得
+# 必要な GitHub Actions secret は BWS_ACCESS_TOKEN だけ(terraform.yml と同じ)。
+#
+# terraform.yml との二重 apply を避けるため、terraform.yml は push 時に cloudflare を対象外にしている。
+# (PR の plan は terraform.yml のまま。apply はこの workflow だけが行う。)
+#
+# push(main)の apply は、Environment `cloudflare-production` の Required reviewers で承認が必要。
+# Settings > Environments で `cloudflare-production` を作り、Required reviewers を設定すること。
+# workflow_dispatch は、承認なしで、選んだコマンドをそのまま実行する。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hardware/cloudflare/**'
+      - '.github/workflows/cloudflare-apply.yml'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'terraform コマンド'
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+
+# R2 の state にはロックが無いので、terraform.yml と同じ group で直列化する(#414)。
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+      # version 固定 + checksum 検証(#190)
+      - name: Install bws CLI
+        run: ./scripts/install-bws.sh
+      - name: BWS 接続確認
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          [ -n "$BWS_ACCESS_TOKEN" ] || { echo "::error::Actions secret BWS_ACCESS_TOKEN が未設定です"; exit 1; }
+          bws secret list > /dev/null
+      - name: Terraform Init
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: ./hardware/run.sh cloudflare init -input=false
+      - name: Terraform Plan
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        shell: bash -eo pipefail {0}
+        run: ./hardware/run.sh cloudflare plan -input=false -no-color -detailed-exitcode -out=tfplan || [ $? -eq 2 ]
+      - name: Plan を要約に出力
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          {
+            echo '## terraform plan (cloudflare)'
+            echo '```'
+            ./hardware/run.sh cloudflare show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # push: Environment の承認(confirm)後に apply。
+  apply-push:
+    if: github.event_name == 'push'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: cloudflare-production
+    env:
+      BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+      - run: ./scripts/install-bws.sh
+      - run: bws secret list > /dev/null
+      - run: ./hardware/run.sh cloudflare init -input=false
+      # 承認待ちの間に state が変わりうるので、承認後に plan し直して、その plan だけを apply する。
+      - run: ./hardware/run.sh cloudflare plan -input=false -no-color -out=tfplan
+      - run: ./hardware/run.sh cloudflare apply -input=false -no-color tfplan
+
+  # workflow_dispatch: command=apply のときは承認なしで apply。
+  apply-dispatch:
+    if: github.event_name == 'workflow_dispatch' && inputs.command == 'apply'
+    needs: plan
+    runs-on: ubuntu-latest
+    env:
+      BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+      - run: ./scripts/install-bws.sh
+      - run: bws secret list > /dev/null
+      - run: ./hardware/run.sh cloudflare init -input=false
+      - run: ./hardware/run.sh cloudflare plan -input=false -no-color -out=tfplan
+      - run: ./hardware/run.sh cloudflare apply -input=false -no-color tfplan

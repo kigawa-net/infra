@@ -91,7 +91,7 @@ resource "cloudflare_record" "latte_dev" {
   type    = "A"
   content = "74.208.55.86"
   ttl     = 1
-  proxied = true
+  proxied = false
   # 手動で同じ名前のレコードがある場合、既存レコードをTerraformに取り込む。
   allow_overwrite = true
 }

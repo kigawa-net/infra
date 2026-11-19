@@ -151,6 +151,11 @@ jobs:
             ($gh | split(" ")) as $gh_list
             | map(. + {runner: "ubuntu-latest"})
           ')
+          # cloudflare の apply は cloudflare-apply.yml が行う(二重 apply を避ける)。
+          # push では対象外にする。PR の plan と手動実行(workflow_dispatch)は従来どおり。
+          if [ "${{ github.event_name }}" = "push" ]; then
+            MODULES=$(echo "$MODULES" | jq -c 'map(select(.dir != "hardware" or .module != "cloudflare"))')
+          fi
           echo "modules=$MODULES" >> "$GITHUB_OUTPUT"
           echo "検出されたモジュール: $MODULES"
 
