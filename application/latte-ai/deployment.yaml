@@ -17,4 +17,5 @@ data:
   LATTE_LLM_URL: http://llama-cpp.latte.svc.cluster.local:8080
   LATTE_TTS: irodori
   LATTE_TTS_URL: http://irodori-tts.latte.svc.cluster.local:8095
+  LATTE_THINKING: "true"
   HF_HOME: /home/latte/.cache/huggingface

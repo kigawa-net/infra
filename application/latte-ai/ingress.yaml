@@ -15,6 +15,13 @@ spec:
     - host: latte-dev.kigawa.net
       http:
         paths:
+          - path: /debug
+            pathType: Prefix
+            backend:
+              service:
+                name: latte-ai
+                port:
+                  number: 8766
           - path: /
             pathType: Prefix
             backend:
