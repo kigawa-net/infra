@@ -24,6 +24,12 @@ EndpointSlice を使用する。Service のポート名 `websocket` と Endpoint
 ポート名を一致させる。`externalName: 192.168.1.242` は IP ではなく DNS 名として
 扱われるので使用しない。
 
+EndpointSlice は argocd-cm の `resource.exclusions` で `discovery.k8s.io` が除外されて
+おり ArgoCD 管理外のため、変更後は prod に `kubectl apply` で手動反映が必要。
+192.168.1.242 は main の nginx ingress（80/443）で待ち受けており、`debug-ui`
+（Service では 8766）も nginx が Host ヘッダを保ったまま `/debug` を振り分けるので、
+EndpointSlice の `debug-ui` ポートは `80` にする。
+
 HAProxy は HTTP/1.1 Upgrade による WebSocket を転送する。Ingress には既存例に
 合わせて `haproxy.org/timeout-server: "120s"` を指定する。
 Upgrade 後の無通信タイムアウトは既存の HAProxy ConfigMap の `timeout-tunnel` を
