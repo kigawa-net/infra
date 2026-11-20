@@ -18,6 +18,7 @@ spec:
       containers:
         - name: latte-ai
           # cee056e3 の同一オリジン接続を thinking-mode イメージに取り込んだ版。
+          # yamllint disable-line rule:line-length
           image: harbor.kigawa.net/latte-ai/latte-ai:thinking-mode-debug-same-origin@sha256:38b48434f9564e850fa8d741b7838b1cce0fb9fc89224f90b08232ef40e9a948
           imagePullPolicy: IfNotPresent
           command: ["uv", "run", "python", "-m", "latte_ai", "serve"]
@@ -41,6 +42,11 @@ spec:
                 secretKeyRef:
                   name: latte-ai-auth
                   key: LATTE_AUTH_TOKEN
+            - name: LATTE_DEBUG_UI_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: latte-debug-auth-secret
+                  key: proxy-secret
           ports:
             - name: websocket
               containerPort: 8765
