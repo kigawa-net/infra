@@ -39,8 +39,6 @@ listener "tcp" {
   tls_cert_file   = "/etc/openbao/tls/tls.crt"
   tls_key_file    = "/etc/openbao/tls/tls.key"
   tls_min_version = "tls13"
-  # 同じノード上の bao CLI が自己署名証明書をスキップするため
-  tls_skip_verify = ${tls_skip_verify}
 }
 
 # 公開インターフェース用(外部からのブラウザアクセス)。
