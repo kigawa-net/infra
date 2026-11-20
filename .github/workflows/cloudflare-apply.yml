@@ -79,6 +79,35 @@ jobs:
             ./hardware/run.sh cloudflare show -no-color tfplan
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # latte-dev の A レコードの drift 検知結果(#528)。check は警告のみで plan を止めないので、結果をここで見えるようにする。
+      # output は apply 前の state に無いので、plan ファイルから取る(apply 後は terraform output -json drift と同じ値)。
+      - name: drift 検知結果を要約に出力
+        if: always()
+        env:
+          BWS_ACCESS_TOKEN: ${{ secrets.BWS_ACCESS_TOKEN }}
+        run: |
+          {
+            echo '## drift 検知 (latte-dev A レコード)'
+            if [ ! -f hardware/cloudflare/tfplan ]; then
+              echo 'plan が無いため、drift 検知結果を取得できませんでした。'
+            elif drift=$(./hardware/run.sh cloudflare show -json tfplan | jq -e '.planned_values.outputs.drift.value'); then
+              if [ "$(jq -r .drift <<<"$drift")" = true ]; then
+                echo ':warning: **drift あり**。Cloudflare の UI で余計なレコードを削除してください。'
+              else
+                echo ':white_check_mark: drift なし'
+              fi
+              echo
+              echo '| id | content | proxied |'
+              echo '|---|---|---|'
+              jq -r '.records[] | "| \(.id) | \(.content) | \(.proxied) |"' <<<"$drift"
+              echo
+              echo '```json'
+              jq . <<<"$drift"
+              echo '```'
+            else
+              echo 'drift 出力を取得できませんでした。'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # push: Environment の承認(confirm)後に apply。
   apply-push:
