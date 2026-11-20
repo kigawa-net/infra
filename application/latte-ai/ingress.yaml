@@ -20,9 +20,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: latte-ai
+                name: latte-debug-auth
                 port:
-                  number: 8766
+                  number: 80
           - path: /
             pathType: Prefix
             backend:

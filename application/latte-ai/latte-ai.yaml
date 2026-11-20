@@ -41,6 +41,11 @@ spec:
                 secretKeyRef:
                   name: latte-ai-auth
                   key: LATTE_AUTH_TOKEN
+            - name: LATTE_DEBUG_UI_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: latte-debug-auth-secret
+                  key: proxy-secret
           ports:
             - name: websocket
               containerPort: 8765

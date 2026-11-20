@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: latte-debug-auth
+  namespace: latte
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: latte-debug-auth
+  template:
+    metadata:
+      labels:
+        app: latte-debug-auth
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+          args:
+            - --alpha-config=/etc/oauth2-proxy/alpha.yaml
+            - --redirect-url=https://latte-dev.kigawa.net/debug/oauth2/callback
+            - --proxy-prefix=/debug/oauth2
+            - --cookie-name=latte-debug-auth
+            - --cookie-path=/debug
+            - --cookie-secure=true
+            - --cookie-httponly=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --authenticated-emails-file=/etc/oauth2-proxy/emails.txt
+            - --reverse-proxy=true
+            - --skip-provider-button=true
+          env:
+            - name: LATTE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: latte-debug-auth-secret
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: latte-debug-auth-secret
+                  key: cookie-secret
+            - name: LATTE_DEBUG_UI_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: latte-debug-auth-secret
+                  key: proxy-secret
+          ports:
+            - containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+          volumeMounts:
+            - name: config
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: latte-debug-auth-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: latte-debug-auth
+  namespace: latte
+spec:
+  selector:
+    app: latte-debug-auth
+  ports:
+    - name: http
+      port: 80
+      targetPort: 4180
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: latte-debug-auth-config
+  namespace: latte
+data:
+  emails.txt: |
+    # 反映前に kigawa-net レルムの許可ユーザーを 1 行に 1 アドレスずつ登録する。
+  alpha.yaml: |
+    server:
+      BindAddress: 0.0.0.0:4180
+    providers:
+      - id: latte-debug-proxy
+        provider: oidc
+        clientID: latte-debug-proxy
+        clientSecret: "${LATTE_OIDC_CLIENT_SECRET}"
+        code_challenge_method: S256
+        oidcConfig:
+          issuerURL: https://user.kigawa.net/realms/kigawa-net
+          audienceClaims:
+            - aud
+          emailClaim: email
+          userIDClaim: email
+    upstreamConfig:
+      upstreams:
+        - id: debug
+          path: /debug
+          uri: http://latte-ai.latte.svc.cluster.local:8766
+        - id: debug-prefix
+          path: /debug/
+          uri: http://latte-ai.latte.svc.cluster.local:8766
+    injectRequestHeaders:
+      - name: X-Forwarded-User
+        values:
+          - claim: user
+      - name: X-Forwarded-Email
+        values:
+          - claim: email
+      - name: X-Latte-Proxy-Secret
+        values:
+          - fromEnv: LATTE_DEBUG_UI_PROXY_SECRET
+---
+apiVersion: k8s.bitwarden.com/v1
+kind: BitwardenSecret
+metadata:
+  name: latte-debug-auth-secret
+  namespace: latte
+spec:
+  organizationId: "a2b57f3d-6e2b-4467-b499-b31e00bfd804"
+  secretName: latte-debug-auth-secret
+  authToken:
+    secretName: bitwarden-sec
+    secretKey: token
+  map:
+    # 反映前に Bitwarden Secrets Manager で発行した ID に置き換える。
+    - bwSecretId: "00000000-0000-0000-0000-000000000001"
+      secretKeyName: client-secret
+    # cookie-secret はランダムな 32 バイトを URL-safe Base64 で格納する。
+    - bwSecretId: "00000000-0000-0000-0000-000000000002"
+      secretKeyName: cookie-secret
+    - bwSecretId: "00000000-0000-0000-0000-000000000003"
+      secretKeyName: proxy-secret
