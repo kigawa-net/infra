@@ -94,3 +94,52 @@ output "drift" {
     unexpected_record = local.latte_dev_unexpected
   }
 }
+
+# --- 余計な LAN IP レコードの削除 (#528) ---
+#
+# provider v4 では、state 外のレコードを data ソースで取って削除する手段が無い
+# (cloudflare_record は 1 件固定。import ブロックは「取り込み」だけで、config に無い
+#  レコードを消すには、取り込んでから外す 2 段階の apply が要る)。
+# そこで、上の data.external が取ったレコードのうち、削除対象に厳密に一致するものだけを、
+# for_each (キーは Cloudflare の record id) の terraform_data から API で削除する。
+#
+#   - 対象: latte-dev.kigawa.net の A レコードで、content = 192.168.1.242 のものだけ。
+#           74.208.55.86 (Terraform 管理) は、content が違うので対象外。
+#   - 削除後は、次の plan で data が対象を返さなくなり、for_each が空になって、
+#     この terraform_data 自体も state から消える (自己消滅)。
+#   - 同じ LAN レコードが手動で再作成されても、次の apply で再び削除される。
+#     (再発しても drift 検知の警告が先に出る。)
+locals {
+  latte_dev_lan_content = "192.168.1.242"
+
+  latte_dev_lan_records = {
+    for r in local.latte_dev_records : r.id => r
+    if r.name == "latte-dev.kigawa.net" && r.content == local.latte_dev_lan_content
+  }
+}
+
+resource "terraform_data" "delete_latte_dev_lan_record" {
+  for_each = local.latte_dev_lan_records
+
+  input = {
+    id      = each.key
+    content = each.value.content
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      resp=$(curl -fsS --retry 3 --retry-all-errors --max-time 30 -X DELETE \
+        -H "Authorization: Bearer $CF_API_TOKEN" \
+        "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records/$CF_RECORD_ID")
+      jq -e '.success == true' <<<"$resp" >/dev/null || { echo "Cloudflare API error: $resp" >&2; exit 1; }
+      echo "deleted latte-dev A record $CF_RECORD_ID (${each.value.content})"
+    EOT
+    environment = {
+      CF_API_TOKEN = data.external.api_token.result.value
+      CF_ZONE_ID   = var.zone_id
+      CF_RECORD_ID = each.key
+    }
+  }
+}
